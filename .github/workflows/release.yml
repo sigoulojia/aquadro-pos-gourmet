@@ -49,11 +49,19 @@ jobs:
       - name: Verify Frontend Production Build
         run: npm run build
 
-  # Étape 2 : Construction de l'installeur Windows et signature cryptographique de la mise à jour
+  # Étape 2 : Construction des installeurs Windows x64 et x86 (32-bit) et signatures
   build-and-release:
-    name: Build Signed Windows NSIS & Tauri Updater Artifacts
+    name: Build Signed Windows (${{ matrix.arch }})
     needs: test
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: i686-pc-windows-msvc
+            arch: x86
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,6 +74,8 @@ jobs:
 
       - name: Setup Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Install npm dependencies
         run: npm ci
@@ -116,6 +126,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.CLEAN_TAURI_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
+          args: --target ${{ matrix.target }}
           releaseName: 'Aquadro POS Gourmet v__VERSION__'
           releaseBody: |
             ## Aquadro POS v__VERSION__ — Production Release

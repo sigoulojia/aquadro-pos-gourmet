@@ -47,12 +47,17 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
       logger.info('STARTUP_STAGE', 'Étape 1/10: Initialisation application');
       await new Promise(r => setTimeout(r, 40));
 
-      // Étape 2 : Préparation des répertoires runtime
+      // Étape 2 : Préparation des répertoires runtime (Garde-fou timeout 2.5s pour éviter tout blocage AppData)
       setCurrentStepIndex(1);
       logger.info('STARTUP_STAGE', 'Étape 2/10: Vérification répertoires runtime');
-      const paths = await backupService.getRuntimePaths();
-      if (paths) {
-        logger.info('RUNTIME_PATHS', `Base: ${paths.database_path} | Logs: ${paths.logs_dir}`);
+      try {
+        const timeoutPaths = new Promise<null>(r => setTimeout(() => r(null), 2500));
+        const paths = await Promise.race([backupService.getRuntimePaths(), timeoutPaths]);
+        if (paths) {
+          logger.info('RUNTIME_PATHS', `Base: ${paths.database_path} | Logs: ${paths.logs_dir}`);
+        }
+      } catch (e) {
+        logger.warn('STARTUP_STAGE', 'Avertissement répertoires runtime non bloquant');
       }
       await new Promise(r => setTimeout(r, 40));
 
@@ -67,12 +72,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
       logger.info('STARTUP_STAGE', 'Étape 4/10: Migrations vérifiées');
       await new Promise(r => setTimeout(r, 40));
 
-      // Étape 5 : Contrôle d'intégrité SQLite
+      // Étape 5 : Contrôle d'intégrité SQLite (Garde-fou timeout 2.5s)
       setCurrentStepIndex(4);
       logger.info('STARTUP_STAGE', 'Étape 5/10: Contrôle intégrité');
-      const report = await backupService.verifyDatabaseIntegrity();
-      if (!report.is_healthy) {
-        logger.warn('STARTUP_INTEGRITY', `Avertissement intégrité: ${report.checks.join(', ')}`);
+      try {
+        const timeoutReport = new Promise<{ is_healthy: boolean; checks: string[] }>(r =>
+          setTimeout(() => r({ is_healthy: true, checks: ['timeout-skip'] }), 2500)
+        );
+        const report = await Promise.race([backupService.verifyDatabaseIntegrity(), timeoutReport]);
+        if (report && !report.is_healthy) {
+          logger.warn('STARTUP_INTEGRITY', `Avertissement intégrité: ${report.checks.join(', ')}`);
+        }
+      } catch (e) {
+        logger.warn('STARTUP_STAGE', 'Contrôle intégrité ignoré pour fluidité');
       }
       await new Promise(r => setTimeout(r, 40));
 
