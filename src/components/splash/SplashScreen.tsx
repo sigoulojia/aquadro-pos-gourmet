@@ -124,7 +124,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
   return (
     <div className="h-screen w-screen bg-slate-900 text-white flex flex-col items-center justify-center select-none font-sans relative overflow-hidden">
       {/* Background radial glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,58,138,0.25)_0%,rgba(15,23,42,1)_70%)] pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(232,117,36,0.25)_0%,rgba(41,37,34,1)_75%)] pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-md p-8 flex flex-col items-center text-center">
         {/* Brand Logo & Name */}

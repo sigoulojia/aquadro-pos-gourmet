@@ -328,7 +328,7 @@ export const SettingsView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-gray-100 p-4 flex flex-col overflow-hidden text-xs select-none">
+    <div className="flex-1 bg-[#FFF8EF] p-4 flex flex-col overflow-hidden text-xs select-none">
       {/* En-tête */}
       <div className="flex items-center justify-between pb-3">
         <div>
@@ -340,12 +340,12 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* Onglets blancs épurés */}
-      <div className="flex space-x-1 border-b border-gray-200 bg-white px-3 pt-2 rounded-t border">
+      <div className="flex space-x-1 border-b border-[#E9DCCB] bg-white px-3 pt-2 rounded-t border">
         <button
           onClick={() => setActiveTab('store')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'store'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -357,7 +357,7 @@ export const SettingsView: React.FC = () => {
           onClick={() => setActiveTab('fiscal')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'fiscal'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -369,7 +369,7 @@ export const SettingsView: React.FC = () => {
           onClick={() => setActiveTab('hardware')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'hardware'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -381,7 +381,7 @@ export const SettingsView: React.FC = () => {
           onClick={() => setActiveTab('backup')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'backup'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -393,7 +393,7 @@ export const SettingsView: React.FC = () => {
           onClick={() => setActiveTab('sync')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'sync'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
@@ -405,20 +405,20 @@ export const SettingsView: React.FC = () => {
           onClick={() => setActiveTab('updates')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'updates'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/40'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
               : 'border-transparent text-gray-600 hover:text-gray-900'
           }`}
         >
           <RotateCcw className="w-4 h-4" />
           <span>Mises à Jour</span>
           {updateState.status === 'available' && (
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-[#E87524] animate-pulse" />
           )}
         </button>
       </div>
 
       {/* Contenu principal */}
-      <div className="flex-1 bg-white border border-gray-200 border-t-0 p-5 overflow-y-auto rounded-b">
+      <div className="flex-1 bg-white border border-[#E9DCCB] border-t-0 p-5 overflow-y-auto rounded-b">
         {/* TAB 1: IDENTITÉ MAGASIN */}
         {activeTab === 'store' && (
           <form onSubmit={handleSaveStore} className="max-w-3xl space-y-4">
@@ -429,7 +429,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.name_fr || ''}
                   onChange={e => setStore({ ...store, name_fr: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900"
                   required
                 />
               </div>
@@ -439,7 +439,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.name_ar || ''}
                   onChange={e => setStore({ ...store, name_ar: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900 text-right"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900 text-right"
                   dir="rtl"
                 />
               </div>
@@ -450,7 +450,7 @@ export const SettingsView: React.FC = () => {
               <label className="block text-gray-700 font-bold mb-2">Logo du Magasin (Pour Impression sur Ticket)</label>
               <div className="flex items-center space-x-4">
                 {storeLogo ? (
-                  <div className="relative w-20 h-20 border border-gray-200 rounded p-1 bg-gray-50 flex items-center justify-center">
+                  <div className="relative w-20 h-20 border border-[#E9DCCB] rounded p-1 bg-gray-50 flex items-center justify-center">
                     <img src={storeLogo} alt="Logo" className="max-w-full max-h-full object-contain" />
                     <button
                       type="button"
@@ -465,7 +465,7 @@ export const SettingsView: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex flex-col items-center justify-center text-gray-400">
+                  <div className="w-20 h-20 border-2 border-dashed border-[#E9DCCB] rounded bg-gray-50 flex flex-col items-center justify-center text-gray-400">
                     <StoreIcon className="w-6 h-6 mb-1" />
                     <span className="text-[9px]">Aucun logo</span>
                   </div>
@@ -475,7 +475,7 @@ export const SettingsView: React.FC = () => {
                     type="file"
                     accept="image/*"
                     onChange={handleLogoUpload}
-                    className="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    className="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#FFF3EB] file:text-[#D46317] hover:file:bg-blue-100"
                   />
                   <p className="text-[10px] text-gray-500 mt-1">
                     L'image sera convertie en noir et blanc pour l'imprimante thermique. Format carré recommandé.
@@ -499,7 +499,7 @@ export const SettingsView: React.FC = () => {
                     }
                     setStore({ ...store, wilaya: selectedWilaya, commune: newCommune });
                   }}
-                  className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900 bg-white"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900 bg-white"
                 >
                   <option value="">Sélectionner une wilaya</option>
                   {AlgeriaCities.getWilayas().map(w => (
@@ -512,7 +512,7 @@ export const SettingsView: React.FC = () => {
                 <select
                   value={store.commune || ''}
                   onChange={e => setStore({ ...store, commune: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900 bg-white"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900 bg-white"
                 >
                   {store.wilaya ? (
                     AlgeriaCities.getCommunes(parseInt(store.wilaya.split(' - ')[0], 10)).map(c => (
@@ -529,7 +529,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.phone || ''}
                   onChange={e => setStore({ ...store, phone: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900"
                 />
               </div>
             </div>
@@ -540,7 +540,7 @@ export const SettingsView: React.FC = () => {
                 type="text"
                 value={store.address || ''}
                 onChange={e => setStore({ ...store, address: e.target.value })}
-                className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900"
+                className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900"
               />
             </div>
 
@@ -551,7 +551,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.rc_number || ''}
                   onChange={e => setStore({ ...store, rc_number: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
                   placeholder="16/00-1234567B22"
                 />
               </div>
@@ -561,7 +561,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.nif_number || ''}
                   onChange={e => setStore({ ...store, nif_number: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
                   placeholder="002216012345678"
                 />
               </div>
@@ -571,7 +571,7 @@ export const SettingsView: React.FC = () => {
                   type="text"
                   value={store.nis_number || ''}
                   onChange={e => setStore({ ...store, nis_number: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
+                  className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
                   placeholder="002216010001234"
                 />
               </div>
@@ -583,14 +583,14 @@ export const SettingsView: React.FC = () => {
                 type="text"
                 value={store.activity || ''}
                 onChange={e => setStore({ ...store, activity: e.target.value })}
-                className="w-full p-2 border border-gray-300 rounded text-xs text-gray-900"
+                className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900"
               />
             </div>
 
             <div className="pt-3">
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
               >
                 <Save className="w-4 h-4" />
                 <span>Enregistrer les coordonnées</span>
@@ -602,7 +602,7 @@ export const SettingsView: React.FC = () => {
         {/* TAB 2: RÉGIME FISCAL DGI */}
         {activeTab === 'fiscal' && (
           <form onSubmit={handleSaveStore} className="max-w-2xl space-y-4">
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-blue-900 text-xs">
+            <div className="p-3 bg-[#FFF3EB] border border-blue-200 rounded text-blue-900 text-xs">
               <span className="font-bold">Directive DGI Algérie :</span>
               <p className="mt-1 text-[11px] leading-relaxed">
                 Les commerçants assujettis à l'<strong>IFU (Impôt Forfaitaire Unique)</strong> ne facturent pas de TVA 
@@ -614,7 +614,7 @@ export const SettingsView: React.FC = () => {
             <div className="space-y-3">
               <label className="block text-gray-800 font-bold">Sélection du Régime d'Imposition :</label>
 
-              <div className="flex items-center space-x-4 p-3 border border-gray-200 rounded bg-gray-50">
+              <div className="flex items-center space-x-4 p-3 border border-[#E9DCCB] rounded bg-gray-50">
                 <input
                   type="radio"
                   id="regime-ifu"
@@ -622,7 +622,7 @@ export const SettingsView: React.FC = () => {
                   value="IFU"
                   checked={store.fiscal_regime === 'IFU'}
                   onChange={() => setStore({ ...store, fiscal_regime: 'IFU', default_tva_rate: 0 })}
-                  className="w-4 h-4 text-blue-600"
+                  className="w-4 h-4 text-[#E87524]"
                 />
                 <label htmlFor="regime-ifu" className="cursor-pointer">
                   <div className="font-bold text-gray-900">Régime IFU (Impôt Forfaitaire Unique)</div>
@@ -632,7 +632,7 @@ export const SettingsView: React.FC = () => {
                 </label>
               </div>
 
-              <div className="flex items-center space-x-4 p-3 border border-gray-200 rounded bg-gray-50">
+              <div className="flex items-center space-x-4 p-3 border border-[#E9DCCB] rounded bg-gray-50">
                 <input
                   type="radio"
                   id="regime-reel"
@@ -640,7 +640,7 @@ export const SettingsView: React.FC = () => {
                   value="REEL"
                   checked={store.fiscal_regime === 'REEL'}
                   onChange={() => setStore({ ...store, fiscal_regime: 'REEL', default_tva_rate: 19 })}
-                  className="w-4 h-4 text-blue-600"
+                  className="w-4 h-4 text-[#E87524]"
                 />
                 <label htmlFor="regime-reel" className="cursor-pointer">
                   <div className="font-bold text-gray-900">Régime Réel (Assujetti à la TVA)</div>
@@ -652,12 +652,12 @@ export const SettingsView: React.FC = () => {
             </div>
 
             {store.fiscal_regime === 'REEL' && (
-              <div className="p-3 border border-gray-200 rounded bg-white space-y-2">
+              <div className="p-3 border border-[#E9DCCB] rounded bg-white space-y-2">
                 <label className="block text-gray-800 font-bold">Taux de TVA par défaut pour les compléments :</label>
                 <select
                   value={store.default_tva_rate || 19}
                   onChange={e => setStore({ ...store, default_tva_rate: parseFloat(e.target.value) })}
-                  className="p-2 border border-gray-300 rounded text-xs text-gray-900 bg-white"
+                  className="p-2 border border-[#E9DCCB] rounded text-xs text-gray-900 bg-white"
                 >
                   <option value={19}>19% — Taux Normal (Compléments alimentaires, Shakers, Vêtements)</option>
                   <option value={9}>9% — Taux Réduit (Produits diététiques de base spécifiques)</option>
@@ -669,7 +669,7 @@ export const SettingsView: React.FC = () => {
             <div className="pt-2">
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
               >
                 <Save className="w-4 h-4" />
                 <span>Appliquer le profil fiscal</span>
@@ -688,19 +688,19 @@ export const SettingsView: React.FC = () => {
               </p>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 border border-gray-200 rounded bg-gray-50">
+                <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50">
                   <label className="block text-gray-700 font-bold mb-1">Format de papier ticket :</label>
                   <select
                     value={printerPaperSize}
                     onChange={e => setPrinterPaperSize(e.target.value as any)}
-                    className="w-full p-2 border border-gray-300 rounded text-xs bg-white text-gray-900"
+                    className="w-full p-2 border border-[#E9DCCB] rounded text-xs bg-white text-gray-900"
                   >
                     <option value="80mm">80 mm (Recommandé - Format standard avec logo et détails)</option>
                     <option value="58mm">58 mm (Format compact économique)</option>
                   </select>
                 </div>
 
-                <div className="p-3 border border-gray-200 rounded bg-gray-50 flex items-center justify-between">
+                <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50 flex items-center justify-between">
                   <div>
                     <div className="font-bold text-gray-800">Impression automatique</div>
                     <div className="text-[11px] text-gray-500">Imprimer le ticket dès la validation de vente</div>
@@ -709,7 +709,7 @@ export const SettingsView: React.FC = () => {
                     type="checkbox"
                     checked={autoPrintReceipt}
                     onChange={e => setAutoPrintReceipt(e.target.checked)}
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-[#E87524]"
                   />
                 </div>
               </div>
@@ -718,7 +718,7 @@ export const SettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleTestPrint}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded border border-gray-300 flex items-center space-x-1.5"
+                  className="px-3 py-2 bg-[#FFF8EF] hover:bg-gray-200 text-gray-800 font-bold rounded border border-[#E9DCCB] flex items-center space-x-1.5"
                 >
                   <Printer className="w-4 h-4 text-gray-600" />
                   <span>Imprimer un ticket de test DZD</span>
@@ -727,7 +727,7 @@ export const SettingsView: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleTestDrawer}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded border border-gray-300 flex items-center space-x-1.5"
+                  className="px-3 py-2 bg-[#FFF8EF] hover:bg-gray-200 text-gray-800 font-bold rounded border border-[#E9DCCB] flex items-center space-x-1.5"
                 >
                   <RotateCcw className="w-4 h-4 text-gray-600" />
                   <span>Tester l'ouverture du tiroir-caisse</span>
@@ -735,14 +735,14 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-gray-200">
+            <div className="pt-4 border-t border-[#E9DCCB]">
               <h3 className="font-bold text-gray-900 text-sm mb-1">Coupures de Billets en Caisse (Dinars Algériens)</h3>
               <p className="text-[11px] text-gray-500 mb-2">
                 Coupures prises en compte pour le comptage de fond de caisse et de clôture Z :
               </p>
               <div className="flex flex-wrap gap-2">
                 {['200 DA', '500 DA', '1 000 DA', '2 000 DA', 'Pièces de monnaie'].map((den, idx) => (
-                  <span key={idx} className="px-2.5 py-1 bg-gray-100 border border-gray-300 rounded font-mono font-bold text-gray-700">
+                  <span key={idx} className="px-2.5 py-1 bg-[#FFF8EF] border border-[#E9DCCB] rounded font-mono font-bold text-gray-700">
                     {den}
                   </span>
                 ))}
@@ -758,7 +758,7 @@ export const SettingsView: React.FC = () => {
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2 text-slate-800 font-bold text-sm">
-                  <HardDrive className="w-4 h-4 text-blue-600" />
+                  <HardDrive className="w-4 h-4 text-[#E87524]" />
                   <span>Architecture des Données Runtime (AppData Découplé)</span>
                 </div>
                 <span className="text-[10px] bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded-full border border-green-200">
@@ -799,7 +799,7 @@ export const SettingsView: React.FC = () => {
                   type="button"
                   onClick={handleCreateSqliteBackup}
                   disabled={isBackingUp}
-                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-xs flex items-center space-x-2 shadow-sm transition disabled:opacity-50"
+                  className="px-3.5 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded text-xs flex items-center space-x-2 shadow-sm transition disabled:opacity-50"
                 >
                   <Database className="w-3.5 h-3.5" />
                   <span>{isBackingUp ? 'Création en cours...' : 'Créer un Instantané SQLite Atomique (VACUUM INTO)'}</span>
@@ -825,7 +825,7 @@ export const SettingsView: React.FC = () => {
 
             {/* Liste des Instantanés Physiques */}
             {dbBackups.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="bg-white border border-[#E9DCCB] rounded-lg p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-gray-900 text-xs uppercase tracking-wider flex items-center space-x-1.5">
                     <Folder className="w-3.5 h-3.5 text-gray-500" />
@@ -854,7 +854,7 @@ export const SettingsView: React.FC = () => {
             )}
 
             {/* Sauvegarde JSON Externe */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+            <div className="bg-white border border-[#E9DCCB] rounded-lg p-4 space-y-3">
               <h3 className="font-bold text-gray-900 text-sm mb-1">Export / Migration de Données (Format JSON)</h3>
               <p className="text-[11px] text-gray-500">
                 Générez un fichier d'échange universel JSON contenant l'ensemble de vos tables (articles, stocks, ventes, lots FEFO, tiers).
@@ -870,7 +870,7 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
 
-            <div className="pt-4 border-t border-gray-200">
+            <div className="pt-4 border-t border-[#E9DCCB]">
               <h3 className="font-bold text-gray-900 text-sm mb-1 text-red-700 flex items-center space-x-1.5">
                 <AlertTriangle className="w-4 h-4" />
                 <span>Zone Sensible : Restauration d'une Sauvegarde</span>
@@ -898,7 +898,7 @@ export const SettingsView: React.FC = () => {
                     value={ownerPinForRestore}
                     onChange={e => setOwnerPinForRestore(e.target.value)}
                     placeholder="Saisissez le PIN propriétaire..."
-                    className="w-64 p-2 border border-gray-300 rounded text-xs bg-white text-gray-900 font-mono"
+                    className="w-64 p-2 border border-[#E9DCCB] rounded text-xs bg-white text-gray-900 font-mono"
                   />
                 </div>
 
@@ -964,12 +964,12 @@ export const SettingsView: React.FC = () => {
               les opérations enregistrées sont synchronisées avec le serveur central PostgreSQL / Supabase de façon idempotente.
             </p>
 
-            <div className="p-3 border border-gray-200 rounded bg-gray-50 flex items-center justify-between">
+            <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50 flex items-center justify-between">
               <div>
                 <span className="font-bold text-gray-800">Opérations en attente de synchronisation :</span>
                 <p className="text-[11px] text-gray-500">Transactions de vente, réceptions de stock, mouvements FEFO</p>
               </div>
-              <span className="text-sm font-mono font-bold px-3 py-1 bg-white border border-gray-300 rounded text-gray-800">
+              <span className="text-sm font-mono font-bold px-3 py-1 bg-white border border-[#E9DCCB] rounded text-gray-800">
                 {pendingSyncCount} en attente
               </span>
             </div>
@@ -983,7 +983,7 @@ export const SettingsView: React.FC = () => {
                   setPendingSyncCount(count);
                   showToast('File de synchronisation traitée avec succès', 'success');
                 }}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                className="px-3 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Synchroniser manuellement maintenant</span>
@@ -1005,7 +1005,7 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="border border-gray-200 rounded p-4 bg-gray-50/50">
+              <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Version Installée</span>
                 <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.0</p>
                 <span className="text-[11px] text-green-700 font-medium flex items-center gap-1 mt-1">
@@ -1013,7 +1013,7 @@ export const SettingsView: React.FC = () => {
                 </span>
               </div>
 
-              <div className="border border-gray-200 rounded p-4 bg-gray-50/50">
+              <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Dernière vérification</span>
                 <p className="text-xs font-mono text-gray-700 mt-1">
                   {updateState.lastChecked ? new Date(updateState.lastChecked).toLocaleString() : 'Jamais vérifié'}
@@ -1026,8 +1026,8 @@ export const SettingsView: React.FC = () => {
 
             {/* État de la mise à jour */}
             {updateState.status === 'checking' && (
-              <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded text-blue-900 text-xs">
-                <RotateCcw className="w-4 h-4 animate-spin text-blue-600" />
+              <div className="flex items-center gap-3 p-4 bg-[#FFF3EB] border border-blue-200 rounded text-blue-900 text-xs">
+                <RotateCcw className="w-4 h-4 animate-spin text-[#E87524]" />
                 <span>Recherche de nouvelles versions publiées en cours...</span>
               </div>
             )}
@@ -1067,14 +1067,14 @@ export const SettingsView: React.FC = () => {
             )}
 
             {updateState.status === 'downloading' && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded space-y-2">
+              <div className="p-4 bg-[#FFF3EB] border border-blue-200 rounded space-y-2">
                 <div className="flex justify-between text-xs font-bold text-blue-900">
                   <span>Téléchargement en cours...</span>
                   <span>{updateState.progress.percent}%</span>
                 </div>
                 <div className="w-full bg-blue-200 h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-blue-600 h-2 rounded-full transition-all"
+                    className="bg-[#E87524] h-2 rounded-full transition-all"
                     style={{ width: `${updateState.progress.percent}%` }}
                   />
                 </div>
@@ -1114,7 +1114,7 @@ export const SettingsView: React.FC = () => {
                   }
                 }}
                 disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded flex items-center space-x-2"
+                className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] disabled:opacity-50 text-white font-bold text-xs rounded flex items-center space-x-2"
               >
                 <RotateCcw className={`w-4 h-4 ${updateState.status === 'checking' ? 'animate-spin' : ''}`} />
                 <span>Rechercher les mises à jour maintenant</span>
@@ -1135,7 +1135,7 @@ export const SettingsView: React.FC = () => {
             
             <div className="p-5 overflow-y-auto flex-1">
               <h3 className="font-bold text-gray-900 text-base mb-2">ميثاق الاستخدام</h3>
-              <div className="text-sm text-gray-700 text-right direction-rtl space-y-2 border border-gray-200 p-4 rounded bg-gray-50 mb-4 h-48 overflow-y-auto">
+              <div className="text-sm text-gray-700 text-right direction-rtl space-y-2 border border-[#E9DCCB] p-4 rounded bg-gray-50 mb-4 h-48 overflow-y-auto">
                 <p>بموافقتك على استخدام هذا النظام (Aquadro POS)، فإنك تتعهد وتوافق على الميثاق التالي:</p>
                 <ul className="list-disc pr-5 space-y-1">
                   <li>النظام مصمم لتسهيل عمليات البيع والإدارة، ولا يتحمل المطور أي مسؤولية عن أخطاء إدخال البيانات أو ضياعها.</li>
@@ -1146,7 +1146,7 @@ export const SettingsView: React.FC = () => {
                 <p className="mt-4 font-bold">تطوير: بوضلعة يوسف الصديق (Boudelaa Youcef Seddik)</p>
               </div>
 
-              <label className="flex items-start space-x-2 cursor-pointer mb-6 border-b border-gray-200 pb-4">
+              <label className="flex items-start space-x-2 cursor-pointer mb-6 border-b border-[#E9DCCB] pb-4">
                 <input
                   type="checkbox"
                   checked={hasAgreed}
@@ -1167,13 +1167,13 @@ export const SettingsView: React.FC = () => {
                     value={dangerPin}
                     onChange={e => setDangerPin(e.target.value)}
                     placeholder="رمز قاعدة البيانات..."
-                    className="w-full p-2 border border-gray-300 rounded text-center text-xl font-mono tracking-widest text-gray-900 focus:border-red-500 focus:ring-red-500"
+                    className="w-full p-2 border border-[#E9DCCB] rounded text-center text-xl font-mono tracking-widest text-gray-900 focus:border-red-500 focus:ring-red-500"
                   />
                 </div>
               )}
             </div>
 
-            <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+            <div className="p-4 border-t border-[#E9DCCB] bg-gray-50 flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => {

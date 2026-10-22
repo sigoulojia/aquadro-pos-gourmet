@@ -166,6 +166,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
       await authService.loginWithPin(pin);
 
       localStorage.setItem('aquadro_setup_completed', 'true');
+      localStorage.setItem('pizzeria_setup_completed', 'true');
       onComplete();
     } catch (err: any) {
       setErrorMessage(`Erreur d'initialisation : ${err}`);
@@ -178,22 +179,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         {/* En-tête Wizard */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-gray-900">
-              Assistant d'Installation Initiale • Aquadro POS Algérie
+            <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+              <span>🍕</span>
+              <span>Assistant d'Installation Initiale • Pizzeria POS Algérie</span>
             </h2>
             <p className="text-[11px] text-gray-500">
-              Configuration de la boutique, du régime fiscal DGI et du compte Propriétaire
+              Configuration de la pizzeria / restaurant, du régime fiscal DGI et du compte Propriétaire
             </p>
           </div>
 
           <div className="flex items-center space-x-2 font-mono text-xs">
-            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>1</span>
+            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 1 ? 'bg-[#E87524] text-white' : 'bg-gray-200 text-gray-600'}`}>1</span>
             <span className="text-gray-400">→</span>
-            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>2</span>
+            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 2 ? 'bg-[#E87524] text-white' : 'bg-gray-200 text-gray-600'}`}>2</span>
             <span className="text-gray-400">→</span>
-            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 3 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>3</span>
+            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 3 ? 'bg-[#E87524] text-white' : 'bg-gray-200 text-gray-600'}`}>3</span>
             <span className="text-gray-400">→</span>
-            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 4 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>4</span>
+            <span className={`px-2.5 py-1 rounded font-bold ${currentStep === 4 ? 'bg-[#E87524] text-white' : 'bg-gray-200 text-gray-600'}`}>4</span>
           </div>
         </div>
 
@@ -210,7 +212,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           {/* ÉTAPE 1 : Identité Magasin */}
           {currentStep === 1 && (
             <form onSubmit={handleNextStep1} className="space-y-4">
-              <div className="flex items-center space-x-2 text-blue-700 font-bold border-b border-gray-200 pb-2 mb-4">
+              <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2 mb-4">
                 <Building2 className="w-4 h-4" />
                 <span>Étape 1 : Coordonnées du Magasin</span>
               </div>
@@ -228,7 +230,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                       reader.readAsDataURL(file);
                     }
                   }}
-                  className="w-full text-xs text-gray-700 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  className="w-full text-xs text-gray-700 file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-[#E87524] hover:file:bg-blue-100"
                 />
                 {logo && <img src={logo} alt="Logo" className="h-12 mt-2 object-contain" />}
               </div>
@@ -348,7 +350,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
               <div className="pt-3 flex justify-end">
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                  className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
                 >
                   <span>Continuer vers la Fiscalité</span>
                   <ArrowRight className="w-4 h-4" />
@@ -360,7 +362,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           {/* ÉTAPE 2 : Régime Fiscal DGI */}
           {currentStep === 2 && (
             <form onSubmit={handleNextStep2} className="space-y-4">
-              <div className="flex items-center space-x-2 text-blue-700 font-bold border-b border-gray-200 pb-2">
+              <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2">
                 <FileSpreadsheet className="w-4 h-4" />
                 <span>Étape 2 : Régime Fiscal Algérien & Numéros d'Identification</span>
               </div>
@@ -461,7 +463,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                  className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
                 >
                   <span>Continuer vers la Sécurité</span>
                   <ArrowRight className="w-4 h-4" />
@@ -473,7 +475,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           {/* ÉTAPE 3 : Compte Propriétaire & Code PIN */}
           {currentStep === 3 && (
             <form onSubmit={handleNextStep3} className="space-y-4">
-              <div className="flex items-center space-x-2 text-blue-700 font-bold border-b border-gray-200 pb-2">
+              <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2">
                 <ShieldCheck className="w-4 h-4" />
                 <span>Étape 3 : Compte Propriétaire & Sécurisation PIN</span>
               </div>
@@ -549,7 +551,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center space-x-1.5"
+                  className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
                 >
                   <span>Continuer vers la Finalisation</span>
                   <ArrowRight className="w-4 h-4" />
@@ -561,7 +563,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
           {/* ÉTAPE 4 : Impression & Vérification Finale */}
           {currentStep === 4 && (
             <form onSubmit={handleFinalSubmit} className="space-y-4">
-              <div className="flex items-center space-x-2 text-blue-700 font-bold border-b border-gray-200 pb-2">
+              <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Étape 4 : Impression Obligatoire & Activation</span>
               </div>
@@ -574,7 +576,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 <button
                   type="button"
                   onClick={handlePrintCharter}
-                  className="mx-auto px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex items-center space-x-2 transition-transform transform active:scale-95"
+                  className="mx-auto px-4 py-3 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded shadow flex items-center space-x-2 transition-transform transform active:scale-95"
                 >
                   <FileSpreadsheet className="w-5 h-5" />
                   <span>Générer et Imprimer le Document A4</span>

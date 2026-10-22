@@ -150,7 +150,7 @@ export const SalesView: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-gray-100 p-4 flex flex-col overflow-hidden text-xs select-none">
+    <div className="flex-1 bg-[#FFF8EF] p-4 flex flex-col overflow-hidden text-xs select-none">
       {/* Barre d'outils supérieure */}
       <div className="flex items-center justify-between pb-3">
         <div>
@@ -162,7 +162,7 @@ export const SalesView: React.FC = () => {
       </div>
 
       {/* Barre de Recherche */}
-      <div className="bg-white p-2.5 rounded-t border border-gray-200 border-b-0 flex items-center space-x-3">
+      <div className="bg-white p-2.5 rounded-t border border-[#E9DCCB] border-b-0 flex items-center space-x-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
@@ -170,16 +170,16 @@ export const SalesView: React.FC = () => {
             placeholder="Rechercher par N° ticket, client, caissier..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-300 rounded pl-8 pr-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
+            className="w-full bg-gray-50 border border-[#E9DCCB] rounded pl-8 pr-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
           />
         </div>
       </div>
 
       {/* Tableau des Ventes */}
-      <div className="flex-1 bg-white border border-gray-200 rounded-b overflow-hidden flex flex-col">
+      <div className="flex-1 bg-white border border-[#E9DCCB] rounded-b overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 text-[11px] sticky top-0">
+            <thead className="bg-gray-50 border-b border-[#E9DCCB] text-gray-600 text-[11px] sticky top-0">
               <tr>
                 <th className="py-2.5 px-3 font-semibold">N° Ticket</th>
                 <th className="py-2.5 px-3 font-semibold">Date & Heure</th>
@@ -208,7 +208,7 @@ export const SalesView: React.FC = () => {
                     <td className="py-2 px-3 text-gray-700">{s.cashier_name || 'Caissier'}</td>
                     <td className="py-2 px-3 text-gray-700">{s.customer_name || 'Client de passage'}</td>
                     <td className="py-2 px-3">
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-gray-100 text-gray-700 border border-gray-200">
+                      <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[#FFF8EF] text-gray-700 border border-[#E9DCCB]">
                         {s.payments?.[0]?.payment_method || 'CASH'}
                       </span>
                     </td>
@@ -232,14 +232,14 @@ export const SalesView: React.FC = () => {
                       <div className="flex items-center justify-center space-x-1">
                         <button
                           onClick={() => handleOpenDetail(s)}
-                          className="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-blue-600"
+                          className="p-1 hover:bg-[#FFF8EF] rounded text-gray-600 hover:text-[#E87524]"
                           title="Détails de la vente"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleReprint(s)}
-                          className="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-blue-600"
+                          className="p-1 hover:bg-[#FFF8EF] rounded text-gray-600 hover:text-[#E87524]"
                           title="Réimprimer le ticket"
                         >
                           <Printer className="w-3.5 h-3.5" />
@@ -247,7 +247,7 @@ export const SalesView: React.FC = () => {
                         {s.status !== 'REFUNDED' && (
                           <button
                             onClick={() => handleOpenRefund(s)}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-amber-600"
+                            className="p-1 hover:bg-[#FFF8EF] rounded text-gray-400 hover:text-amber-600"
                             title="Remboursement / Retour"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -266,8 +266,8 @@ export const SalesView: React.FC = () => {
       {/* Modal Détails de Vente */}
       {showDetailModal && selectedSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in">
-            <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+          <div className="bg-white border border-[#E9DCCB] rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in">
+            <div className="p-3 border-b border-[#E9DCCB] bg-gray-50 flex items-center justify-between">
               <span className="font-bold text-gray-900 text-sm">
                 Détail Vente {selectedSale.receipt_number}
               </span>
@@ -310,17 +310,17 @@ export const SalesView: React.FC = () => {
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-gray-200 flex justify-between items-baseline font-bold text-sm">
+              <div className="pt-2 border-t border-[#E9DCCB] flex justify-between items-baseline font-bold text-sm">
                 <span>Total Net TTC :</span>
-                <span className="text-blue-700 font-mono">{CurrencyUtil.formatDZD(selectedSale.total_ttc)}</span>
+                <span className="text-[#D46317] font-mono">{CurrencyUtil.formatDZD(selectedSale.total_ttc)}</span>
               </div>
             </div>
 
-            <div className="p-3 border-t border-gray-200 bg-gray-50 flex space-x-2">
+            <div className="p-3 border-t border-[#E9DCCB] bg-gray-50 flex space-x-2">
               <button
                 type="button"
                 onClick={() => setShowDetailModal(false)}
-                className="flex-1 py-1.5 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-medium text-xs"
+                className="flex-1 py-1.5 rounded bg-white hover:bg-[#FFF8EF] border border-[#E9DCCB] text-gray-700 font-medium text-xs"
               >
                 Fermer
               </button>
@@ -330,7 +330,7 @@ export const SalesView: React.FC = () => {
                   handleReprint(selectedSale);
                   setShowDetailModal(false);
                 }}
-                className="flex-1 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors flex items-center justify-center space-x-1"
+                className="flex-1 py-1.5 rounded bg-[#E87524] hover:bg-[#D46317] text-white font-bold text-xs transition-colors flex items-center justify-center space-x-1"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>Réimprimer</span>
@@ -343,8 +343,8 @@ export const SalesView: React.FC = () => {
       {/* Modal de Remboursement avec Code PIN Responsable */}
       {showRefundModal && selectedSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in">
-            <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+          <div className="bg-white border border-[#E9DCCB] rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in">
+            <div className="p-3 border-b border-[#E9DCCB] bg-gray-50 flex items-center justify-between">
               <span className="font-bold text-gray-900 text-sm">
                 Remboursement Vente {selectedSale.receipt_number}
               </span>
@@ -362,7 +362,7 @@ export const SalesView: React.FC = () => {
                 {selectedSale.items?.map(item => {
                   const state = refundItems[item.id] || { qty: item.quantity, restock: true };
                   return (
-                    <div key={item.id} className="p-2 rounded border border-gray-200 bg-gray-50 space-y-1">
+                    <div key={item.id} className="p-2 rounded border border-[#E9DCCB] bg-gray-50 space-y-1">
                       <div className="flex justify-between items-center">
                         <span className="font-semibold text-gray-900 truncate max-w-[200px]">
                           {item.product_name}
@@ -385,7 +385,7 @@ export const SalesView: React.FC = () => {
                                 [item.id]: { ...state, qty: parseInt(e.target.value, 10) || 0 }
                               })
                             }
-                            className="w-12 bg-white border border-gray-300 rounded px-1.5 py-0.5 font-mono text-xs text-center"
+                            className="w-12 bg-white border border-[#E9DCCB] rounded px-1.5 py-0.5 font-mono text-xs text-center"
                           />
                         </div>
                         <label className="flex items-center space-x-1 text-[11px] text-gray-700 cursor-pointer">
@@ -398,7 +398,7 @@ export const SalesView: React.FC = () => {
                                 [item.id]: { ...state, restock: e.target.checked }
                               })
                             }
-                            className="rounded border-gray-300 text-blue-600"
+                            className="rounded border-[#E9DCCB] text-[#E87524]"
                           />
                           <span>Remettre en stock</span>
                         </label>
@@ -417,13 +417,13 @@ export const SalesView: React.FC = () => {
                   required
                   value={refundReason}
                   onChange={e => setRefundReason(e.target.value)}
-                  className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none"
+                  className="w-full bg-white border border-[#E9DCCB] rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none"
                 />
               </div>
 
               <div className="pt-2 border-t border-gray-100">
                 <label className="text-[11px] font-bold text-gray-900 flex items-center space-x-1 mb-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#E87524]" />
                   <span>Validation par Code PIN Responsable *</span>
                 </label>
                 <input
@@ -432,15 +432,15 @@ export const SalesView: React.FC = () => {
                   placeholder="••••"
                   value={managerPin}
                   onChange={e => setManagerPin(e.target.value)}
-                  className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-sm tracking-widest text-center text-gray-900 focus:outline-none focus:border-blue-600"
+                  className="w-full bg-white border border-[#E9DCCB] rounded px-2.5 py-1.5 font-mono text-sm tracking-widest text-center text-gray-900 focus:outline-none focus:border-blue-600"
                 />
               </div>
 
-              <div className="p-3 border-t border-gray-200 bg-gray-50 flex space-x-2 -mx-4 -mb-4 mt-4">
+              <div className="p-3 border-t border-[#E9DCCB] bg-gray-50 flex space-x-2 -mx-4 -mb-4 mt-4">
                 <button
                   type="button"
                   onClick={() => setShowRefundModal(false)}
-                  className="flex-1 py-1.5 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-medium text-xs"
+                  className="flex-1 py-1.5 rounded bg-white hover:bg-[#FFF8EF] border border-[#E9DCCB] text-gray-700 font-medium text-xs"
                 >
                   Annuler
                 </button>

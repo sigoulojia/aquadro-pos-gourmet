@@ -84,6 +84,32 @@ CREATE INDEX IF NOT EXISTS idx_prod_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_prod_sku ON products(sku);
 CREATE INDEX IF NOT EXISTS idx_prod_cat ON products(category_id);
 
+-- 4b. Ingrédients & Matières Premières Pizzeria (Farine, Fromage, Sauce Tomate...)
+CREATE TABLE IF NOT EXISTS ingredients (
+    id TEXT PRIMARY KEY,
+    name_fr TEXT NOT NULL,
+    name_ar TEXT,
+    unit TEXT NOT NULL DEFAULT 'kg',
+    current_stock REAL NOT NULL DEFAULT 0.0,
+    min_stock_alert REAL NOT NULL DEFAULT 5.0,
+    cost_per_unit REAL NOT NULL DEFAULT 0.0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- 4c. Fiches Techniques & Recettes par Plat/Pizza (Portions d'ingrédients par pizza)
+CREATE TABLE IF NOT EXISTS recipe_items (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    ingredient_id TEXT NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+    quantity_required REAL NOT NULL,
+    unit_display TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recipe_prod ON recipe_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_ing ON recipe_items(ingredient_id);
+
 -- 5. Lots de Produits & Traçabilité FEFO
 CREATE TABLE IF NOT EXISTS product_batches (
     id TEXT PRIMARY KEY,

@@ -1,7 +1,7 @@
 // Aquadro POS Algérie V2 — Moteur de Base de Données SQLite Local
 // TRANSITIONAL COMPATIBILITY BRIDGE:
 // tauri-plugin-sql est utilisé temporairement pour réconcilier le frontend avec
-// la base SQLite native autoritaire gérée par Rust (AppData/aquadro_v2.db).
+// la base SQLite native autoritaire gérée par Rust (AppData/pizzeria_pos.db).
 // Cette passerelle sera supprimée lors de l'intégration IPC finale.
 
 import { appDataDir, join } from '@tauri-apps/api/path';
@@ -34,7 +34,7 @@ class MemorySQLiteEngine {
   private loadFromStorage() {
     try {
       if (typeof localStorage !== 'undefined') {
-        const saved = localStorage.getItem('aquadro_pos_v2_db');
+        const saved = localStorage.getItem('pizzeria_pos_db');
         if (saved) {
           this.tables = JSON.parse(saved);
           this.initialized = true;
@@ -48,7 +48,7 @@ class MemorySQLiteEngine {
   public saveToStorage() {
     try {
       if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('aquadro_pos_v2_db', JSON.stringify(this.tables));
+        localStorage.setItem('pizzeria_pos_db', JSON.stringify(this.tables));
       }
     } catch {
       // Ignorer
@@ -58,7 +58,7 @@ class MemorySQLiteEngine {
   public initSeed() {
     if (this.initialized && Object.keys(this.tables).length > 0) return;
 
-    this.tables['stores'] = [SEED_STORE];
+    this.tables['stores'] = SEED_STORE ? [SEED_STORE] : [];
     this.tables['roles'] = [...SEED_ROLES];
     this.tables['permissions'] = [...SEED_PERMISSIONS];
     this.tables['users'] = [...SEED_USERS];
@@ -88,6 +88,8 @@ class MemorySQLiteEngine {
       { document_type: 'BON_LIVRAISON', current_year: new Date().getFullYear(), last_sequence_number: 0 },
       { document_type: 'COMMANDE', current_year: new Date().getFullYear(), last_sequence_number: 0 }
     ];
+    this.tables['ingredients'] = this.tables['ingredients'] || [];
+    this.tables['recipe_items'] = this.tables['recipe_items'] || [];
     this.tables['audit_logs'] = [];
     this.tables['sync_operations'] = [];
 
@@ -125,7 +127,7 @@ class MemorySQLiteEngine {
     this.tables = {};
     this.initialized = false;
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('aquadro_setup_completed');
+      localStorage.removeItem('pizzeria_setup_completed');
     }
     this.initSeed();
   }
@@ -155,9 +157,12 @@ export class DatabaseService {
         const Database = (await import('@tauri-apps/plugin-sql')).default;
         // Transitional compatibility layer - targets the exact authoritative Rust AppData database
         const appData = await appDataDir();
-        const dbPath = await join(appData, 'aquadro_v2.db');
+        const dbPath = await join(appData, 'pizzeria_pos.db');
         this.tauriDb = await Database.load(`sqlite:${dbPath}`);
         console.log(`Connecté à la base native SQLite Tauri : sqlite:${dbPath}`);
+
+        // Initialiser uniquement les métadonnées structurelles essentielles (sans données factices)
+        await this.ensureEssentialStructure();
       } catch (err) {
         this.tauriDb = null;
         console.error('ERREUR CRITIQUE: Impossible de se connecter à la base de données native.', err);
@@ -166,6 +171,61 @@ export class DatabaseService {
     } else {
       memoryDb.initSeed();
       console.log('Moteur Aquadro POS V2 SQLite initialisé (Mode Mémoire / LocalStorage)');
+    }
+  }
+
+  private async ensureEssentialStructure(): Promise<void> {
+    if (!this.tauriDb) return;
+    try {
+      // 0. Tables Ingrédients & Recettes
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS ingredients (
+            id TEXT PRIMARY KEY,
+            name_fr TEXT NOT NULL,
+            name_ar TEXT,
+            unit TEXT NOT NULL DEFAULT 'kg',
+            current_stock REAL NOT NULL DEFAULT 0.0,
+            min_stock_alert REAL NOT NULL DEFAULT 5.0,
+            cost_per_unit REAL NOT NULL DEFAULT 0.0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+      `);
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS recipe_items (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            ingredient_id TEXT NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+            quantity_required REAL NOT NULL,
+            unit_display TEXT,
+            created_at TEXT NOT NULL
+        )
+      `);
+      // 1. Catégories indispensables : Pizzas et Boissons uniquement
+      await this.tauriDb.execute(
+        `INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES 
+         ('cat-pizza', 'Pizzas', 'بيتزا', ?),
+         ('cat-drink', 'Boissons', 'مشروبات', ?)`,
+        [new Date().toISOString(), new Date().toISOString()]
+      );
+
+      // 2. Séquences de numérotation des documents commerciaux
+      const sequences = [
+        ['TICKET', 2026, 0],
+        ['FACTURE', 2026, 0],
+        ['AVOIR', 2026, 0],
+        ['BON_LIVRAISON', 2026, 0],
+        ['COMMANDE', 2026, 0]
+      ];
+      for (const [dt, yr, seq] of sequences) {
+        await this.tauriDb.execute(
+          `INSERT OR IGNORE INTO document_sequences (document_type, current_year, last_sequence_number) VALUES (?, ?, ?)`,
+          [dt, yr, seq]
+        );
+      }
+    } catch (err) {
+      console.warn("Avertissement initialisation structurelle:", err);
     }
   }
 
@@ -388,7 +448,7 @@ export class DatabaseService {
         await this.tauriDb.execute(`DELETE FROM ${t}`);
       }
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('aquadro_setup_completed');
+        localStorage.removeItem('pizzeria_setup_completed');
       }
     } else {
       memoryDb.resetAll();

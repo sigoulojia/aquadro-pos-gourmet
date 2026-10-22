@@ -147,7 +147,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               onClick={() => handlePaperWidthChange('80mm')}
               className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
                 paperWidth === '80mm'
-                  ? 'bg-blue-600 border-blue-600 text-white'
+                  ? 'bg-[#E87524] border-[#E87524] text-white'
                   : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -158,7 +158,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               onClick={() => handlePaperWidthChange('58mm')}
               className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
                 paperWidth === '58mm'
-                  ? 'bg-blue-600 border-blue-600 text-white'
+                  ? 'bg-[#E87524] border-[#E87524] text-white'
                   : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'
               }`}
             >
@@ -171,7 +171,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               type="checkbox"
               checked={autoPrint}
               onChange={e => handleAutoPrintToggle(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-gray-300 text-[#E87524] focus:ring-blue-500"
             />
             <span>{language === 'ar' ? 'طباعة تلقائية' : 'Impression auto'}</span>
           </label>
@@ -207,7 +207,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <button
             type="button"
             onClick={handlePrint}
-            className="flex-1 py-2 px-4 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors shadow-sm flex items-center justify-center space-x-1.5"
+            className="flex-1 py-2 px-4 rounded bg-[#E87524] hover:bg-[#D46317] text-white font-bold text-xs transition-colors shadow-sm flex items-center justify-center space-x-1.5"
           >
             <Printer className="w-4 h-4" />
             <span>{language === 'ar' ? 'طباعة التذكرة (Entrée)' : 'Imprimer le Ticket (Entrée)'}</span>

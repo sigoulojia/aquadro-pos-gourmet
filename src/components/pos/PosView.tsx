@@ -1,1138 +1,684 @@
-// Aquadro POS Algérie V2 — Écran de Vente au Comptoir (POS Checkout)
-// Disposition 2 colonnes ultra-rapide : Catalogue/Scanner à gauche, Panier & Règlements à droite
+// Pizzeria POS Algérie — Écran de Vente au Comptoir Pizzeria (Cashier POS)
+// Conçu spécifiquement pour une pizzeria : Menu visuel par cartes, sélection 1-clic, commande claire et encaissement direct
 
-import React, { useState, useEffect, useRef } from 'react';
-import { productService } from '../../services/product.service';
-import { checkoutService, CheckoutItemInput } from '../../services/checkout.service';
-import { caisseService } from '../../services/caisse.service';
-import { customerService } from '../../services/customer.service';
-import { printerService } from '../../services/printer.service';
-import { ReceiptModal } from '../common/ReceiptModal';
-import { CameraScanner } from '../common/CameraScanner';
-import { useAuth } from '../../hooks/useAuth';
-import { useI18n } from '../../i18n';
-import { useToast } from '../common/Toast';
-import { Product, Customer, PaymentMethod, CashSession } from '../../types/database';
-import { CurrencyUtil } from '../../core/currency/currency';
-import { useShortcut, useKeyboardScope, useScanner } from '../../core/keyboard/useKeyboard';
-import { ScannerInputManager } from '../../core/keyboard/ScannerInputManager';
+import React, { useState, useEffect } from "react";
+import { productService } from "../../services/product.service";
+import { db } from "../../db/sqlite";
+import { checkoutService, CheckoutItemInput } from "../../services/checkout.service";
+import { caisseService } from "../../services/caisse.service";
+import { printerService } from "../../services/printer.service";
+import { ReceiptModal } from "../common/ReceiptModal";
+import { useAuth } from "../../hooks/useAuth";
+import { useToast } from "../common/Toast";
+import { Product, PaymentMethod, CashSession, Sale } from "../../types/database";
+import { CurrencyUtil } from "../../core/currency/currency";
 import {
   Search,
-  Barcode,
-  Camera,
   Plus,
   Minus,
   Trash2,
   CheckCircle,
   CreditCard,
   Banknote,
-  QrCode,
-  Users,
-  Clock,
-  Printer
-} from 'lucide-react';
+  UtensilsCrossed,
+  X,
+  Printer,
+  Sparkles
+} from "lucide-react";
 
 interface CartItem extends CheckoutItemInput {
-  maxStock: number;
+  category_id?: string;
+  name_ar?: string;
+  variant?: string;
 }
 
 export const PosView: React.FC = () => {
   const { user } = useAuth();
-  const { t, language } = useI18n();
   const { showToast } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [search, setSearch] = useState<string>('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [heldCarts, setHeldCarts] = useState<{ id: string; items: CartItem[]; customerId: string; time: string }[]>(() => {
+  const [search, setSearch] = useState<string>("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [cart, setCart] = useState<CartItem[]>(() => {
     try {
-      const saved = localStorage.getItem('aquadro_held_carts');
+      const saved = sessionStorage.getItem("pizzeria_current_cart");
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
 
-  useEffect(() => {
-    localStorage.setItem('aquadro_held_carts', JSON.stringify(heldCarts));
-  }, [heldCarts]);
-  const [showHeldSalesPanel, setShowHeldSalesPanel] = useState<boolean>(false);
+  const [orderType, setOrderType] = useState<"SUR_PLACE" | "A_EMPORTER">("SUR_PLACE");
+  const [tableNumber, setTableNumber] = useState<string>("Table 1");
 
-  // Modal de paiement rapide
+  // Sauvegarde automatique du panier courant
+  useEffect(() => {
+    sessionStorage.setItem("pizzeria_current_cart", JSON.stringify(cart));
+  }, [cart]);
+
+  // Modal de paiement
   const [showPayModal, setShowPayModal] = useState<boolean>(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
-  const [tenderedInput, setTenderedInput] = useState<string>('');
-  const [tpeReference, setTpeReference] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [tenderedInput, setTenderedInput] = useState<string>("");
   const [activeSession, setActiveSession] = useState<CashSession | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [lastReceipt, setLastReceipt] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
-  const [showCameraScanner, setShowCameraScanner] = useState<boolean>(false);
-
-  // Dedicated barcode scanner input state & ref
-  const [barcodeInput, setBarcodeInput] = useState<string>('');
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const manualSearchInputRef = useRef<HTMLInputElement>(null);
-
-  // Auto-focus dedicated barcode scanner input when POS screen is active
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      barcodeInputRef.current?.focus();
-    }, 60);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // --- KEYBOARD & BARCODE STATE ---
-  const [selectedCartIndex, setSelectedCartIndex] = useState<number>(-1);
-
-  // Active keyboard scope based on open modals
-  const isAnyModalOpen = showPayModal || showReceiptModal || showHeldSalesPanel || showCameraScanner;
-  useKeyboardScope('pos', !isAnyModalOpen);
-  useKeyboardScope('pay_modal', showPayModal);
-
-  // Refocus dedicated barcode scanner input when any modal/panel is closed
-  useEffect(() => {
-    if (!isAnyModalOpen) {
-      const timer = setTimeout(() => {
-        barcodeInputRef.current?.focus();
-      }, 60);
-      return () => clearTimeout(timer);
-    }
-  }, [isAnyModalOpen]);
-
-  // Keep barcode focus active on neutral clicks
-  const handleContainerClick = (e: React.MouseEvent) => {
-    if (isAnyModalOpen) return;
-    const target = e.target as HTMLElement;
-    if (
-      target.tagName === 'INPUT' ||
-      target.tagName === 'TEXTAREA' ||
-      target.tagName === 'SELECT' ||
-      target.isContentEditable ||
-      target.closest('button') ||
-      target.closest('.no-autofocus')
-    ) {
-      return;
-    }
-    barcodeInputRef.current?.focus();
-  };
-
-  useShortcut('Enter', (e) => {
-    if (showPayModal && !isProcessing) {
-      e.preventDefault();
-      handleFinalizeSale();
-    }
-  }, { scope: 'pay_modal' });
+  const [currentStore, setCurrentStore] = useState<any>(null);
 
   useEffect(() => {
-    loadData();
+    loadProducts();
     caisseService.getActiveSession().then(setActiveSession);
     const last = printerService.getLastReceipt();
     if (last) setLastReceipt(last);
+    db.select<any>("SELECT * FROM stores LIMIT 1")
+      .then(rows => { if (rows && rows.length > 0) setCurrentStore(rows[0]); })
+      .catch(() => {});
   }, []);
 
-
-  const loadData = async () => {
-    const prods = await productService.getProducts();
-    setProducts(prods);
-    const custs = await customerService.getCustomers();
-    setCustomers(custs);
+  const loadProducts = async () => {
+    const list = await productService.getProducts();
+    setProducts(list.filter(p => p.is_active === 1));
   };
 
-  // Filtrage des produits
+  // Catégories Pizzeria : Uniquement Pizzas et Boissons
+  const categories = [
+    { id: "ALL", label: "Tout le Menu", icon: "✨" },
+    { id: "cat-pizza", label: "Pizzas", icon: "🍕" },
+    { id: "cat-drink", label: "Boissons", icon: "🥤" }
+  ];
+
+  // Filtrage du menu : Uniquement Pizzas et Boissons
   const filteredProducts = products.filter(p => {
-    const matchesCategory = selectedCategory === 'ALL' || p.category_id === selectedCategory;
-    if (!matchesCategory) return false;
-    if (!search.trim()) return true;
+    const isPizzaOrDrink = !p.category_id || p.category_id === "cat-pizza" || p.category_id === "cat-drink";
+    if (!isPizzaOrDrink) return false;
+
+    const matchesCat = selectedCategory === "ALL" || p.category_id === selectedCategory;
     const q = search.toLowerCase().trim();
-    return (
-      p.barcode.toLowerCase() === q ||
-      p.sku.toLowerCase() === q ||
+    const matchesSearch =
+      !q ||
       p.name_fr.toLowerCase().includes(q) ||
-      p.name_ar.toLowerCase().includes(q) ||
-      (p.variant && p.variant.toLowerCase().includes(q))
-    );
+      (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
+      (p.variant && p.variant.toLowerCase().includes(q));
+    return matchesCat && matchesSearch;
   });
 
-  const addToCart = (product: Product) => {
-    if (product.current_stock <= 0) {
-      showToast(
-        language === 'ar'
-          ? `نفاد الكمية لـ ${product.name_ar || product.name_fr}`
-          : `Rupture de stock pour ${product.name_fr}`,
-        'error'
-      );
-      return;
-    }
-
+  // Ajout 1-clic au panier
+  const handleAddToCart = (product: Product) => {
     setCart(prev => {
-      const existing = prev.find(i => i.productId === product.id);
-      if (existing) {
-        if (existing.quantity >= product.current_stock) {
-          showToast(
-            language === 'ar'
-              ? `تم الوصول إلى أقصى مخزون (${product.current_stock} وحدة)`
-              : `Stock maximum atteint (${product.current_stock} unités)`,
-            'warning'
-          );
-          return prev;
-        }
-        return prev.map(i =>
-          i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
-        );
+      const idx = prev.findIndex(item => item.productId === product.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx].quantity += 1;
+        return next;
       }
-      const effectivePrice = product.discount_price ?? product.selling_price_ttc ?? product.selling_price ?? 0;
       return [
         ...prev,
         {
           productId: product.id,
-          name: language === 'ar' ? product.name_ar : product.name_fr,
-          sku: product.sku,
+          name: product.name_fr || (product as any).name || "Article",
+          name_ar: product.name_ar,
+          variant: product.variant || "",
+          category_id: product.category_id || undefined,
           quantity: 1,
-          unitPrice: effectivePrice,
-          discountAmount: 0,
-          maxStock: product.current_stock
+          unitPrice: product.selling_price_ttc,
+          discountAmount: 0
         }
       ];
     });
   };
 
-  // Continuous Barcode Scanning Handler
-  const processBarcode = async (rawCode: string) => {
-    const code = rawCode.trim();
-    if (!code) return;
-
-    // Clear and reset the dedicated scanner input immediately so the next scan is ready
-    setBarcodeInput('');
-    if (barcodeInputRef.current) {
-      barcodeInputRef.current.value = '';
-    }
-
-    // 1. Search in in-memory products state (instant)
-    const codeLower = code.toLowerCase();
-    let matched = products.find(
-      p =>
-        (p.barcode && p.barcode.toLowerCase() === codeLower) ||
-        (p.sku && p.sku.toLowerCase() === codeLower) ||
-        (p.additional_barcodes && p.additional_barcodes.some(b => b.toLowerCase() === codeLower))
-    );
-
-    // 2. If not found in state, search authoritative SQLite database via productService
-    if (!matched) {
-      try {
-        const dbMatched = await productService.findByBarcode(code);
-        if (dbMatched) {
-          matched = dbMatched;
-          setProducts(prev => prev.some(p => p.id === dbMatched.id) ? prev : [...prev, dbMatched]);
-        }
-      } catch (err) {
-        console.warn('Error querying product by barcode:', err);
-      }
-    }
-
-    // 3. If found, add to cart (or increment quantity if already in cart)
-    if (matched) {
-      addToCart(matched);
-      showToast(
-        language === 'ar'
-          ? `تمت إضافة ${matched.name_ar || matched.name_fr}`
-          : `${matched.name_fr} ajouté au panier`,
-        'success'
-      );
-    } else {
-      // 4. Non-blocking warning notification
-      showToast(
-        language === 'ar'
-          ? `المنتج غير موجود: ${code}`
-          : `Article introuvable : ${code}`,
-        'warning'
-      );
-    }
-
-    // Keep dedicated scanner input ready and focused
-    requestAnimationFrame(() => {
-      if (!isAnyModalOpen) {
-        barcodeInputRef.current?.focus();
-      }
-    });
-  };
-
-  const updateQuantity = (productId: string, delta: number) => {
-    const item = cart.find(i => i.productId === productId);
-    if (item && item.quantity + delta > item.maxStock) {
-      showToast(`Stock maximum disponible : ${item.maxStock}`, 'warning');
-      return;
-    }
-
-    setCart(prev =>
-      prev
-        .map(i => {
-          if (i.productId === productId) {
-            const newQty = i.quantity + delta;
-            if (newQty <= 0) return null;
-            return { ...i, quantity: newQty };
-          }
-          return i;
-        })
-        .filter(Boolean) as CartItem[]
-    );
-  };
-
-  const updateQuantityExact = (productId: string, newQty: number) => {
-    if (newQty <= 0) {
-      removeItem(productId);
-      return;
-    }
-
-    const item = cart.find(i => i.productId === productId);
-    if (item && newQty > item.maxStock) {
-      showToast(`Stock maximum disponible : ${item.maxStock}`, 'warning');
-    }
-
-    setCart(prev =>
-      prev.map(i => {
-        if (i.productId === productId) {
-          if (newQty > i.maxStock) {
-            return { ...i, quantity: i.maxStock };
-          }
-          return { ...i, quantity: newQty };
-        }
-        return i;
-      })
-    );
-  };
-
-  const removeItem = (productId: string) => {
+  // Modification quantité
+  const handleUpdateQuantity = (productId: string, delta: number) => {
     setCart(prev => {
-      const newCart = prev.filter(i => i.productId !== productId);
-      // Adjust selection if we removed the selected item
-      if (selectedCartIndex >= newCart.length) {
-        setSelectedCartIndex(newCart.length - 1);
-      }
-      return newCart;
+      return prev
+        .map(item => {
+          if (item.productId === productId) {
+            const nextQty = item.quantity + delta;
+            return nextQty > 0 ? { ...item, quantity: nextQty } : null;
+          }
+          return item;
+        })
+        .filter((item): item is CartItem => item !== null);
     });
   };
 
-  // --- KEYBOARD & SCANNER HOOKS ---
+  // Suppression d article
+  const handleRemoveItem = (productId: string) => {
+    setCart(prev => prev.filter(item => item.productId !== productId));
+  };
 
-  // Dedicated permanent barcode scanner hook (always active when POS screen is open)
-  useScanner((barcode) => {
-    if (isAnyModalOpen) return;
-    processBarcode(barcode);
-  }, !isAnyModalOpen);
-
-  // Cart Navigation Scope (Active when POS is active)
-  useShortcut('ArrowUp', (e) => {
-    if (!isAnyModalOpen && cart.length > 0) {
-      e.preventDefault();
-      setSelectedCartIndex(prev => Math.max(0, prev - 1));
+  // Annulation commande avec confirmation
+  const handleCancelOrder = () => {
+    if (cart.length === 0) return;
+    if (window.confirm("Voulez-vous vraiment annuler la commande en cours ?")) {
+      setCart([]);
+      showToast("Commande annulée", "info");
     }
-  }, { scope: 'pos' });
+  };
 
-  useShortcut('ArrowDown', (e) => {
-    if (!isAnyModalOpen && cart.length > 0) {
-      e.preventDefault();
-      setSelectedCartIndex(prev => Math.min(cart.length - 1, prev + 1));
-    }
-  }, { scope: 'pos' });
+  // Calculs totaux
+  const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const totalAmount = subtotal;
 
-  useShortcut('q', (e) => {
-    if (!isAnyModalOpen) {
-      e.preventDefault();
-      barcodeInputRef.current?.focus();
-    }
-  }, { scope: 'pos' });
+  // Calcul de la monnaie
+  const tenderedNumeric = parseFloat(tenderedInput) || 0;
+  const changeGiven = paymentMethod === "CASH" ? Math.max(0, tenderedNumeric - totalAmount) : 0;
 
-  useShortcut('Tab', (e) => {
-    if (!isAnyModalOpen) {
-      e.preventDefault();
-      handleOpenPay();
-    }
-  }, { scope: 'pos' });
-
-  useShortcut('+', (e) => {
-    if (!isAnyModalOpen && cart.length > 0 && selectedCartIndex >= 0) {
-      if (!(document.activeElement instanceof HTMLInputElement)) {
-        e.preventDefault();
-        updateQuantity(cart[selectedCartIndex].productId, 1);
-      }
-    }
-  }, { scope: 'pos' });
-
-  useShortcut('-', (e) => {
-    if (!isAnyModalOpen && cart.length > 0 && selectedCartIndex >= 0) {
-      if (!(document.activeElement instanceof HTMLInputElement)) {
-        e.preventDefault();
-        updateQuantity(cart[selectedCartIndex].productId, -1);
-      }
-    }
-  }, { scope: 'pos' });
-
-  // Keep selection valid when cart changes
-  useEffect(() => {
-    if (cart.length > 0 && selectedCartIndex === -1) {
-      setSelectedCartIndex(cart.length - 1); // Auto-select latest added item
-    } else if (cart.length === 0) {
-      setSelectedCartIndex(-1);
-    }
-  }, [cart.length]);
-
-  // Extract unique categories from loaded products dynamically
-  const categoryPairs = Array.from(
-    new Map(
-      products
-        .filter(p => p.category_id && p.category_name)
-        .map(p => [p.category_id, p.category_name] as [string, string])
-    )
-  );
-
-  const categoriesList = [
-    { id: 'ALL', name: language === 'ar' ? 'جميع المنتجات' : 'Tous les articles' },
-    ...categoryPairs.map(([id, name]) => ({ id, name }))
-  ];
-
-  // Calculs du panier
-  const subtotal = cart.reduce(
-    (sum, i) => CurrencyUtil.add(sum, CurrencyUtil.multiply(i.unitPrice - i.discountAmount, i.quantity)),
-    0
-  );
-  const totalTTC = subtotal;
-
-  // Raccourcis coupures dinars algériens
-  const tenderedAmount = parseFloat(tenderedInput) || totalTTC;
-  const changeGiven = Math.max(0, CurrencyUtil.subtract(tenderedAmount, totalTTC));
-
-  const handleOpenPay = () => {
+  // Démarrer encaissement
+  const handleStartCheckout = () => {
     if (cart.length === 0) {
-      showToast(t('pos.cartEmpty'), 'warning');
+      showToast("Veuillez sélectionner au moins un article", "warning");
       return;
     }
-    setTenderedInput(totalTTC.toString());
+    setTenderedInput(totalAmount.toString());
+    setPaymentMethod("CASH");
     setShowPayModal(true);
   };
 
-  const handleHoldCart = () => {
-    if (cart.length === 0) return;
-    const newHeld = {
-      id: Math.random().toString(36).substring(7),
-      items: [...cart],
-      customerId: selectedCustomerId,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setHeldCarts([...heldCarts, newHeld]);
-    setCart([]);
-    setSelectedCustomerId('');
-    showToast('Panier mis en attente', 'info');
-  };
-
-  const handleResumeCart = (heldId: string) => {
-    const held = heldCarts.find(h => h.id === heldId);
-    if (!held) return;
-    
-    if (cart.length > 0) {
-      // Put current on hold automatically to avoid losing it
-      const newHeld = {
-        id: Math.random().toString(36).substring(7),
-        items: [...cart],
-        customerId: selectedCustomerId,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setHeldCarts(prev => [...prev.filter(h => h.id !== heldId), newHeld]);
-    } else {
-      setHeldCarts(prev => prev.filter(h => h.id !== heldId));
-    }
-
-    setCart(held.items);
-    setSelectedCustomerId(held.customerId);
-    setShowHeldSalesPanel(false);
-    showToast('Panier repris', 'info');
-  };
-
-  const handleRemoveHeldCart = (heldId: string) => {
-    setHeldCarts(prev => prev.filter(h => h.id !== heldId));
-    if (heldCarts.length <= 1) setShowHeldSalesPanel(false);
-    showToast('Panier supprimé', 'info');
-  };
-
-  // Finalisation de l'encaissement
+  // Finaliser la vente
   const handleFinalizeSale = async () => {
-    if (isProcessing) return;
-    if (!user) {
-      showToast('Aucun caissier actif sélectionné', 'error');
-      return;
-    }
+    if (cart.length === 0 || isProcessing) return;
 
-    if (paymentMethod === 'CASH' && tenderedAmount < totalTTC) {
-      showToast(`Montant insuffisant (${tenderedAmount} DA reçu, requis: ${totalTTC} DA)`, 'error');
-      return;
-    }
-
-    if ((paymentMethod === 'CIB' || paymentMethod === 'EDAHABIA') && !tpeReference.trim()) {
-      showToast('Veuillez saisir le N° d\'autorisation / transaction TPE.', 'warning');
-      return;
-    }
-
-    if (paymentMethod === 'CREDIT' && !selectedCustomerId) {
-      showToast('Un client doit être sélectionné pour une vente à crédit.', 'error');
+    if (paymentMethod === "CASH" && tenderedNumeric < totalAmount) {
+      showToast("Le montant reçu est inférieur au total", "warning");
       return;
     }
 
     setIsProcessing(true);
     try {
-      const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+      const cashierName = user?.name || "Caissier Pizzeria";
+      const cashierId = user?.id || "usr-cashier";
 
-      const sale = await checkoutService.processCheckout({
-        cashierId: user.id,
-        cashierName: user.name,
+      const sale: Sale = await checkoutService.processCheckout({
+        cashierId,
+        cashierName,
         sessionId: activeSession?.id,
-        customerId: selectedCustomerId || undefined,
-        customerName: selectedCustomer?.name,
         items: cart,
         payments: [
           {
             method: paymentMethod,
-            amount: totalTTC,
-            tenderedAmount: paymentMethod === 'CASH' ? tenderedAmount : totalTTC,
-            changeGiven: paymentMethod === 'CASH' ? changeGiven : 0,
-            tpeAuthReference: tpeReference.trim() || undefined
+            amount: totalAmount,
+            tenderedAmount: paymentMethod === "CASH" ? tenderedNumeric : totalAmount,
+            changeGiven: changeGiven
           }
-        ]
+        ],
+        notes: `${orderType === "SUR_PLACE" ? "Sur Place" : "A Emporter"} - ${tableNumber}`
       });
 
-      // Impression automatique du ticket
-      const receiptData = {
-        storeNameFr: 'Aquadro Nutrition Algérie',
-        storeNameAr: 'أبكس كور نوتريشن الجزائر',
-        storeAddress: 'Dely Ibrahim, Alger',
-        storePhone: '0550 12 34 56',
-        rcNumber: '16/00-0987654B19',
-        nifNumber: '001916012345678',
-        fiscalRegime: 'IFU' as const,
+      // Construction ticket de caisse Pizzeria
+      const receiptData: any = {
+        saleId: sale.id,
         receiptNumber: sale.receipt_number,
-        dateTime: new Date().toLocaleString(),
-        cashierName: user.name,
-        customerName: selectedCustomer?.name,
+        dateTime: new Date().toLocaleString("fr-FR"),
+        date: new Date().toLocaleDateString("fr-FR"),
+        time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+        cashierName,
+        orderType: orderType === "SUR_PLACE" ? "Sur Place" : "À Emporter",
+        tableNumber: orderType === "SUR_PLACE" ? tableNumber : undefined,
+        storeName: currentStore?.name_fr || currentStore?.name || "Pizzeria",
+        storeAddress: currentStore?.address || "",
+        storePhone: currentStore?.phone || "",
         items: cart.map(i => ({
           name: i.name,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
-          total: CurrencyUtil.multiply(i.unitPrice, i.quantity)
+          total: i.quantity * i.unitPrice
         })),
-        subtotalHT: totalTTC,
+        totalTTC: totalAmount,
+        paymentMethod: paymentMethod === "CASH" ? "Espèces" : "Carte Bancaire",
+        tenderedAmount: paymentMethod === "CASH" ? tenderedNumeric : totalAmount,
+        changeGiven: changeGiven,
         taxAmount: 0,
-        taxRate: 0,
-        totalTTC: totalTTC,
-        paymentMethod,
-        tenderedAmount: paymentMethod === 'CASH' ? tenderedAmount : totalTTC,
-        changeGiven: paymentMethod === 'CASH' ? changeGiven : 0,
-        paperWidth: '80mm' as const
+        currency: "DZD"
       };
 
-      const autoPrint = printerService.getConfig().autoPrint !== false;
-      await printerService.printReceipt(receiptData, autoPrint);
       setLastReceipt(receiptData);
-      setShowReceiptModal(true);
-
-      showToast(`Vente ${sale.receipt_number} validée avec succès !`, 'success');
-      setCart([]);
       setShowPayModal(false);
-      setTpeReference('');
-      setSelectedCustomerId('');
-      await loadData();
+      setCart([]);
+      showToast("Commande encaissée avec succès !", "success");
+
+      // Impression automatique ou ouverture aperçu
+      try {
+        await printerService.printReceipt(receiptData);
+      } catch {
+        setShowReceiptModal(true);
+      }
     } catch (err: any) {
-      showToast(`Erreur d'encaissement : ${err.message}`, 'error');
+      showToast(`Erreur d encaissement : ${err?.message || err}`, "error");
     } finally {
       setIsProcessing(false);
     }
   };
 
+  // Helper icône par catégorie
+  const getProductEmoji = (p: Product) => {
+    if (p.category_id === "cat-drink") return "🥤";
+    if (p.category_id === "cat-sides") return "🍟";
+    if (p.category_id === "cat-dessert") return "🍰";
+    return "🍕";
+  };
+
   return (
-    <div onClick={handleContainerClick} className="flex-1 flex overflow-hidden bg-gray-100 text-gray-800 text-xs select-none">
+    <div className="flex-1 flex overflow-hidden select-none bg-[#FFF8EF] font-sans">
       {/* ========================================================================= */}
-      {/* COLONNE GAUCHE : RECHERCHE + CATÉGORIES + LISTE DES PRODUITS              */}
+      {/* COLONNE GAUCHE (70%) : MENU VISUEL & CARTES DES PIZZAS                     */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col border-r border-gray-200 bg-white overflow-hidden">
-        {/* Barre de Recherche Rapide & Scanner */}
-        <div className="p-2 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center gap-2">
-          {/* Entrée Dédiée Scanner Code-Barres USB (Permanente & Auto-focusée) */}
-          <div className="flex-1 min-w-[220px] relative flex items-center">
-            <Barcode className="w-4 h-4 text-emerald-600 absolute left-2.5 z-10 pointer-events-none" />
-            <input
-              ref={barcodeInputRef}
-              id="pos-barcode-input"
-              data-barcode-scanner="true"
-              type="text"
-              placeholder={
-                language === 'ar'
-                  ? 'السكانر جاهز (امسح الباركود مباشرة)...'
-                  : 'Scanner USB prêt (scannez directement)...'
-              }
-              value={barcodeInput}
-              onChange={e => setBarcodeInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (barcodeInput.trim()) {
-                    processBarcode(barcodeInput.trim());
-                  }
-                }
-              }}
-              className="w-full bg-emerald-50/50 border border-emerald-300 rounded pl-8 pr-24 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 font-medium placeholder-gray-500 shadow-sm"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck="false"
-            />
-            {/* Indicateur de disponibilité permanente du scanner USB */}
-            <div className="absolute right-2 flex items-center gap-1.5 pointer-events-none px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="hidden sm:inline">{language === 'ar' ? 'السكانر نشط' : 'Scanner actif'}</span>
-            </div>
+      <div className="flex-1 flex flex-col overflow-hidden border-r border-[#E9DCCB]">
+        {/* Barre Supérieure du Menu : Recherche & Catégories */}
+        <div className="bg-white px-5 py-3 border-b border-[#E9DCCB] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+          {/* Onglets des Catégories Pizzeria */}
+          <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+            {categories.map(cat => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                    isSelected
+                      ? "bg-[#E87524] text-white shadow-sm shadow-orange-500/25 ring-2 ring-orange-300"
+                      : "bg-[#FFF8EF] text-[#292522] hover:bg-[#FFF3EB] hover:text-[#E87524] border border-[#E9DCCB]"
+                  }`}
+                >
+                  <span className="text-sm">{cat.icon}</span>
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Recherche Manuelle Catalogue (Par nom, SKU, saveur) */}
-          <div className="flex-1 min-w-[180px] relative flex items-center">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 z-10 pointer-events-none" />
+          {/* Recherche rapide */}
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
             <input
-              ref={manualSearchInputRef}
-              id="pos-manual-search-input"
               type="text"
-              placeholder={
-                language === 'ar'
-                  ? 'بحث يدوي بالاسم أو المرجع...'
-                  : 'Recherche manuelle par nom/réf...'
-              }
+              placeholder="Rechercher pizza, boisson..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Escape') {
-                  setSearch('');
-                  barcodeInputRef.current?.focus();
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (filteredProducts.length === 1) {
-                    addToCart(filteredProducts[0]);
-                    setSearch('');
-                    barcodeInputRef.current?.focus();
-                  }
-                }
-              }}
-              className="w-full bg-white border border-gray-300 rounded pl-8 pr-7 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-normal placeholder-gray-400 shadow-sm"
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck="false"
+              className="w-full pl-9 pr-8 py-1.5 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524] focus:border-transparent transition-all"
             />
             {search && (
               <button
-                type="button"
-                onClick={() => {
-                  setSearch('');
-                  barcodeInputRef.current?.focus();
-                }}
-                className="absolute right-2 text-gray-400 hover:text-gray-600 text-xs px-1"
-                title="Effacer la recherche"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600"
               >
-                ✕
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowCameraScanner(true)}
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold text-xs transition-colors shadow-sm"
-            title="Ouvrir la caméra comme scanner d'appoint"
-          >
-            <Camera className="w-3.5 h-3.5 text-blue-600" />
-            <span>{language === 'ar' ? 'كاميرا' : 'Caméra'}</span>
-          </button>
-          {heldCarts.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowHeldSalesPanel(true)}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 font-semibold"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>En attente ({heldCarts.length})</span>
-            </button>
-          )}
-          {lastReceipt && (
-            <button
-              type="button"
-              onClick={() => setShowReceiptModal(true)}
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-semibold text-xs transition-colors shadow-sm"
-              title="Afficher et réimprimer le dernier ticket de caisse"
-            >
-              <Printer className="w-3.5 h-3.5 text-blue-600" />
-              <span>{language === 'ar' ? 'آخر تذكرة' : 'Dernier Reçu'}</span>
-            </button>
-          )}
         </div>
 
-        {/* Onglets Catégories Produits (Filtre rapide) */}
-        <div className="px-2 py-1.5 border-b border-gray-200 bg-white flex items-center space-x-1 overflow-x-auto text-[11px]">
-          {categoriesList.map((cat, index) => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-2.5 py-1 rounded border font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === cat.id
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Grille / Liste Dense des Articles */}
-        <div className="flex-1 overflow-y-auto p-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-          {filteredProducts.map(p => {
-            const isOutOfStock = p.current_stock <= 0;
-            return (
-              <button
-                key={p.id}
-                onClick={() => addToCart(p)}
-                disabled={isOutOfStock}
-                className={`p-2 rounded border text-left flex flex-col justify-between transition-all ${
-                  isOutOfStock
-                    ? 'bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed'
-                    : 'bg-white hover:border-blue-500 hover:shadow-sm border-gray-200'
-                }`}
-              >
-                <div>
-                  <div className="flex items-start justify-between">
-                    <span className="font-semibold text-gray-900 leading-tight line-clamp-2">
-                      {language === 'ar' ? p.name_ar : p.name_fr}
-                    </span>
-                  </div>
-                  {p.variant && (
-                    <span className="text-[10px] text-gray-500 block mt-0.5">{p.variant}</span>
-                  )}
-                  <span className="text-[10px] text-gray-400 font-mono block">{p.barcode}</span>
-                </div>
-
-                <div className="mt-2 pt-1 border-t border-gray-100 flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs">
-                    {CurrencyUtil.formatDZD(p.selling_price_ttc)}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono px-1 rounded ${
-                      p.current_stock <= p.min_stock_alert
-                        ? 'bg-amber-50 text-amber-700 font-bold border border-amber-200'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    Qté: {p.current_stock}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* COLONNE DROITE : PANIER DE VENTE & TOTAUX                                  */}
-      {/* ========================================================================= */}
-      <div className="w-80 md:w-96 bg-gray-50 flex flex-col justify-between overflow-hidden">
-        {/* Entête Panier & Client */}
-        <div className="p-2 border-b border-gray-200 bg-white">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="font-bold text-gray-900 uppercase tracking-wider text-[11px]">
-              {t('pos.cartTitle')} ({cart.length})
-            </span>
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={handleHoldCart}
-                disabled={cart.length === 0}
-                className="px-2 py-0.5 text-[11px] font-medium rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-50"
-              >
-                {t('pos.holdSale')}
-              </button>
-              <button
-                onClick={() => setCart([])}
-                disabled={cart.length === 0}
-                className="px-2 py-0.5 text-[11px] font-medium rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50"
-              >
-                {t('pos.clearCart')}
-              </button>
-            </div>
-          </div>
-
-          {/* Client associé */}
-          <div className="flex items-center space-x-1">
-            <Users className="w-3.5 h-3.5 text-gray-400" />
-            <select
-              value={selectedCustomerId}
-              onChange={e => setSelectedCustomerId(e.target.value)}
-              className="flex-1 bg-gray-50 border border-gray-200 rounded px-2 py-1 text-xs text-gray-800 focus:outline-none"
-            >
-              <option value="">Client comptoir de passage</option>
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.phone ? `(${c.phone})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Lignes du Panier */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-          {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-4 text-gray-400">
-              <Barcode className="w-8 h-8 text-gray-300 mb-2" />
-              <p className="text-xs">{t('pos.cartEmpty')}</p>
+        {/* Grille des Cartes Produits Pizzeria */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          {filteredProducts.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 text-stone-400">
+              <UtensilsCrossed className="w-12 h-12 text-[#E87524]/40 mb-3" />
+              <p className="font-bold text-[#292522] text-sm">
+                {products.length === 0 ? "Votre menu est vide pour le moment" : "Aucun article trouvé"}
+              </p>
+              <p className="text-xs text-stone-500 mt-1 max-w-sm">
+                {products.length === 0
+                  ? "Le propriétaire peut ajouter ses pizzas et boissons depuis la section Menu & Produits."
+                  : "Essayez un autre mot-clé ou catégorie"}
+              </p>
             </div>
           ) : (
-            cart.map((item, index) => {
-              const isSelected = index === selectedCartIndex;
-              return (
-                <div
-                  key={item.productId}
-                  className={`p-2 rounded border transition-colors flex items-center justify-between ${
-                    isSelected ? 'bg-blue-50 border-blue-400 shadow-sm' : 'border-gray-200 bg-white'
-                  }`}
-                  onClick={() => setSelectedCartIndex(index)}
-                >
-                  <div className="flex-1 min-w-0 pr-2">
-                    <div className="font-semibold text-gray-900 truncate">{item.name}</div>
-                    <div className="text-[11px] text-gray-500 font-mono">
-                      {CurrencyUtil.formatDZD(item.unitPrice)}
-                    </div>
-                  </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+              {filteredProducts.map(product => {
+                const cartQty = cart.find(item => item.productId === product.id)?.quantity || 0;
 
-                  <div className="flex items-center space-x-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateQuantity(item.productId, -1);
-                      }}
-                      className="w-6 h-6 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-700 font-bold"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    
-                    <input
-                      type="number"
-                      min={1}
-                      max={item.maxStock}
-                      value={item.quantity}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) {
-                          updateQuantityExact(item.productId, val);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          barcodeInputRef.current?.focus();
-                        }
-                      }}
-                      className="w-12 text-center font-bold text-gray-900 font-mono border border-gray-300 rounded py-0.5 text-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
-                      title="Modifier la quantité directement"
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateQuantity(item.productId, 1);
-                      }}
-                      className="w-6 h-6 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-700 font-bold"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+                return (
+                  <div
+                    key={product.id}
+                    onClick={() => handleAddToCart(product)}
+                    className={`bg-white rounded-2xl border p-3.5 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-xs hover:shadow-md active:scale-[0.98] ${
+                      cartQty > 0
+                        ? "border-[#E87524] ring-2 ring-[#E87524]/20 bg-[#FFFDFB]"
+                        : "border-[#E9DCCB] hover:border-[#FFC928] hover:bg-[#FFFCF7]"
+                    }`}
+                  >
+                    {/* Badge Quantité si déjà au panier */}
+                    {cartQty > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-[#E87524] text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-md shadow-orange-500/30 ring-2 ring-white animate-in zoom-in-75 duration-100">
+                        {cartQty}
+                      </span>
+                    )}
 
-                    <div className="w-20 text-right font-bold text-gray-900 font-mono text-xs pl-2">
-                      {CurrencyUtil.formatDZD(
-                        CurrencyUtil.multiply(item.unitPrice - item.discountAmount, item.quantity)
+                    <div>
+                      {/* Icône du produit & Tag Prix */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-10 h-10 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-xl shadow-2xs group-hover:scale-105 transition-transform">
+                          {getProductEmoji(product)}
+                        </div>
+                        <span className="bg-[#FFF3EB] text-[#E87524] font-black text-xs px-2 py-1 rounded-lg border border-[#E87524]/20">
+                          {CurrencyUtil.formatDZD(product.selling_price_ttc)}
+                        </span>
+                      </div>
+
+                      {/* Titre & Ingrédients */}
+                      <h3 className="font-bold text-[#292522] text-xs leading-tight line-clamp-1 group-hover:text-[#E87524] transition-colors">
+                        {product.name_fr}
+                      </h3>
+                      {product.name_ar && (
+                        <p className="text-[11px] text-stone-500 font-arabic line-clamp-1 mt-0.5" dir="rtl">
+                          {product.name_ar}
+                        </p>
+                      )}
+                      {product.variant && (
+                        <p className="text-[10px] text-stone-600 line-clamp-2 mt-1 leading-snug">
+                          {product.variant}
+                        </p>
                       )}
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeItem(item.productId);
-                      }}
-                      className="p-1 hover:text-red-600 text-gray-400 ml-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Bouton d ajout rapide visuel */}
+                    <div className="mt-3 pt-2 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-stone-700 font-semibold">
+                      <span>Ajouter</span>
+                      <div className="w-5 h-5 rounded-full bg-[#E87524]/10 text-[#E87524] flex items-center justify-center group-hover:bg-[#E87524] group-hover:text-white transition-colors">
+                        <Plus className="w-3 h-3" />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
-        </div>
-
-        {/* Panneau des Totaux & Bouton Paiement */}
-        <div className="p-3 border-t border-gray-200 bg-white space-y-2">
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between text-gray-600">
-              <span>{t('pos.subtotal')}</span>
-              <span className="font-mono">{CurrencyUtil.formatDZD(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-[11px] text-gray-500 italic">
-              <span>{t('pos.ifuExempt')}</span>
-              <span>0 DA</span>
-            </div>
-            <div className="flex justify-between items-baseline pt-1 border-t border-gray-200">
-              <span className="font-bold text-sm text-gray-900">{t('pos.totalTTC')}</span>
-              <span className="font-black text-lg text-blue-700 font-mono">
-                {CurrencyUtil.formatDZD(totalTTC)}
-              </span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleOpenPay}
-            disabled={cart.length === 0}
-            className="w-full py-3 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-sm tracking-wide shadow-sm flex items-center justify-center space-x-2 transition-colors"
-          >
-            <span>{t('pos.payButton')}</span>
-          </button>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL DE RÈGLEMENT RAPIDE (Espèces, CIB, Edahabia, BaridiMob)              */}
+      {/* COLONNE DROITE (30%) : COMMANDE EN COURS & ENCAISSEMENT PROMINENT         */}
+      {/* ========================================================================= */}
+      <div className="w-84 lg:w-96 bg-white flex flex-col justify-between overflow-hidden shadow-sm shrink-0 border-l border-[#E9DCCB]">
+        {/* En-tête du Ticket de Caisse */}
+        <div className="p-3.5 border-b border-[#E9DCCB] bg-[#FFF8EF]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-base">🧾</span>
+              <h2 className="font-extrabold text-sm text-[#292522]">Commande en cours</h2>
+            </div>
+            <span className="text-xs font-bold text-[#E87524] bg-white px-2 py-0.5 rounded-full border border-[#E9DCCB]">
+              {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {/* Toggle Sur Place / À Emporter */}
+          <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border border-[#E9DCCB]">
+            <button
+              onClick={() => setOrderType("SUR_PLACE")}
+              className={`py-1 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                orderType === "SUR_PLACE"
+                  ? "bg-[#E87524] text-white shadow-xs"
+                  : "text-stone-600 hover:text-[#292522]"
+              }`}
+            >
+              <span>🍽️</span>
+              <span>Sur Place</span>
+            </button>
+            <button
+              onClick={() => setOrderType("A_EMPORTER")}
+              className={`py-1 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                orderType === "A_EMPORTER"
+                  ? "bg-[#E87524] text-white shadow-xs"
+                  : "text-stone-600 hover:text-[#292522]"
+              }`}
+            >
+              <span>🥡</span>
+              <span>À Emporter</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Liste des Articles dans la Commande */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {cart.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 select-none">
+              <div className="w-14 h-14 rounded-full bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-2xl mb-2">
+                🍕
+              </div>
+              <p className="font-bold text-[#292522] text-xs">Commande vide</p>
+              <p className="text-[11px] text-stone-500 mt-1 max-w-[180px]">
+                Touchez les pizzas et boissons à gauche pour créer la commande
+              </p>
+            </div>
+          ) : (
+            cart.map(item => (
+              <div
+                key={item.productId}
+                className="bg-[#FFFDFB] rounded-xl border border-[#E9DCCB] p-2.5 flex items-center justify-between gap-2 shadow-2xs hover:border-[#FFC928] transition-colors"
+              >
+                {/* Infos article */}
+                <div className="flex-1 min-w-0 pr-1">
+                  <h4 className="font-bold text-xs text-[#292522] truncate">{item.name}</h4>
+                  <p className="text-[11px] text-[#E87524] font-semibold">
+                    {CurrencyUtil.formatDZD(item.unitPrice)}
+                  </p>
+                </div>
+
+                {/* Contrôles Quantité Simple (-) [qty] (+) */}
+                <div className="flex items-center gap-1 bg-white border border-[#E9DCCB] rounded-lg p-0.5 shadow-2xs">
+                  <button
+                    onClick={() => handleUpdateQuantity(item.productId, -1)}
+                    className="w-6 h-6 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 active:scale-95 transition-colors"
+                    title="Diminuer"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <span className="w-6 text-center font-bold text-xs text-[#292522]">
+                    {item.quantity}
+                  </span>
+                  <button
+                    onClick={() => handleUpdateQuantity(item.productId, 1)}
+                    className="w-6 h-6 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 active:scale-95 transition-colors"
+                    title="Augmenter"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Total Ligne & Bouton Poubelle */}
+                <div className="text-right pl-1 flex items-center gap-2">
+                  <span className="font-black text-xs text-[#292522]">
+                    {CurrencyUtil.formatDZD(item.quantity * item.unitPrice)}
+                  </span>
+                  <button
+                    onClick={() => handleRemoveItem(item.productId)}
+                    className="text-stone-400 hover:text-[#B9362B] p-1 rounded hover:bg-red-50 transition-colors"
+                    title="Supprimer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Pied de Commande : Totaux & Bouton Encaisser Prominent */}
+        <div className="p-3.5 border-t border-[#E9DCCB] bg-[#FFF8EF] space-y-3">
+          {/* Ligne Sous-Total */}
+          <div className="flex items-center justify-between text-xs text-stone-600 font-medium">
+            <span>Sous-total HT</span>
+            <span>{CurrencyUtil.formatDZD(subtotal)}</span>
+          </div>
+
+          {/* Ligne Grand Total */}
+          <div className="flex items-center justify-between pt-1 border-t border-[#E9DCCB]/60">
+            <span className="font-extrabold text-sm text-[#292522]">TOTAL À PAYER</span>
+            <span className="font-black text-2xl text-[#E87524] tracking-tight">
+              {CurrencyUtil.formatDZD(totalAmount)}
+            </span>
+          </div>
+
+          {/* Boutons d Actions */}
+          <div className="grid grid-cols-4 gap-2 pt-1">
+            {/* Bouton Annuler */}
+            <button
+              onClick={handleCancelOrder}
+              disabled={cart.length === 0}
+              className="col-span-1 py-3 bg-white hover:bg-red-50 text-stone-500 hover:text-[#B9362B] border border-[#E9DCCB] hover:border-red-200 rounded-xl font-bold text-xs flex flex-col items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Annuler la commande"
+            >
+              <Trash2 className="w-4 h-4 mb-0.5" />
+              <span className="text-[10px]">Annuler</span>
+            </button>
+
+            {/* Bouton Encaisser Prominent Orange */}
+            <button
+              onClick={handleStartCheckout}
+              disabled={cart.length === 0}
+              className="col-span-3 py-3.5 bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white rounded-xl font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-orange-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] cursor-pointer"
+            >
+              <CheckCircle className="w-5 h-5" />
+              <span>ENCAISSER ({CurrencyUtil.formatDZD(totalAmount)})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL DE RÈGLEMENT SIMPLE (ESPÈCES / CARTE CIB)                            */}
       {/* ========================================================================= */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in fade-in">
-            <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-              <span className="font-bold text-gray-900 text-sm">Règlement de la Vente</span>
-              <span className="font-mono font-bold text-blue-700 text-sm">
-                {CurrencyUtil.formatDZD(totalTTC)}
-              </span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 select-none">
+          <div className="bg-white border border-[#E9DCCB] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-[#292522]">
+            {/* Header Modal */}
+            <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-extrabold text-[#292522]">Règlement de la Commande</h3>
+                <p className="text-xs text-stone-500">
+                  {orderType === "SUR_PLACE" ? "Sur Place" : "À Emporter"} • {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPayModal(false)}
+                className="text-stone-400 hover:text-stone-600 p-1.5 rounded-lg hover:bg-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="p-4 space-y-3">
-              {/* Choix du mode de paiement */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { id: 'CASH', label: 'Espèces', icon: <Banknote className="w-4 h-4" /> },
-                  { id: 'CIB', label: 'TPE CIB', icon: <CreditCard className="w-4 h-4" /> },
-                  { id: 'EDAHABIA', label: 'Edahabia', icon: <CreditCard className="w-4 h-4" /> },
-                  { id: 'BARIDIMOB', label: 'BaridiMob', icon: <QrCode className="w-4 h-4" /> },
-                  { id: 'CREDIT', label: 'Crédit (À terme)', icon: <Users className="w-4 h-4" /> }
-                ].map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
-                    className={`p-2 rounded border text-center flex flex-col items-center justify-center space-y-1 ${
-                      paymentMethod === m.id
-                        ? 'bg-blue-50 border-blue-600 text-blue-700 font-bold'
-                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {m.icon}
-                    <span className="text-[10px]">{m.label}</span>
-                  </button>
-                ))}
+            {/* Corps Modal */}
+            <div className="p-5 space-y-4">
+              {/* Grand Total à Encaisser */}
+              <div className="bg-[#FFFDFB] p-4 rounded-xl border border-[#E9DCCB] text-center">
+                <span className="text-xs text-stone-500 font-semibold uppercase tracking-wider">Montant Total à Régler</span>
+                <p className="text-3xl font-black text-[#E87524] mt-1">
+                  {CurrencyUtil.formatDZD(totalAmount)}
+                </p>
               </div>
 
-              {/* Si Espèces : Coupures et Monnaie */}
-              {paymentMethod === 'CASH' && (
-                <div className="space-y-2 pt-2 border-t border-gray-100">
+              {/* Choix Mode de Paiement Simple */}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1.5 text-xs">Moyen de paiement</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod("CASH");
+                      setTenderedInput(totalAmount.toString());
+                    }}
+                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                      paymentMethod === "CASH"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] ring-2 ring-orange-200"
+                        : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
+                    }`}
+                  >
+                    <Banknote className="w-4 h-4 text-emerald-600" />
+                    <span>Espèces (Cash)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod("EDAHABIA");
+                      setTenderedInput(totalAmount.toString());
+                    }}
+                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                      paymentMethod !== "CASH"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] ring-2 ring-orange-200"
+                        : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4 text-blue-600" />
+                    <span>Carte CIB / Dahabia</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Détails Espèces : Montant Reçu & Monnaie */}
+              {paymentMethod === "CASH" && (
+                <div className="space-y-3 bg-[#FFF8EF]/50 p-3 rounded-xl border border-[#E9DCCB]">
                   <div>
-                    <label className="text-[11px] font-semibold text-gray-600 block mb-1">
-                      {t('pos.tenderedAmount')} (DZD)
-                    </label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="font-bold text-stone-700 text-xs">Montant Reçu (DZD)</label>
+                      {/* Presets rapides de billets */}
+                      <div className="flex gap-1 font-mono text-[10px]">
+                        {[totalAmount, 1000, 2000].map(val => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setTenderedInput(val.toString())}
+                            className="px-1.5 py-0.5 rounded bg-white border border-[#E9DCCB] hover:border-orange-300 text-stone-700"
+                          >
+                            {val} DA
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <input
                       type="number"
+                      min={totalAmount}
                       value={tenderedInput}
                       onChange={e => setTenderedInput(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-sm font-bold text-gray-900 focus:outline-none focus:border-blue-600"
+                      className="w-full text-lg font-black font-mono text-center py-2 px-3 bg-white border border-[#E9DCCB] rounded-lg text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                      autoFocus
                     />
                   </div>
 
-                  {/* Boutons Coupures Algériennes Rapides */}
-                  <div className="flex space-x-1">
-                    {[1000, 2000, 5000, 10000].map(val => (
-                      <button
-                        key={val}
-                        onClick={() => setTenderedInput(val.toString())}
-                        className="flex-1 py-1 rounded bg-gray-100 hover:bg-gray-200 border border-gray-200 text-[11px] font-mono font-semibold text-gray-800"
-                      >
-                        {val} DA
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="p-2 rounded bg-gray-50 border border-gray-200 flex justify-between items-center text-xs">
-                    <span className="text-gray-600">{t('pos.change')} :</span>
-                    <span className="font-mono font-bold text-emerald-700 text-sm">
+                  {/* Monnaie à Rendre */}
+                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-[#E9DCCB]">
+                    <span className="font-bold text-xs text-stone-600">Monnaie à rendre :</span>
+                    <span className="font-black text-lg text-emerald-600">
                       {CurrencyUtil.formatDZD(changeGiven)}
                     </span>
                   </div>
                 </div>
               )}
-
-              {/* Si TPE CIB / Edahabia : Saisie de la référence ticket TPE */}
-              {(paymentMethod === 'CIB' || paymentMethod === 'EDAHABIA') && (
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <div className="p-2 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-900 leading-snug">
-                    Veuillez composer le montant <strong>{CurrencyUtil.formatDZD(totalTTC)}</strong> sur le terminal TPE physique. Une fois le ticket émis par le terminal, saisissez le N° d'autorisation ci-dessous :
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-gray-600 block mb-1">
-                      {t('pos.enterTpeRef')} *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ex: TPE-987654 ou REF-00123"
-                      value={tpeReference}
-                      onChange={e => setTpeReference(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Si BaridiMob : Affichage QR */}
-              {paymentMethod === 'BARIDIMOB' && (
-                <div className="space-y-2 pt-2 border-t border-gray-100 text-center">
-                  <div className="w-24 h-24 mx-auto bg-gray-100 border border-gray-300 rounded flex items-center justify-center font-mono text-[10px] text-gray-500">
-                    [QR BaridiMob]
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Faites scanner le QR Code ci-dessus via l'application BaridiMob du client.
-                  </p>
-                </div>
-              )}
-
-              {/* Si Crédit : Vérifier qu'un client est sélectionné */}
-              {paymentMethod === 'CREDIT' && (
-                <div className="space-y-2 pt-2 border-t border-gray-100">
-                  <div className={`p-2 rounded border text-[11px] leading-snug ${selectedCustomerId ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
-                    {selectedCustomerId 
-                      ? `Le montant de ${CurrencyUtil.formatDZD(totalTTC)} sera ajouté à la dette du client. Un "Bon de Crédit" sera imprimé.`
-                      : `⚠ Vous devez sélectionner un client (en haut) pour enregistrer une vente à crédit !`}
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="p-3 border-t border-gray-200 bg-gray-50 flex space-x-2">
+            {/* Bouton de Confirmation Finale */}
+            <div className="p-4 border-t border-[#E9DCCB] bg-stone-50 flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => setShowPayModal(false)}
-                className="flex-1 py-2 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-medium text-xs"
+                className="px-4 py-2.5 rounded-xl border border-[#E9DCCB] bg-white font-bold text-xs text-stone-600 hover:bg-stone-100 transition-colors"
               >
-                {t('common.cancel')}
+                Retour
               </button>
+
               <button
                 type="button"
                 onClick={handleFinalizeSale}
-                disabled={isProcessing}
-                className="flex-1 py-2 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center justify-center space-x-1"
+                disabled={isProcessing || (paymentMethod === "CASH" && tenderedNumeric < totalAmount)}
+                className="flex-1 py-3 rounded-xl bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white font-black text-sm flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-40 cursor-pointer"
               >
                 <CheckCircle className="w-4 h-4" />
-                <span>{isProcessing ? 'Validation...' : t('pos.confirmPayment')}</span>
+                <span>{isProcessing ? "Enregistrement..." : "Valider & Imprimer Ticket"}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL APERÇU ET IMPRESSION DU TICKET DE CAISSE                            */}
-      {/* ========================================================================= */}
-      <ReceiptModal
-        isOpen={showReceiptModal}
-        onClose={() => setShowReceiptModal(false)}
-        receiptData={lastReceipt}
-        onNewSale={() => {
-          setShowReceiptModal(false);
-          barcodeInputRef.current?.focus();
-        }}
-      />
-
-      {/* ========================================================================= */}
-      {/* PANNEAU DES VENTES EN ATTENTE (HELD SALES PANEL)                            */}
-      {/* ========================================================================= */}
-      {showHeldSalesPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in">
-            <div className="p-3 border-b border-gray-200 bg-amber-50 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Clock className="w-5 h-5 text-amber-600" />
-                <span className="font-bold text-amber-900 text-sm">Paniers en attente ({heldCarts.length})</span>
-              </div>
-              <button onClick={() => setShowHeldSalesPanel(false)} className="text-amber-900 hover:text-amber-700 font-bold">
-                ✕
-              </button>
-            </div>
-            
-            <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-              {heldCarts.length === 0 ? (
-                <div className="text-center text-gray-500 py-4">Aucun panier en attente.</div>
-              ) : (
-                heldCarts.map(hc => (
-                  <div key={hc.id} className="p-3 border border-gray-200 rounded-lg flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition-colors">
-                    <div>
-                      <div className="text-sm font-bold text-gray-800">
-                        {hc.customerId ? customers.find(c => c.id === hc.customerId)?.name : 'Client Comptoir'}
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Mis en attente à <span className="font-mono">{hc.time}</span> • {hc.items.length} articles
-                      </div>
-                      <div className="text-xs font-mono font-bold text-blue-700 mt-1">
-                        Total : {CurrencyUtil.formatDZD(hc.items.reduce((sum, i) => sum + (i.unitPrice * i.quantity), 0))}
-                      </div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button 
-                        onClick={() => handleRemoveHeldCart(hc.id)} 
-                        className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold text-xs transition-colors"
-                        title="Supprimer définitivement"
-                      >
-                        ✕
-                      </button>
-                      <button 
-                        onClick={() => handleResumeCart(hc.id)} 
-                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded font-bold text-xs shadow-sm transition-colors"
-                      >
-                        Reprendre
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            
-            <div className="p-3 border-t border-gray-200 bg-gray-50 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowHeldSalesPanel(false)}
-                className="px-4 py-2 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-medium text-xs"
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Scanner Modal Pop-up pour le POS */}
-      {showCameraScanner && (
-        <CameraScanner
-          onScanSuccess={(scannedBarcode) => {
-            const matched = products.find(p => p.barcode.trim() === scannedBarcode.trim() || p.sku.trim() === scannedBarcode.trim());
-            if (matched) {
-              addToCart(matched);
-              showToast(`${language === 'ar' ? matched.name_ar : matched.name_fr} ajouté au panier`, 'success');
-            } else {
-              showToast(`Article introuvable : ${scannedBarcode}`, 'warning');
-            }
-          }}
-          onClose={() => setShowCameraScanner(false)}
+      {/* Modal Aperçu Ticket Thermique (si pas d imprimante physique configurée) */}
+      {showReceiptModal && lastReceipt && (
+        <ReceiptModal
+          isOpen={true}
+          receiptData={lastReceipt}
+          onClose={() => setShowReceiptModal(false)}
         />
       )}
     </div>

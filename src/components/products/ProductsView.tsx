@@ -1,506 +1,442 @@
-// Aquadro POS Algérie V2 — Gestion Complète des Produits & Articles
-// Table dense professionnelle, création/édition avec détection de doublons codes-barres/SKU et impression étiquettes
+// Pizzeria POS Algérie — Gestion Simple de la Carte & Menu Pizzeria
+// Interface conviviale pour ajouter, modifier les pizzas, boissons et desserts sans complexité technique
 
-import React, { useState, useEffect } from 'react';
-import { productService, CreateProductInput } from '../../services/product.service';
-import { Product } from '../../types/database';
-import { CurrencyUtil } from '../../core/currency/currency';
-import { useScanner } from '../../core/keyboard/useKeyboard';
-import { CameraScanner } from '../common/CameraScanner';
-import { useToast } from '../common/Toast';
+import React, { useState, useEffect } from "react";
+import { productService, CreateProductInput } from "../../services/product.service";
+import { Product } from "../../types/database";
+import { CurrencyUtil } from "../../core/currency/currency";
+import { useToast } from "../common/Toast";
 import {
   Search,
   Plus,
   Edit2,
   Trash2,
-  Barcode,
   X,
-  Printer,
-  Camera,
   CheckCircle,
-  AlertTriangle
-} from 'lucide-react';
+  AlertTriangle,
+  UtensilsCrossed,
+  ToggleLeft,
+  ToggleRight
+} from "lucide-react";
 
 export const ProductsView: React.FC = () => {
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [search, setSearch] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [search, setSearch] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [showCamera, setShowCamera] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Formulaire d'ajout / modification
-  const [formData, setFormData] = useState<CreateProductInput>({
-    sku: '',
-    barcode: '',
-    name_fr: '',
-    name_ar: '',
-    variant: '',
-    size_weight: '',
-    purchase_cost: 0,
+  // Formulaire Pizzeria Simple
+  const [formData, setFormData] = useState({
+    name_fr: "",
+    name_ar: "",
+    category_id: "cat-pizza",
+    variant: "",
     selling_price_ttc: 0,
-    current_stock: 0,
-    min_stock_alert: 5,
-    initial_batch_number: '',
-    initial_expiration_date: ''
+    is_active: 1
   });
 
   useEffect(() => {
     loadProducts();
   }, []);
 
-  // Scanner support: Auto-search when barcode is scanned
-  useScanner((barcode) => {
-    if (showAddModal) {
-      // If modal is open, let the user scan into the barcode field
-      setFormData(prev => ({ ...prev, barcode }));
-      showToast('Code-barres scanné', 'success');
-    } else {
-      setSearch(barcode);
-    }
-  });
-
   const loadProducts = async () => {
     const list = await productService.getProducts();
     setProducts(list);
   };
 
-  const filtered = products.filter(p => {
-    const matchesCat = categoryFilter === 'ALL' || p.category_id === categoryFilter;
-    if (!matchesCat) return false;
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      p.barcode.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q) ||
+  const categories = [
+    { id: "ALL", label: "Toutes les catégories" },
+    { id: "cat-pizza", label: "Pizzas 🍕" },
+    { id: "cat-drink", label: "Boissons 🥤" }
+  ];
+
+  const filteredProducts = products.filter(p => {
+    const matchesCat = categoryFilter === "ALL" || p.category_id === categoryFilter;
+    const q = search.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
       p.name_fr.toLowerCase().includes(q) ||
-      p.name_ar.toLowerCase().includes(q)
-    );
+      (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
+      (p.variant && p.variant.toLowerCase().includes(q));
+    return matchesCat && matchesSearch;
   });
 
-  const handleOpenCreate = () => {
+  const handleOpenAddModal = () => {
     setEditingProduct(null);
     setFormData({
-      sku: `SKU-${Date.now().toString().slice(-6)}`,
-      barcode: `${Math.floor(1000000000000 + Math.random() * 9000000000000)}`,
-      name_fr: '',
-      name_ar: '',
-      variant: '',
-      size_weight: '',
-      purchase_cost: 5000,
-      selling_price_ttc: 7500,
-      current_stock: 10,
-      min_stock_alert: 5,
-      initial_batch_number: `LOT-${new Date().getFullYear()}-01`,
-      initial_expiration_date: '2027-12-31'
+      name_fr: "",
+      name_ar: "",
+      category_id: "cat-pizza",
+      variant: "",
+      selling_price_ttc: 700,
+      is_active: 1
     });
     setShowAddModal(true);
   };
 
-  const handleOpenEdit = (p: Product) => {
+  const handleOpenEditModal = (p: Product) => {
     setEditingProduct(p);
     setFormData({
-      sku: p.sku,
-      barcode: p.barcode,
-      name_fr: p.name_fr,
-      name_ar: p.name_ar,
-      variant: p.variant || '',
-      size_weight: p.size_weight || '',
-      purchase_cost: p.purchase_cost,
+      name_fr: p.name_fr || (p as any).name || "",
+      name_ar: p.name_ar || "",
+      category_id: p.category_id || "cat-pizza",
+      variant: p.variant || "",
       selling_price_ttc: p.selling_price_ttc,
-      current_stock: p.current_stock,
-      min_stock_alert: p.min_stock_alert
+      is_active: p.is_active
     });
     setShowAddModal(true);
   };
 
-  const handleSaveProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Basculer la disponibilité d une pizza en 1 clic
+  const handleToggleAvailability = async (p: Product) => {
     try {
-      if (editingProduct) {
-        await productService.updateProduct(editingProduct.id, {
-          name_fr: formData.name_fr,
-          name_ar: formData.name_ar,
-          variant: formData.variant,
-          size_weight: formData.size_weight,
-          purchase_cost: formData.purchase_cost,
-          selling_price_ttc: formData.selling_price_ttc,
-          min_stock_alert: formData.min_stock_alert
-        });
-        showToast('Article mis à jour avec succès', 'success');
-      } else {
-        await productService.createProduct(formData);
-        showToast('Article créé avec succès', 'success');
-      }
-      setShowAddModal(false);
-      await loadProducts();
+      const nextActive = p.is_active === 1 ? 0 : 1;
+      await productService.updateProduct(p.id, { is_active: nextActive });
+      setProducts(prev =>
+        prev.map(item => (item.id === p.id ? { ...item, is_active: nextActive } : item))
+      );
+      showToast(
+        nextActive === 1
+          ? `${p.name_fr} marqué comme disponible`
+          : `${p.name_fr} marqué en rupture de stock`,
+        "info"
+      );
     } catch (err: any) {
-      showToast(`Erreur : ${err.message}`, 'error');
+      showToast(`Erreur : ${err?.message || err}`, "error");
     }
   };
 
-  const handleArchive = async (id: string, name: string) => {
-    if (confirm(`Confirmez-vous l'archivage de "${name}" ?`)) {
-      await productService.archiveProduct(id);
-      showToast('Article archivé', 'info');
-      await loadProducts();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name_fr.trim()) {
+      showToast("Le nom du produit est obligatoire", "warning");
+      return;
     }
+    if (formData.selling_price_ttc <= 0) {
+      showToast("Le prix doit être supérieur à zéro", "warning");
+      return;
+    }
+
+    try {
+      if (editingProduct) {
+        // Modification
+        await productService.updateProduct(editingProduct.id, {
+          name_fr: formData.name_fr,
+          name: formData.name_fr,
+          name_ar: formData.name_ar,
+          category_id: formData.category_id,
+          variant: formData.variant,
+          selling_price_ttc: formData.selling_price_ttc,
+          is_active: formData.is_active
+        });
+        showToast("Article mis à jour avec succès !", "success");
+      } else {
+        // Création simple sans complexité de code-barre ou lot
+        const codeSuffix = Date.now().toString().slice(-6);
+        const input: CreateProductInput = {
+          name_fr: formData.name_fr,
+          name_ar: formData.name_ar,
+          category_id: formData.category_id,
+          variant: formData.variant,
+          sku: `PIZ-${codeSuffix}`,
+          barcode: `613${codeSuffix}${Math.floor(Math.random() * 90 + 10)}`,
+          purchase_cost: Math.round(formData.selling_price_ttc * 0.4),
+          selling_price_ttc: formData.selling_price_ttc,
+          current_stock: 100,
+          min_stock_alert: 5,
+          unit_of_measure: "UNIT"
+        };
+        await productService.createProduct(input);
+        showToast("Nouvelle pizza / article ajouté au menu !", "success");
+      }
+      setShowAddModal(false);
+      loadProducts();
+    } catch (err: any) {
+      showToast(`Erreur d enregistrement : ${err?.message || err}`, "error");
+    }
+  };
+
+  const handleDeleteProduct = async (p: Product) => {
+    if (window.confirm(`Supprimer "${p.name_fr}" de la carte ?`)) {
+      try {
+        await productService.archiveProduct(p.id);
+        showToast("Article retiré de la carte", "info");
+        loadProducts();
+      } catch (err: any) {
+        showToast(`Erreur : ${err?.message || err}`, "error");
+      }
+    }
+  };
+
+  const getEmoji = (catId?: string) => {
+    if (catId === "cat-drink") return "🥤";
+    if (catId === "cat-sides") return "🍟";
+    if (catId === "cat-dessert") return "🍰";
+    return "🍕";
   };
 
   return (
-    <div className="flex-1 bg-gray-100 p-4 flex flex-col overflow-hidden text-xs select-none">
-      {/* Barre d'outils supérieure */}
-      <div className="flex items-center justify-between pb-3">
+    <div className="flex-1 flex flex-col overflow-hidden bg-[#FFF8EF] font-sans select-none">
+      {/* Barre d en-tête de la Gestion du Menu */}
+      <div className="bg-white px-6 py-4 border-b border-[#E9DCCB] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
         <div>
-          <h2 className="text-base font-bold text-gray-900">Articles & Produits</h2>
-          <span className="text-[11px] text-gray-500">
-            {products.length} références actives au catalogue
-          </span>
+          <h1 className="text-lg font-black text-[#292522] flex items-center gap-2">
+            <span>🍕</span>
+            <span>Carte & Menu Pizzeria</span>
+          </h1>
+          <p className="text-xs text-stone-500">
+            Gérez facilement vos pizzas, boissons, accompagnements et desserts
+          </p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={handleOpenCreate}
-            className="flex items-center space-x-1 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Nouvel Article</span>
-          </button>
-        </div>
+        <button
+          onClick={handleOpenAddModal}
+          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm shadow-orange-500/25 transition-all cursor-pointer"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Ajouter une Pizza ou Article</span>
+        </button>
       </div>
 
-      {/* Barre de Recherche et Filtres */}
-      <div className="bg-white p-2.5 rounded-t border border-gray-200 border-b-0 flex items-center space-x-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+      {/* Barre de Filtres & Recherche */}
+      <div className="px-6 py-3 bg-[#FFFDFB] border-b border-[#E9DCCB] flex flex-col sm:flex-row items-center justify-between gap-3">
+        {/* Filtre Catégories */}
+        <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto scrollbar-none pb-1 sm:pb-0">
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategoryFilter(cat.id)}
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer ${
+                categoryFilter === cat.id
+                  ? "bg-[#E87524] text-white shadow-xs"
+                  : "bg-white text-stone-700 hover:bg-stone-50 border border-[#E9DCCB]"
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Recherche */}
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
           <input
             type="text"
-            placeholder="Rechercher par nom, code-barres, référence SKU..."
+            placeholder="Rechercher dans la carte..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-300 rounded pl-8 pr-3 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
+            className="w-full pl-9 pr-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
           />
-        </div>
-
-        <div className="flex items-center space-x-1">
-          <span className="text-gray-500 text-[11px]">Catégorie :</span>
-          <select
-            value={categoryFilter}
-            onChange={e => setCategoryFilter(e.target.value)}
-            className="bg-gray-50 border border-gray-300 rounded px-2 py-1.5 text-xs text-gray-800 focus:outline-none"
-          >
-            <option value="ALL">Toutes les catégories</option>
-            <option value="cat-protein">Protéines & Whey</option>
-            <option value="cat-creatine">Créatines</option>
-            <option value="cat-preworkout">Pre-Workout</option>
-            <option value="cat-amino">BCAA & Acides Aminés</option>
-            <option value="cat-vitamins">Vitamines</option>
-            <option value="cat-snacks">Barres & Snacks</option>
-            <option value="cat-gear">Accessoires</option>
-          </select>
         </div>
       </div>
 
-      {/* Tableau Pro des Articles */}
-      <div className="flex-1 bg-white border border-gray-200 rounded-b overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 text-[11px] sticky top-0">
-              <tr>
-                <th className="py-2.5 px-3 font-semibold">Code-barres</th>
-                <th className="py-2.5 px-3 font-semibold">SKU</th>
-                <th className="py-2.5 px-3 font-semibold">Désignation (FR / AR)</th>
-                <th className="py-2.5 px-3 font-semibold">Conditionnement / Variante</th>
-                <th className="py-2.5 px-3 font-semibold text-right">Coût Achat</th>
-                <th className="py-2.5 px-3 font-semibold text-right">Prix Vente TTC</th>
-                <th className="py-2.5 px-3 font-semibold text-right">Stock</th>
-                <th className="py-2.5 px-3 font-semibold text-center">Actions</th>
+      {/* Tableau des Articles du Menu */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="bg-white rounded-2xl border border-[#E9DCCB] overflow-hidden shadow-xs">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-[#FFF8EF] border-b border-[#E9DCCB] text-stone-600 font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-4">Article & Recette</th>
+                <th className="py-3 px-4">Catégorie</th>
+                <th className="py-3 px-4 text-right">Prix Vente</th>
+                <th className="py-3 px-4 text-center">Disponibilité</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.length === 0 ? (
+            <tbody className="divide-y divide-[#E9DCCB]/60">
+              {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-6 text-center text-gray-400">
-                    Aucun article trouvé pour ces critères de recherche.
+                  <td colSpan={5} className="py-12 text-center text-stone-500">
+                    <UtensilsCrossed className="w-12 h-12 text-[#E87524]/40 mx-auto mb-3" />
+                    <p className="font-bold text-sm text-[#292522]">
+                      {products.length === 0 ? "Votre carte est vide pour le moment" : "Aucun article trouvé"}
+                    </p>
+                    <p className="text-xs text-stone-500 mt-1">
+                      {products.length === 0
+                        ? "Commencez par ajouter vos propres pizzas artisanales et boissons ci-dessous."
+                        : "Essayez un autre mot-clé ou filtre."}
+                    </p>
+                    {products.length === 0 && (
+                      <button
+                        onClick={handleOpenAddModal}
+                        className="mt-4 px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white rounded-xl font-bold shadow-xs inline-flex items-center gap-1.5 cursor-pointer text-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Ajouter le premier article</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
-                filtered.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="py-2 px-3 font-mono text-gray-600 text-[11px]">
-                      {p.barcode}
-                    </td>
-                    <td className="py-2 px-3 font-mono text-gray-500 text-[11px]">
-                      {p.sku}
-                    </td>
-                    <td className="py-2 px-3">
-                      <div className="font-semibold text-gray-900">{p.name_fr}</div>
-                      {p.name_ar && <div className="text-[11px] text-gray-400">{p.name_ar}</div>}
-                    </td>
-                    <td className="py-2 px-3 text-gray-500">
-                      {p.variant ? `${p.variant} ` : ''}
-                      {p.size_weight ? `(${p.size_weight})` : ''}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono text-gray-600">
-                      {CurrencyUtil.formatDZD(p.purchase_cost)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-gray-900">
-                      {CurrencyUtil.formatDZD(p.selling_price_ttc)}
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[11px] ${
-                          p.current_stock <= 0
-                            ? 'bg-red-50 text-red-700 font-bold border border-red-200'
-                            : p.current_stock <= p.min_stock_alert
-                            ? 'bg-amber-50 text-amber-700 font-bold border border-amber-200'
-                            : 'text-gray-900'
-                        }`}
-                      >
-                        {p.current_stock}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center space-x-1">
-                        <button
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-blue-600"
-                          title="Modifier"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleArchive(p.id, p.name_fr)}
-                          className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
-                          title="Archiver"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                filteredProducts.map(p => (
+                <tr key={p.id} className="hover:bg-[#FFFDFB] transition-colors">
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-lg shrink-0">
+                        {getEmoji(p.category_id)}
                       </div>
-                    </td>
-                  </tr>
-                ))
+                      <div>
+                        <div className="font-bold text-[#292522] text-sm">{p.name_fr}</div>
+                        {p.name_ar && (
+                          <div className="text-[11px] text-stone-400 font-arabic" dir="rtl">
+                            {p.name_ar}
+                          </div>
+                        )}
+                        {p.variant && (
+                          <div className="text-[11px] text-stone-500 mt-0.5 max-w-md line-clamp-1">
+                            {p.variant}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#FFF3EB] text-[#E87524] border border-[#E87524]/20">
+                      {p.category_name || (p.category_id === "cat-drink" ? "Boissons" : "Pizzas")}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 text-right font-black text-sm text-[#E87524]">
+                    {CurrencyUtil.formatDZD(p.selling_price_ttc)}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => handleToggleAvailability(p)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                        p.is_active === 1
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                          : "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+                      }`}
+                      title="Cliquer pour changer la disponibilité"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${p.is_active === 1 ? "bg-emerald-500" : "bg-red-500"}`} />
+                      <span>{p.is_active === 1 ? "Disponible" : "Rupture"}</span>
+                    </button>
+                  </td>
+                  <td className="py-3 px-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => handleOpenEditModal(p)}
+                        className="p-1.5 rounded-lg text-stone-500 hover:text-[#E87524] hover:bg-[#FFF3EB] transition-colors"
+                        title="Modifier"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteProduct(p)}
+                        className="p-1.5 rounded-lg text-stone-500 hover:text-[#B9362B] hover:bg-red-50 transition-colors"
+                        title="Supprimer de la carte"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modal Création / Modification d'Article */}
+      {/* Modal d Ajout / Édition Simple */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in">
-            <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-              <span className="font-bold text-gray-900 text-sm">
-                {editingProduct ? 'Modifier l\'Article' : 'Ajouter un Nouvel Article'}
-              </span>
-              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 select-none">
+          <div className="bg-white border border-[#E9DCCB] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-[#292522]">
+            <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
+              <h3 className="text-base font-extrabold text-[#292522]">
+                {editingProduct ? "Modifier la Pizza / Article" : "Nouvel Article sur la Carte"}
+              </h3>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-stone-400 hover:text-stone-600 p-1.5 rounded-lg hover:bg-white"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Désignation (Français) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name_fr}
-                    onChange={e => setFormData({ ...formData, name_fr: e.target.value })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Désignation (Arabe)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name_ar}
-                    onChange={e => setFormData({ ...formData, name_ar: e.target.value })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">Nom de l article (Français) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ex: Pizza 4 Fromages, Coca-Cola..."
+                  value={formData.name_fr}
+                  onChange={e => setFormData({ ...formData, name_fr: e.target.value })}
+                  className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">Nom en Arabe (Optionnel)</label>
+                <input
+                  type="text"
+                  placeholder="ex: بيتزا 4 أجبان"
+                  value={formData.name_ar}
+                  onChange={e => setFormData({ ...formData, name_ar: e.target.value })}
+                  className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none font-arabic"
+                  dir="rtl"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Code-barres (EAN-13) *
-                  </label>
-                  <div className="flex">
-                    <input
-                      type="text"
-                      required
-                      disabled={!!editingProduct}
-                      value={formData.barcode}
-                      onChange={e => setFormData({ ...formData, barcode: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded-l px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none focus:border-blue-600 disabled:bg-gray-100"
-                    />
-                    <button
-                      type="button"
-                      disabled={!!editingProduct}
-                      onClick={() => setShowCamera(true)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 rounded-r flex items-center justify-center disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                      title="التقاط الباركود (كاميرا / douchette / يدوي)"
-                    >
-                      <Camera className="w-4 h-4" />
-                    </button>
-                  </div>
+                  <label className="block font-bold text-stone-700 mb-1">Catégorie *</label>
+                  <select
+                    value={formData.category_id}
+                    onChange={e => setFormData({ ...formData, category_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                  >
+                    <option value="cat-pizza">Pizzas 🍕</option>
+                    <option value="cat-drink">Boissons 🥤</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Référence SKU *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={!!editingProduct}
-                    value={formData.sku}
-                    onChange={e => setFormData({ ...formData, sku: e.target.value })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none focus:border-blue-600 disabled:bg-gray-100"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Arôme / Saveur
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Chocolat, Vanille"
-                    value={formData.variant || ''}
-                    onChange={e => setFormData({ ...formData, variant: e.target.value })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Poids / Contenance
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ex: 5 lbs (2.27kg), 30 Doses"
-                    value={formData.size_weight || ''}
-                    onChange={e => setFormData({ ...formData, size_weight: e.target.value })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 pt-1 border-t border-gray-100">
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Coût d'Achat (DA) *
-                  </label>
+                  <label className="block font-bold text-stone-700 mb-1">Prix de Vente (DZD) *</label>
                   <input
                     type="number"
                     required
-                    value={formData.purchase_cost}
-                    onChange={e => setFormData({ ...formData, purchase_cost: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Prix Vente TTC (DA) *
-                  </label>
-                  <input
-                    type="number"
-                    required
+                    min="10"
                     value={formData.selling_price_ttc}
                     onChange={e => setFormData({ ...formData, selling_price_ttc: parseFloat(e.target.value) || 0 })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs font-bold text-gray-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                    Seuil Alerte
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.min_stock_alert}
-                    onChange={e => setFormData({ ...formData, min_stock_alert: parseInt(e.target.value, 10) || 5 })}
-                    className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none focus:border-blue-600"
+                    className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#E87524] font-mono focus:ring-2 focus:ring-[#E87524] focus:outline-none"
                   />
                 </div>
               </div>
 
-              {!editingProduct && (
-                <div className="grid grid-cols-3 gap-3 pt-1 border-t border-gray-100">
-                  <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                      Stock Initial
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.current_stock}
-                      onChange={e => setFormData({ ...formData, current_stock: parseInt(e.target.value, 10) || 0 })}
-                      className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                      N° de Lot
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ex: LOT-2026-X"
-                      value={formData.initial_batch_number || ''}
-                      onChange={e => setFormData({ ...formData, initial_batch_number: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-gray-700 block mb-1">
-                      DLUO / Péremption
-                    </label>
-                    <input
-                      type="date"
-                      value={formData.initial_expiration_date || ''}
-                      onChange={e => setFormData({ ...formData, initial_expiration_date: e.target.value })}
-                      className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 font-mono text-xs text-gray-900 focus:outline-none"
-                    />
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">Ingrédients / Recette / Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="ex: Sauce tomate, mozzarella fior di latte, basilic frais..."
+                  value={formData.variant}
+                  onChange={e => setFormData({ ...formData, variant: e.target.value })}
+                  className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                />
+              </div>
 
-              <div className="p-3 border-t border-gray-200 bg-gray-50 flex space-x-2 -mx-4 -mb-4 mt-4">
+              <div className="pt-3 border-t border-[#E9DCCB] flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-1.5 rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-medium text-xs"
+                  className="px-4 py-2 rounded-xl border border-[#E9DCCB] bg-white text-stone-600 hover:bg-stone-50 font-bold text-xs"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition-colors"
+                  className="px-5 py-2 rounded-xl bg-[#E87524] hover:bg-[#D46317] text-white font-bold text-xs shadow-sm shadow-orange-500/25"
                 >
-                  Enregistrer l'Article
+                  {editingProduct ? "Enregistrer les Modifications" : "Ajouter à la Carte"}
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
-
-      {/* Scanner Caméra pour l'ajout de produit */}
-      {showCamera && (
-        <CameraScanner
-          onScanSuccess={(decodedText) => {
-            setFormData({ ...formData, barcode: decodedText });
-            setShowCamera(false);
-            showToast('Code-barres scanné avec succès !', 'success');
-          }}
-          onClose={() => setShowCamera(false)}
-        />
       )}
     </div>
   );

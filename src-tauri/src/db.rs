@@ -53,6 +53,11 @@ pub async fn init_db(app_handle: &AppHandle) -> Result<SqlitePool, Box<dyn std::
         e
     })?;
 
+    // Initialize essential structural metadata (categories and sequences) without dummy data
+    if let Err(e) = init_structural_metadata(&pool).await {
+        crate::logger::log_warn("DATABASE", &format!("Structural metadata init warning: {}", e));
+    }
+
     // Verify database health
     let integrity = crate::runtime::check_pool_integrity(&pool).await.unwrap_or_else(|e| {
         crate::logger::log_warn("DATABASE", &format!("Integrity check warning: {}", e));
@@ -64,6 +69,40 @@ pub async fn init_db(app_handle: &AppHandle) -> Result<SqlitePool, Box<dyn std::
     Ok(pool)
 }
 
+
+
+pub async fn init_structural_metadata(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    use sqlx::Row;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // 1. Categories (Pizzas and Boissons ONLY, ready for owner items)
+    let cat_count: i64 = sqlx::query("SELECT count(*) FROM categories")
+        .fetch_one(pool).await?.get(0);
+    if cat_count == 0 {
+        sqlx::query(
+            r#"INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES 
+            ('cat-pizza', 'Pizzas', 'بيتزا', ?),
+            ('cat-drink', 'Boissons', 'مشروبات', ?)"#
+        ).bind(&now).bind(&now).execute(pool).await?;
+        crate::logger::log_info("DATABASE", "Initialized clean categories: Pizzas & Boissons");
+    }
+
+    // 2. Document sequences (Counters for receipts, invoices, etc.)
+    let seq_count: i64 = sqlx::query("SELECT count(*) FROM document_sequences")
+        .fetch_one(pool).await?.get(0);
+    if seq_count == 0 {
+        sqlx::query(
+            r#"INSERT OR IGNORE INTO document_sequences (document_type, current_year, last_sequence_number) VALUES 
+            ('TICKET', 2026, 0),
+            ('FACTURE', 2026, 0),
+            ('AVOIR', 2026, 0),
+            ('BON_LIVRAISON', 2026, 0),
+            ('COMMANDE', 2026, 0)"#
+        ).execute(pool).await?;
+    }
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

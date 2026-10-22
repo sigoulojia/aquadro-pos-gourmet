@@ -35,7 +35,7 @@ pub fn resolve_runtime_paths(app_handle: &AppHandle) -> Result<(PathBuf, PathBuf
     let app_data = app_handle.path().app_data_dir()
         .map_err(|e| format!("Failed to resolve AppData directory: {}", e))?;
     
-    let db_path = app_data.join("aquadro_v2.db");
+    let db_path = app_data.join("pizzeria_pos.db");
     let logs_dir = app_data.join("logs");
     let backups_dir = app_data.join("backups");
     let config_dir = app_data.join("config");

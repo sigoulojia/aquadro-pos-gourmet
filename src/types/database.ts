@@ -381,3 +381,58 @@ export interface SyncOperation {
   created_at: string;
   synced_at?: string;
 }
+
+export type IngredientUnit = 'kg' | 'g' | 'L' | 'ml' | 'pièce';
+
+export interface Ingredient {
+  id: string;
+  name_fr: string;
+  name_ar?: string;
+  unit: IngredientUnit;
+  current_stock: number;
+  min_stock_alert: number;
+  cost_per_unit: number; // Coût unitaire en DZD
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecipeItem {
+  id: string;
+  product_id: string;
+  ingredient_id: string;
+  quantity_required: number; // In ingredient unit (e.g. 0.25 kg)
+  unit_display?: string;
+  created_at: string;
+}
+
+export interface RecipeItemDetail extends RecipeItem {
+  ingredient_name_fr: string;
+  ingredient_name_ar?: string;
+  ingredient_unit: IngredientUnit;
+  ingredient_current_stock: number;
+  ingredient_cost_per_unit: number;
+  portions_possible: number;
+  cost_for_portion: number;
+}
+
+export interface ProductYield {
+  productId: string;
+  productName: string;
+  productBarcode: string;
+  sellingPrice: number;
+  categoryName?: string;
+  hasRecipe: boolean;
+  recipeItems: RecipeItemDetail[];
+  maxPortions: number;
+  limitingIngredient?: {
+    id: string;
+    name: string;
+    currentStock: number;
+    unit: string;
+    quantityRequired: number;
+  };
+  foodCost: number;
+  grossMargin: number;
+  grossMarginPercent: number;
+}

@@ -9,6 +9,7 @@ import { syncService } from '../../services/sync.service';
 import { printerService } from '../../services/printer.service';
 import { authService } from '../../services/auth.service';
 import { User, CashSession } from '../../types/database';
+import { db } from '../../db/sqlite';
 import {
   Clock,
   Globe,
@@ -39,6 +40,17 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [drawerPulseNotice, setDrawerPulseNotice] = useState<boolean>(false);
+  const [storeName, setStoreName] = useState<string>("");
+
+  useEffect(() => {
+    db.select<{ name_fr?: string; name?: string }>("SELECT name_fr, name FROM stores LIMIT 1")
+      .then(res => {
+        if (res && res.length > 0) {
+          setStoreName(res[0].name_fr || res[0].name || "");
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -96,16 +108,21 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
   };
 
   return (
-    <header className="h-12 bg-white border-b border-gray-200 px-4 flex items-center justify-between select-none z-30 text-gray-800 text-xs">
+    <header className="h-12 bg-white border-b border-[#E9DCCB] bg-[#FFF8EF] px-4 flex items-center justify-between select-none z-30 text-gray-800 text-xs">
       {/* 1. Établissement & Nom du Magasin */}
       <div className="flex items-center space-x-3">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 bg-slate-800 text-white font-black rounded flex items-center justify-center text-xs">
-            A
+        <div className="flex items-center space-x-2.5">
+          <div className="w-7 h-7 bg-gradient-to-tr from-[#E87524] to-[#FFC928] text-white font-black rounded-lg flex items-center justify-center text-sm shadow-sm ring-1 ring-[#FFC928]">
+            🍕
           </div>
           <div>
-            <span className="font-bold tracking-tight text-gray-900 text-sm">
-              Aquadro POS
+            <span className="font-extrabold tracking-tight text-[#292522] text-sm flex items-center gap-1.5">
+              <span>Pizzeria POS</span>
+              {storeName ? (
+                <span className="text-[10px] bg-amber-100 text-[#E87524] px-1.5 py-0.5 rounded font-mono font-bold">
+                  {storeName}
+                </span>
+              ) : null}
             </span>
           </div>
         </div>
