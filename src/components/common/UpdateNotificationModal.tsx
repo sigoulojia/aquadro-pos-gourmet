@@ -49,7 +49,7 @@ export const UpdateNotificationModal: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-lg overflow-hidden flex flex-col">
         {/* En-tête */}
         <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-6 relative">
@@ -63,7 +63,7 @@ export const UpdateNotificationModal: React.FC = () => {
             </button>
           )}
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-white/10 rounded-xl backdrop-blur-md">
+            <div className="p-3 bg-white/10 rounded-xl">
               <Sparkles className="w-6 h-6 text-yellow-300" />
             </div>
             <div>

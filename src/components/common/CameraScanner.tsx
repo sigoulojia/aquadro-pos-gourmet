@@ -153,7 +153,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({ onScanSuccess, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 select-none animate-fadeIn">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-gray-100 flex flex-col transition-all transform scale-100">
         
         {/* En-tête compact */}

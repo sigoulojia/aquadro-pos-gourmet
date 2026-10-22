@@ -39,6 +39,13 @@ pub async fn init_db(app_handle: &AppHandle) -> Result<SqlitePool, Box<dyn std::
             e
         })?;
 
+    // Performance optimizations for i5-3rd Gen / budget hardware:
+    // NORMAL synchronous avoids heavy disk fsyncs in WAL mode; 8MB cache reduces I/O; memory temp_store
+    let _ = sqlx::query("PRAGMA synchronous = NORMAL;").execute(&pool).await;
+    let _ = sqlx::query("PRAGMA cache_size = -8000;").execute(&pool).await;
+    let _ = sqlx::query("PRAGMA temp_store = MEMORY;").execute(&pool).await;
+    let _ = sqlx::query("PRAGMA mmap_size = 268435456;").execute(&pool).await;
+
     // Load and execute the schema if necessary
     let schema = include_str!("../../src/db/schema.sql");
     sqlx::query(schema).execute(&pool).await.map_err(|e| {

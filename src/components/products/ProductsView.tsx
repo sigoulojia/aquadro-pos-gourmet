@@ -342,7 +342,7 @@ export const ProductsView: React.FC = () => {
 
       {/* Modal d Ajout / Édition Simple */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 select-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none">
           <div className="bg-white border border-[#E9DCCB] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-[#292522]">
             <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
               <h3 className="text-base font-extrabold text-[#292522]">

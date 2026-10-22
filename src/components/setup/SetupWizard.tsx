@@ -174,7 +174,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 select-none">
       <div className="bg-white border border-gray-300 w-full max-w-2xl rounded shadow-2xl overflow-hidden flex flex-col text-xs text-gray-800">
         {/* En-tête Wizard */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">

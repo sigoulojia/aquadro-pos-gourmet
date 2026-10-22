@@ -70,7 +70,7 @@ export const ManagerPinModal: React.FC<ManagerPinModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 select-none">
       <div className="bg-white border border-gray-300 w-full max-w-sm rounded shadow-xl overflow-hidden animate-in fade-in duration-100">
         {/* En-tête sobre blanc */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">

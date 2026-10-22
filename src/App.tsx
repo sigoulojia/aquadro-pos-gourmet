@@ -7,21 +7,22 @@ import { ToastProvider } from "./components/common/Toast";
 import { Navbar } from "./components/common/Navbar";
 import { Sidebar, NavView } from "./components/common/Sidebar";
 import { PosView } from "./components/pos/PosView";
-import { DashboardView } from "./components/dashboard/DashboardView";
-import { ProductsView } from "./components/products/ProductsView";
-import { InventoryView } from "./components/inventory/InventoryView";
-import { SalesView } from "./components/sales/SalesView";
-import { CustomersView } from "./components/customers/CustomersView";
-import { CaisseView } from "./components/caisse/CaisseView";
-import { ExpensesView } from "./components/expenses/ExpensesView";
-import { ReportsView } from "./components/reports/ReportsView";
-import { DocumentsView } from "./components/documents/DocumentsView";
-import { JournalView } from "./components/journal/JournalView";
-import { CreditsView } from "./components/credits/CreditsView";
-import { UsersView } from "./components/users/UsersView";
-import { SettingsView } from "./components/settings/SettingsView";
-import { AIAssistantDrawer } from "./components/ai/AIAssistantDrawer";
-import { SetupWizard } from "./components/setup/SetupWizard";
+// Optimisation mémoire & CPU (Lazy loading pour i5 3e Gen & RAM modeste)
+const DashboardView = React.lazy(() => import("./components/dashboard/DashboardView").then(m => ({ default: m.DashboardView })));
+const ProductsView = React.lazy(() => import("./components/products/ProductsView").then(m => ({ default: m.ProductsView })));
+const InventoryView = React.lazy(() => import("./components/inventory/InventoryView").then(m => ({ default: m.InventoryView })));
+const SalesView = React.lazy(() => import("./components/sales/SalesView").then(m => ({ default: m.SalesView })));
+const CustomersView = React.lazy(() => import("./components/customers/CustomersView").then(m => ({ default: m.CustomersView })));
+const CaisseView = React.lazy(() => import("./components/caisse/CaisseView").then(m => ({ default: m.CaisseView })));
+const ExpensesView = React.lazy(() => import("./components/expenses/ExpensesView").then(m => ({ default: m.ExpensesView })));
+const ReportsView = React.lazy(() => import("./components/reports/ReportsView").then(m => ({ default: m.ReportsView })));
+const DocumentsView = React.lazy(() => import("./components/documents/DocumentsView").then(m => ({ default: m.DocumentsView })));
+const JournalView = React.lazy(() => import("./components/journal/JournalView").then(m => ({ default: m.JournalView })));
+const CreditsView = React.lazy(() => import("./components/credits/CreditsView").then(m => ({ default: m.CreditsView })));
+const UsersView = React.lazy(() => import("./components/users/UsersView").then(m => ({ default: m.UsersView })));
+const SettingsView = React.lazy(() => import("./components/settings/SettingsView").then(m => ({ default: m.SettingsView })));
+const SetupWizard = React.lazy(() => import("./components/setup/SetupWizard").then(m => ({ default: m.SetupWizard })));
+const AIAssistantDrawer = React.lazy(() => import("./components/ai/AIAssistantDrawer").then(m => ({ default: m.AIAssistantDrawer })));
 import { LoginView } from "./components/auth/LoginView";
 import { authService } from "./services/auth.service";
 import { User } from "./types/database";
@@ -95,13 +96,15 @@ export const AppContent: React.FC = () => {
     <div className="h-screen w-screen flex flex-col bg-[#FFF8EF] text-[#292522] overflow-hidden font-sans">
       {/* Assistant de premier démarrage (si non complété) */}
       {showSetup && (
-        <SetupWizard
-          onComplete={() => {
-            localStorage.setItem("pizzeria_setup_completed", "true");
-            localStorage.setItem("aquadro_setup_completed", "true");
-            setShowSetup(false);
-          }}
-        />
+        <React.Suspense fallback={null}>
+          <SetupWizard
+            onComplete={() => {
+              localStorage.setItem("pizzeria_setup_completed", "true");
+              localStorage.setItem("aquadro_setup_completed", "true");
+              setShowSetup(false);
+            }}
+          />
+        </React.Suspense>
       )}
 
       {!currentUser ? (
@@ -123,33 +126,40 @@ export const AppContent: React.FC = () => {
             />
 
             <main className="flex-1 flex overflow-hidden bg-[#FFF8EF]">
-              {currentView === "pos" && <PosView />}
-              {currentView === "dashboard" && (
-                <DashboardView
-                  onNavigateToPOS={() => setCurrentView("pos")}
-                  onNavigateToInventory={() => setCurrentView("inventory")}
-                />
+              {currentView === "pos" ? (
+                <PosView />
+              ) : (
+                <React.Suspense fallback={<div className="flex-1 flex items-center justify-center text-xs text-stone-500 font-medium">Chargement du module...</div>}>
+                  {currentView === "dashboard" && (
+                    <DashboardView
+                      onNavigateToPOS={() => setCurrentView("pos")}
+                      onNavigateToInventory={() => setCurrentView("inventory")}
+                    />
+                  )}
+                  {currentView === "products" && <ProductsView />}
+                  {currentView === "inventory" && <InventoryView />}
+                  {currentView === "sales" && <SalesView />}
+                  {currentView === "customers" && <CustomersView />}
+                  {currentView === "caisse" && <CaisseView />}
+                  {currentView === "expenses" && <ExpensesView />}
+                  {currentView === "reports" && <ReportsView />}
+                  {currentView === "documents" && <DocumentsView />}
+                  {currentView === "credits" && <CreditsView />}
+                  {currentView === "journal" && <JournalView />}
+                  {currentView === "users" && <UsersView />}
+                  {currentView === "settings" && <SettingsView />}
+                </React.Suspense>
               )}
-              {currentView === "products" && <ProductsView />}
-              {currentView === "inventory" && <InventoryView />}
-              {currentView === "sales" && <SalesView />}
-              {currentView === "customers" && <CustomersView />}
-              {currentView === "caisse" && <CaisseView />}
-              {currentView === "expenses" && <ExpensesView />}
-              {currentView === "reports" && <ReportsView />}
-              {currentView === "documents" && <DocumentsView />}
-              {currentView === "credits" && <CreditsView />}
-              {currentView === "journal" && <JournalView />}
-              {currentView === "users" && <UsersView />}
-              {currentView === "settings" && <SettingsView />}
             </main>
           </div>
 
           {/* Tiroir Assistant IA Copilote */}
-          <AIAssistantDrawer
-            isOpen={isAIOpen}
-            onClose={() => setIsAIOpen(false)}
-          />
+          <React.Suspense fallback={null}>
+            <AIAssistantDrawer
+              isOpen={isAIOpen}
+              onClose={() => setIsAIOpen(false)}
+            />
+          </React.Suspense>
 
           {/* Modal de Mise à jour Automatique */}
           <UpdateNotificationModal />

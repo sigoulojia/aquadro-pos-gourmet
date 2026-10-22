@@ -24,16 +24,33 @@ import {
   LogOut
 } from 'lucide-react';
 
+
+// Composant horloge isolé pour empêcher tout re-render de la barre complète (Optimisation i5 3e Gen / CPU modeste)
+const TimeDisplay: React.FC = React.memo(() => {
+  const [timeStr, setTimeStr] = useState<string>(() => {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      setTimeStr(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return <span>{timeStr}</span>;
+});
+
 interface NavbarProps {
   onToggleAI: () => void;
   isAIOpen: boolean;
   onNavigateToSettings: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigateToSettings }) => {
+const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigateToSettings }) => {
   const { user } = useAuth();
   const { language, setLanguage, t } = useI18n();
-  const [time, setTime] = useState<string>('');
   const [session, setSession] = useState<CashSession | null>(null);
   const [pendingSync, setPendingSync] = useState<number>(0);
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -52,15 +69,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
+
 
   useEffect(() => {
     const refreshStatus = async () => {
@@ -71,7 +80,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
       setIsOnline(navigator.onLine);
     };
     refreshStatus();
-    const interval = setInterval(refreshStatus, 8000);
+    const interval = setInterval(refreshStatus, 20000);
     return () => clearInterval(interval);
   }, []);
 
@@ -180,7 +189,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
         {/* Horloge Locale */}
         <div className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded border border-gray-200 bg-gray-50 text-gray-600 font-mono text-[11px]">
           <Clock className="w-3.5 h-3.5 text-gray-400" />
-          <span>{time}</span>
+          <TimeDisplay />
         </div>
       </div>
 
@@ -235,3 +244,5 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigate
     </header>
   );
 };
+
+export const Navbar = React.memo(NavbarComponent);

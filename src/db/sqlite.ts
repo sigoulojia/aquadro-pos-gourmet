@@ -159,7 +159,13 @@ export class DatabaseService {
         const appData = await appDataDir();
         const dbPath = await join(appData, 'pizzeria_pos.db');
         this.tauriDb = await Database.load(`sqlite:${dbPath}`);
-        console.log(`Connecté à la base native SQLite Tauri : sqlite:${dbPath}`);
+        // Optimisations matérielles pour processeurs i5 3e génération / HDD / RAM modeste
+        try {
+          await this.tauriDb.execute('PRAGMA synchronous = NORMAL;');
+          await this.tauriDb.execute('PRAGMA cache_size = -8000;');
+          await this.tauriDb.execute('PRAGMA temp_store = MEMORY;');
+        } catch {}
+        console.log(`Connecté à la base native SQLite Tauri optimisée : sqlite:${dbPath}`);
 
         // Initialiser uniquement les métadonnées structurelles essentielles (sans données factices)
         await this.ensureEssentialStructure();

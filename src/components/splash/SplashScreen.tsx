@@ -141,7 +141,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
 
         {fatalError ? (
           /* Error State Card */
-          <div className="w-full bg-red-950/50 border border-red-500/30 rounded-xl p-5 text-left backdrop-blur-sm shadow-xl">
+          <div className="w-full bg-red-950/50 border border-red-500/30 rounded-xl p-5 text-left shadow-xl">
             <div className="flex items-center gap-3 text-red-400 font-bold text-sm mb-2">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <span>Erreur d'initialisation système</span>

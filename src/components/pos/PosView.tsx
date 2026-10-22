@@ -88,20 +88,24 @@ export const PosView: React.FC = () => {
     { id: "cat-drink", label: "Boissons", icon: "🥤" }
   ];
 
-  // Filtrage du menu : Uniquement Pizzas et Boissons
-  const filteredProducts = products.filter(p => {
-    const isPizzaOrDrink = !p.category_id || p.category_id === "cat-pizza" || p.category_id === "cat-drink";
-    if (!isPizzaOrDrink) return false;
-
-    const matchesCat = selectedCategory === "ALL" || p.category_id === selectedCategory;
+  // Filtrage ultra-rapide mémoïsé (Optimisation CPU 60 FPS pour i5 3e Gen)
+  const filteredProducts = React.useMemo(() => {
     const q = search.toLowerCase().trim();
-    const matchesSearch =
-      !q ||
-      p.name_fr.toLowerCase().includes(q) ||
-      (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
-      (p.variant && p.variant.toLowerCase().includes(q));
-    return matchesCat && matchesSearch;
-  });
+    return products.filter(p => {
+      const isPizzaOrDrink = !p.category_id || p.category_id === "cat-pizza" || p.category_id === "cat-drink";
+      if (!isPizzaOrDrink) return false;
+
+      const matchesCat = selectedCategory === "ALL" || p.category_id === selectedCategory;
+      if (!matchesCat) return false;
+
+      return (
+        !q ||
+        p.name_fr.toLowerCase().includes(q) ||
+        (p.name_ar && p.name_ar.toLowerCase().includes(q)) ||
+        (p.variant && p.variant.toLowerCase().includes(q))
+      );
+    });
+  }, [products, selectedCategory, search]);
 
   // Ajout 1-clic au panier
   const handleAddToCart = (product: Product) => {
@@ -542,7 +546,7 @@ export const PosView: React.FC = () => {
       {/* MODAL DE RÈGLEMENT SIMPLE (ESPÈCES / CARTE CIB)                            */}
       {/* ========================================================================= */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 select-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none">
           <div className="bg-white border border-[#E9DCCB] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-[#292522]">
             {/* Header Modal */}
             <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">

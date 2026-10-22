@@ -1181,7 +1181,7 @@ export const InventoryView: React.FC = () => {
       {/* MODAL : NOUVEL / MODIFIER INGRÉDIENT */}
       {/* ========================================================================= */}
       {showIngredientModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white border border-[#E9DCCB] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in duration-200">
             <div className="px-6 py-4 bg-[#FAF8F5] border-b border-[#E9DCCB] flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1316,7 +1316,7 @@ export const InventoryView: React.FC = () => {
       {/* MODAL : AJUSTEMENT PERSONNALISÉ DE STOCK */}
       {/* ========================================================================= */}
       {showAdjustModal && adjustTarget && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white border border-[#E9DCCB] rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-[#E9DCCB] pb-3">
               <div>

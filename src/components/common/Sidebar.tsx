@@ -42,7 +42,7 @@ interface SidebarProps {
   onNavigate: (view: NavView) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
+const SidebarComponent: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
   const { hasPermission } = useAuth();
   const { t } = useI18n();
 
@@ -122,3 +122,5 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
     </aside>
   );
 };
+
+export const Sidebar = React.memo(SidebarComponent);

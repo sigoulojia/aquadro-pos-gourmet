@@ -121,3 +121,22 @@
 }
 
 
+
+/* ========================================================================= */
+/* ACCÉLÉRATION MATÉRIELLE & LÉGÈRETÉ (Intel Core i5 3e Gen / Intel HD 4000) */
+/* ========================================================================= */
+* {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Évite les micro-saccades de repaint sur les cartes produits */
+.product-card {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Isolation du layout pour limiter le coût de recalcul DOM */
+.hardware-accelerated {
+  contain: layout style;
+}

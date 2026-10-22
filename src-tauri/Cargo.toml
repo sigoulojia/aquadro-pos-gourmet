@@ -30,3 +30,10 @@ lazy_static = "1.4"
 
 [dev-dependencies]
 minisign-verify = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
