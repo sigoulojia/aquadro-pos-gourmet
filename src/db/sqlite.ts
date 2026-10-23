@@ -245,9 +245,9 @@ export class DatabaseService {
 
     const trimmed = query.trim().toUpperCase();
 
-    // 1. INSERT INTO table (col1, col2) VALUES (?, ?)
-    if (trimmed.startsWith('INSERT INTO')) {
-      const match = query.match(/INSERT\s+INTO\s+([a-zA-Z0-9_]+)/i);
+    // 1. INSERT [OR REPLACE / IGNORE] INTO table (col1, col2) VALUES (?, ?)
+    if (trimmed.startsWith('INSERT')) {
+      const match = query.match(/INSERT(?:\s+OR\s+(?:REPLACE|IGNORE))?\s+INTO\s+([a-zA-Z0-9_]+)/i);
       if (match) {
         const table = match[1].toLowerCase();
         const colMatch = query.match(/\(([^)]+)\)\s*VALUES/i);
@@ -258,7 +258,16 @@ export class DatabaseService {
             record[col] = params[i];
           });
           const rows = memoryDb.getTable(table);
-          rows.push(record);
+          if (trimmed.includes('REPLACE') && record.id) {
+            const existingIdx = rows.findIndex(r => r.id === record.id);
+            if (existingIdx >= 0) {
+              rows[existingIdx] = record;
+            } else {
+              rows.push(record);
+            }
+          } else {
+            rows.push(record);
+          }
           memoryDb.saveToStorage();
           return { rowsAffected: 1 };
         }
@@ -320,15 +329,23 @@ export class DatabaseService {
       }
     }
 
-    // 3. DELETE FROM table WHERE id = ?
+    // 3. DELETE FROM table [WHERE id = ?]
     if (trimmed.startsWith('DELETE FROM')) {
       const match = query.match(/DELETE\s+FROM\s+([a-zA-Z0-9_]+)(?:\s+WHERE\s+(.+))?/i);
       if (match) {
         const table = match[1].toLowerCase();
         const rows = memoryDb.getTable(table);
         const initialLen = rows.length;
-        const targetId = params[0];
+        const whereClause = match[2];
 
+        if (!whereClause) {
+          const tableRef = memoryDb.getTable(table);
+          tableRef.length = 0;
+          memoryDb.saveToStorage();
+          return { rowsAffected: initialLen };
+        }
+
+        const targetId = params[0];
         const filtered = rows.filter(r => r.id !== targetId);
         const tableRef = memoryDb.getTable(table);
         tableRef.length = 0;

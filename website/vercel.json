@@ -11,7 +11,7 @@
         },
         {
           "key": "X-Frame-Options",
-          "value": "DENY"
+          "value": "SAMEORIGIN"
         },
         {
           "key": "X-XSS-Protection",
@@ -22,6 +22,38 @@
           "value": "strict-origin-when-cross-origin"
         }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/download/gourmet-x64",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64-setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/gourmet-x86",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x86-setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/gourmet-msi",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64_en-US.msi",
+      "permanent": false
+    },
+    {
+      "source": "/download/gourmet-msi-x86",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x86_en-US.msi",
+      "permanent": false
+    },
+    {
+      "source": "/download/retail-x64",
+      "destination": "https://github.com/sigoulojia/aquadro-pos/releases/download/v1.0.1/AquadroPOS_1.0.1_x64-setup.exe",
+      "permanent": false
+    },
+    {
+      "source": "/download/retail-msi",
+      "destination": "https://github.com/sigoulojia/aquadro-pos/releases/download/v1.0.1/AquadroPOS_1.0.1_x64_en-US.msi",
+      "permanent": false
     }
   ]
 }

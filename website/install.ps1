@@ -11,8 +11,8 @@ Write-Host "==========================================================" -Foregro
 Write-Host " جارٍ التنزيل والتثبيت الفوري دون أي قيود أمان..." -ForegroundColor Green
 Write-Host ""
 
-$releaseApi = "https://api.github.com/repos/sigoulojia/aquadro-releases/releases/latest"
-$fallbackUrl = "https://github.com/sigoulojia/aquadro-releases/releases/latest/download/AquadroPOS_1.0.0_x64-setup.exe"
+$releaseApi = "https://api.github.com/repos/sigoulojia/aquadro-pos-gourmet/releases/latest"
+$fallbackUrl = "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64-setup.exe"
 $downloadUrl = $fallbackUrl
 
 try {

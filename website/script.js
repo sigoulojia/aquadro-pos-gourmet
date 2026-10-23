@@ -142,9 +142,168 @@ function copyPowerShellCommand() {
   });
 }
 
+// 5. Système de Téléchargement Direct (Sans redirection vers l'interface GitHub)
+let currentDownloadInfo = null;
+
+function triggerDirectDownload(url, filename, edition, arch) {
+  currentDownloadInfo = { url, filename, edition, arch };
+
+  // 1. Déclencher le téléchargement du binaire dans le navigateur sans quitter la page
+  try {
+    const hiddenIframe = document.createElement('iframe');
+    hiddenIframe.style.display = 'none';
+    hiddenIframe.src = url;
+    document.body.appendChild(hiddenIframe);
+    setTimeout(() => {
+      try { hiddenIframe.remove(); } catch (e) {}
+    }, 60000);
+  } catch (err) {
+    console.warn('Iframe download fallback:', err);
+  }
+
+  // Ancre de téléchargement directe avec download attribute
+  const directLink = document.createElement('a');
+  directLink.href = url;
+  directLink.setAttribute('download', filename || '');
+  directLink.setAttribute('target', '_blank');
+  directLink.style.display = 'none';
+  document.body.appendChild(directLink);
+  directLink.click();
+  setTimeout(() => directLink.remove(), 1000);
+
+  // 2. Ouvrir le Centre de Téléchargement Direct & Guide SmartScreen
+  openDownloadModal(currentDownloadInfo);
+  showDownloadToast(`Téléchargement direct de ${filename} en cours...`);
+}
+
+function retryActiveDownload() {
+  if (!currentDownloadInfo || !currentDownloadInfo.url) return;
+  const directLink = document.createElement('a');
+  directLink.href = currentDownloadInfo.url;
+  directLink.setAttribute('download', currentDownloadInfo.filename || '');
+  directLink.setAttribute('target', '_blank');
+  directLink.style.display = 'none';
+  document.body.appendChild(directLink);
+  directLink.click();
+  setTimeout(() => directLink.remove(), 1000);
+  showDownloadToast('Nouvelle tentative de téléchargement direct lancée...');
+}
+
+function openDownloadModal(data) {
+  const modal = document.getElementById('download-modal');
+  if (!modal) return;
+
+  const fnEl = document.getElementById('modal-filename-text');
+  const metaEl = document.getElementById('modal-filemeta-text');
+  const badgeEl = document.getElementById('modal-dl-version');
+  const linkX86 = document.getElementById('modal-link-x86');
+  const linkMsi = document.getElementById('modal-link-msi');
+
+  if (fnEl) fnEl.textContent = data.filename || 'Aquadro-POS-Gourmet_1.0.3_x64-setup.exe';
+  if (metaEl) {
+    const isRetail = (data.edition || '').toLowerCase() === 'retail';
+    metaEl.textContent = isRetail 
+      ? 'Aquadro POS Retail • Windows 10/11 (64-bit) • ~4.5 Mo • SQLite Local'
+      : 'Aquadro POS Gourmet v1.0.3 • Windows 10/11 (64-bit) • ~4.5 Mo • SQLite Local';
+  }
+  if (badgeEl) {
+    badgeEl.textContent = data.edition === 'Retail' ? 'Retail v1.0.1 Stable' : 'Gourmet v1.0.3 Stable';
+    badgeEl.className = data.edition === 'Retail' ? 'badge badge-retail' : 'badge badge-gourmet';
+  }
+
+  // Configurer les liens alternatifs du modal
+  if (linkX86) {
+    if ((data.edition || '').toLowerCase() === 'retail') {
+      linkX86.style.display = 'none';
+    } else {
+      linkX86.style.display = 'inline-block';
+      linkX86.onclick = (e) => {
+        e.preventDefault();
+        triggerDirectDownload(
+          'https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x86-setup.exe',
+          'Aquadro-POS-Gourmet_1.0.3_x86-setup.exe',
+          'Gourmet',
+          'Windows 32-bit (x86)'
+        );
+      };
+    }
+  }
+
+  if (linkMsi) {
+    linkMsi.style.display = 'inline-block';
+    linkMsi.onclick = (e) => {
+      e.preventDefault();
+      if ((data.edition || '').toLowerCase() === 'retail') {
+        triggerDirectDownload(
+          'https://github.com/sigoulojia/aquadro-pos/releases/download/v1.0.1/AquadroPOS_1.0.1_x64_en-US.msi',
+          'AquadroPOS_1.0.1_x64_en-US.msi',
+          'Retail',
+          'Package MSI'
+        );
+      } else {
+        triggerDirectDownload(
+          'https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64_en-US.msi',
+          'Aquadro-POS-Gourmet_1.0.3_x64_en-US.msi',
+          'Gourmet',
+          'Package MSI'
+        );
+      }
+    };
+  }
+
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDownloadModal() {
+  const modal = document.getElementById('download-modal');
+  if (!modal) return;
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+}
+
+function showDownloadToast(text) {
+  let toast = document.getElementById('download-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'download-toast';
+    toast.className = 'download-toast';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    <span>${text}</span>
+  `;
+  toast.classList.add('active');
+  setTimeout(() => {
+    toast.classList.remove('active');
+  }, 4000);
+}
+
 // Initialisation au chargement
 document.addEventListener('DOMContentLoaded', () => {
   switchEdition('gourmet');
   updateLiveSimulator();
   updateDemoMockup();
+
+  // Attacher les écouteurs de téléchargement direct
+  document.querySelectorAll('[data-direct-download]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      const url = el.getAttribute('data-download-url') || el.getAttribute('href');
+      const filename = el.getAttribute('data-filename') || 'Aquadro-POS-Setup.exe';
+      const edition = el.getAttribute('data-edition') || 'Gourmet';
+      const arch = el.getAttribute('data-arch') || 'Windows 64-bit';
+      triggerDirectDownload(url, filename, edition, arch);
+    });
+  });
+
+  // Touche Échap pour fermer le modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeDownloadModal();
+    }
+  });
 });

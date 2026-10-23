@@ -17,22 +17,27 @@ export interface PizzaSupplement {
   created_at?: string;
 }
 
-const DEFAULT_SUPPLEMENTS: PizzaSupplement[] = [
-  { id: 'sup-fromage', name_fr: 'Extra Mozzarella / Fromage', name_ar: 'جبن إضافي / موزاريلا', purchase_cost: 50, price: 100, current_stock: 50, min_stock_alert: 10, category: 'cheese', is_active: 1 },
-  { id: 'sup-champignon', name_fr: 'Champignons Frais', name_ar: 'فطر طازج', purchase_cost: 40, price: 80, current_stock: 40, min_stock_alert: 5, category: 'veg', is_active: 1 },
-  { id: 'sup-thon', name_fr: 'Thon à l\'huile', name_ar: 'تونة بالزيت', purchase_cost: 65, price: 120, current_stock: 35, min_stock_alert: 5, category: 'meat', is_active: 1 },
-  { id: 'sup-viande', name_fr: 'Viande Hachée Fraîche', name_ar: 'لحم مفروم طازج', purchase_cost: 85, price: 150, current_stock: 30, min_stock_alert: 5, category: 'meat', is_active: 1 },
-  { id: 'sup-poulet', name_fr: 'Poulet Mariné', name_ar: 'دجاج متبل', purchase_cost: 70, price: 130, current_stock: 35, min_stock_alert: 5, category: 'meat', is_active: 1 },
-  { id: 'sup-sauce-fromage', name_fr: 'Sauce Fromagère Maison', name_ar: 'صلصة الجبن', purchase_cost: 25, price: 60, current_stock: 50, min_stock_alert: 10, category: 'sauce', is_active: 1 },
-  { id: 'sup-sauce-piquante', name_fr: 'Sauce Piquante / Harissa', name_ar: 'حار / هريسة', purchase_cost: 10, price: 30, current_stock: 60, min_stock_alert: 10, category: 'sauce', is_active: 1 },
-  { id: 'sup-olives', name_fr: 'Olives Noires Dénoyautées', name_ar: 'زيتون أسود', purchase_cost: 10, price: 30, current_stock: 50, min_stock_alert: 10, category: 'veg', is_active: 1 },
-  { id: 'sup-oeuf', name_fr: 'Œuf', name_ar: 'بيض', purchase_cost: 20, price: 40, current_stock: 60, min_stock_alert: 10, category: 'extra', is_active: 1 },
-  { id: 'sup-anchois', name_fr: 'Anchois Salés', name_ar: 'أنشوجة', purchase_cost: 80, price: 150, current_stock: 25, min_stock_alert: 5, category: 'meat', is_active: 1 },
+// Identifiants des anciens suppléments démo par défaut à nettoyer
+export const LEGACY_DEFAULT_SUPPLEMENT_IDS = [
+  'sup-fromage',
+  'sup-champignon',
+  'sup-thon',
+  'sup-viande',
+  'sup-poulet',
+  'sup-sauce-fromage',
+  'sup-sauce-piquante',
+  'sup-olives',
+  'sup-oeuf',
+  'sup-anchois'
 ];
+
+// Base propre en production : aucun faux supplément imposé par défaut
+const DEFAULT_SUPPLEMENTS: PizzaSupplement[] = [];
 
 export class SupplementService {
   private static instance: SupplementService;
   private supplementsCache: PizzaSupplement[] | null = null;
+  private tableInitialized = false;
 
   private constructor() {}
 
@@ -43,60 +48,9 @@ export class SupplementService {
     return SupplementService.instance;
   }
 
-  // Initialisation et chargement des suppléments avec stock et coût d'achat
-  public async getSupplements(includeInactive = false): Promise<PizzaSupplement[]> {
-    try {
-      const rows = await db.select<PizzaSupplement>(
-        includeInactive
-          ? 'SELECT * FROM pizza_supplements ORDER BY price ASC'
-          : 'SELECT * FROM pizza_supplements WHERE is_active = 1 ORDER BY price ASC'
-      );
-      if (rows && rows.length > 0) {
-        // Normaliser les champs stock et coût pour compatibilité
-        const normalized = rows.map(r => ({
-          ...r,
-          purchase_cost: Number(r.purchase_cost) || 0,
-          current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
-          min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
-        }));
-        this.supplementsCache = normalized;
-        return normalized;
-      }
-    } catch {
-      // Si la table SQLite n'existe pas encore
-    }
-
-    // Repli persistant dans localStorage
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('pizzeria_pizza_supplements');
-        if (saved) {
-          const parsed: PizzaSupplement[] = JSON.parse(saved);
-          const normalized = parsed.map(r => ({
-            ...r,
-            purchase_cost: Number(r.purchase_cost) || 0,
-            current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
-            min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
-          }));
-          this.supplementsCache = normalized;
-          return includeInactive ? normalized : normalized.filter(s => s.is_active === 1);
-        }
-      } catch {}
-    }
-
-    // Premier démarrage : Sauvegarder les valeurs par défaut avec stock
-    await this.saveSupplements(DEFAULT_SUPPLEMENTS);
-    return includeInactive ? DEFAULT_SUPPLEMENTS : DEFAULT_SUPPLEMENTS.filter(s => s.is_active === 1);
-  }
-
-  public async saveSupplements(list: PizzaSupplement[]): Promise<void> {
-    this.supplementsCache = list;
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(list));
-      window.dispatchEvent(new Event('supplements_updated'));
-    }
-
-    // Tenter d'enregistrer dans SQLite
+  // Garantir la création de la table SQLite
+  private async ensureTable(): Promise<void> {
+    if (this.tableInitialized) return;
     try {
       await db.execute(`
         CREATE TABLE IF NOT EXISTS pizza_supplements (
@@ -112,6 +66,105 @@ export class SupplementService {
           created_at TEXT NOT NULL
         )
       `);
+      this.tableInitialized = true;
+    } catch (err) {
+      console.warn('[SupplementService] Initialisation table SQLite :', err);
+    }
+  }
+
+  // Initialisation et chargement des suppléments avec stock et coût d'achat
+  public async getSupplements(includeInactive = false): Promise<PizzaSupplement[]> {
+    await this.ensureTable();
+
+    // Migration automatique unique : purger les anciens suppléments de démonstration
+    if (typeof localStorage !== 'undefined' && !localStorage.getItem('pizzeria_defaults_cleaned_v1_0_2')) {
+      localStorage.setItem('pizzeria_defaults_cleaned_v1_0_2', 'true');
+      try {
+        for (const legacyId of LEGACY_DEFAULT_SUPPLEMENT_IDS) {
+          await db.execute('DELETE FROM pizza_supplements WHERE id = ?', [legacyId]);
+        }
+        const saved = localStorage.getItem('pizzeria_pizza_supplements');
+        if (saved) {
+          const parsed: PizzaSupplement[] = JSON.parse(saved);
+          const filtered = parsed.filter(s => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(s.id));
+          localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(filtered));
+        }
+      } catch {}
+    }
+
+    try {
+      const rows = await db.select<PizzaSupplement>(
+        includeInactive
+          ? 'SELECT * FROM pizza_supplements ORDER BY price ASC'
+          : 'SELECT * FROM pizza_supplements WHERE is_active = 1 ORDER BY price ASC'
+      );
+      if (rows) {
+        // Filtrer les éventuels résidus d'anciens suppléments par défaut
+        const cleanedRows = rows.filter(r => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(r.id));
+        const normalized = cleanedRows.map(r => ({
+          ...r,
+          purchase_cost: Number(r.purchase_cost) || 0,
+          current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
+          min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
+        }));
+        this.supplementsCache = normalized;
+        return normalized;
+      }
+    } catch {
+      // Si la table SQLite n'est pas encore accessible
+    }
+
+    // Repli persistant dans localStorage
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('pizzeria_pizza_supplements');
+        if (saved) {
+          const parsed: PizzaSupplement[] = JSON.parse(saved);
+          const cleaned = parsed.filter(s => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(s.id));
+          const normalized = cleaned.map(r => ({
+            ...r,
+            purchase_cost: Number(r.purchase_cost) || 0,
+            current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
+            min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
+          }));
+          this.supplementsCache = normalized;
+          return includeInactive ? normalized : normalized.filter(s => s.is_active === 1);
+        }
+      } catch {}
+    }
+
+    // Base propre sans données factices
+    this.supplementsCache = [];
+    return [];
+  }
+
+  public async saveSupplements(list: PizzaSupplement[]): Promise<void> {
+    this.supplementsCache = list;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(list));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
+
+    // Enregistrer et synchroniser avec SQLite
+    try {
+      await this.ensureTable();
+
+      if (list.length === 0) {
+        await db.execute('DELETE FROM pizza_supplements');
+        return;
+      }
+
+      // Supprimer de SQLite tout supplément qui n'existe plus dans list
+      const currentIds = list.map(s => s.id);
+      const existingRows = await db.select<{ id: string }>('SELECT id FROM pizza_supplements');
+      if (existingRows && existingRows.length > 0) {
+        for (const row of existingRows) {
+          if (!currentIds.includes(row.id)) {
+            await db.execute('DELETE FROM pizza_supplements WHERE id = ?', [row.id]);
+          }
+        }
+      }
+
       for (const s of list) {
         await db.execute(
           `INSERT OR REPLACE INTO pizza_supplements 
@@ -131,8 +184,8 @@ export class SupplementService {
           ]
         );
       }
-    } catch {
-      // Ignorer si SQLite n'est pas encore initialisé
+    } catch (err) {
+      console.error('[SupplementService] Erreur synchronisation SQLite :', err);
     }
   }
 
@@ -146,7 +199,7 @@ export class SupplementService {
     category?: any;
   }): Promise<PizzaSupplement> {
     const all = await this.getSupplements(true);
-    const newId = `sup-${Date.now()}`;
+    const newId = `sup-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newSupplement: PizzaSupplement = {
       id: newId,
       name_fr: input.name_fr.trim(),
@@ -201,11 +254,62 @@ export class SupplementService {
     }
   }
 
+  // Suppression définitive d'un supplément (SQLite + Cache + LocalStorage)
   public async deleteSupplement(id: string): Promise<void> {
+    try {
+      await this.ensureTable();
+      await db.execute('DELETE FROM pizza_supplements WHERE id = ?', [id]);
+    } catch (err) {
+      console.error('[SupplementService] Erreur suppression SQLite :', err);
+    }
+
     const all = await this.getSupplements(true);
     const nextList = all.filter(s => s.id !== id);
-    await this.saveSupplements(nextList);
+    this.supplementsCache = nextList;
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(nextList));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
+  }
+
+  // Supprimer tous les anciens suppléments de démonstration par défaut
+  public async clearDefaultSupplements(): Promise<void> {
+    try {
+      await this.ensureTable();
+      for (const legacyId of LEGACY_DEFAULT_SUPPLEMENT_IDS) {
+        await db.execute('DELETE FROM pizza_supplements WHERE id = ?', [legacyId]);
+      }
+    } catch (err) {
+      console.error('[SupplementService] Erreur suppression par défaut SQLite :', err);
+    }
+
+    const all = await this.getSupplements(true);
+    const nextList = all.filter(s => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(s.id));
+    this.supplementsCache = nextList;
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(nextList));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
+  }
+
+  // Vider complètement la table des suppléments
+  public async clearAllSupplements(): Promise<void> {
+    try {
+      await this.ensureTable();
+      await db.execute('DELETE FROM pizza_supplements');
+    } catch (err) {
+      console.error('[SupplementService] Erreur vidage complet SQLite :', err);
+    }
+
+    this.supplementsCache = [];
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify([]));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
   }
 }
 
 export const supplementService = SupplementService.getInstance();
+

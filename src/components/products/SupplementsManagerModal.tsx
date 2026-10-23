@@ -2,7 +2,7 @@
 // Permet d'enregistrer chaque supplément avec son prix d'achat (coût), son prix de vente, sa quantité en stock et ses alertes.
 
 import React, { useState, useEffect } from "react";
-import { supplementService, PizzaSupplement } from "../../services/supplement.service";
+import { supplementService, PizzaSupplement, LEGACY_DEFAULT_SUPPLEMENT_IDS } from "../../services/supplement.service";
 import { CurrencyUtil } from "../../core/currency/currency";
 import { useToast } from "../common/Toast";
 import {
@@ -16,7 +16,8 @@ import {
   Layers,
   AlertTriangle,
   TrendingUp,
-  DollarSign
+  DollarSign,
+  Sparkles
 } from "lucide-react";
 
 interface SupplementsManagerModalProps {
@@ -127,11 +128,37 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
   };
 
   const handleDelete = async (supp: PizzaSupplement) => {
-    if (window.confirm(`Supprimer le supplément "${supp.name_fr}" du stock ?`)) {
+    try {
+      // Retrait optimiste immédiat de la vue
+      setSupplements(prev => prev.filter(s => s.id !== supp.id));
+      await supplementService.deleteSupplement(supp.id);
+      showToast(`"${supp.name_fr}" supprimé définitivement du stock`, "info");
+      await loadList();
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, "error");
+      await loadList();
+    }
+  };
+
+  const hasLegacyDefaults = supplements.some(s => LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(s.id));
+
+  const handleClearDefaults = async () => {
+    try {
+      await supplementService.clearDefaultSupplements();
+      showToast("Suppléments de démonstration par défaut supprimés !", "success");
+      await loadList();
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, "error");
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (window.confirm("Voulez-vous vraiment vider TOUS les suppléments du stock ?")) {
       try {
-        await supplementService.deleteSupplement(supp.id);
-        showToast("Supplément retiré du stock", "info");
-        loadList();
+        await supplementService.clearAllSupplements();
+        setSupplements([]);
+        showToast("Liste des suppléments entièrement vidée", "info");
+        await loadList();
       } catch (err: any) {
         showToast(`Erreur : ${err?.message || err}`, "error");
       }
@@ -156,12 +183,36 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
               Définissez le coût d'achat initial, le prix de vente et la quantité en stock pour chaque extra.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-white border border-[#E9DCCB] hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-[#292522] transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {hasLegacyDefaults && (
+              <button
+                type="button"
+                onClick={handleClearDefaults}
+                className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                title="Supprimer les suppléments de démonstration par défaut"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>Purger les valeurs par défaut (حذف الافتراضيات)</span>
+              </button>
+            )}
+            {supplements.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 flex items-center gap-1 transition-colors cursor-pointer"
+                title="Supprimer tous les suppléments"
+              >
+                <Trash2 className="w-3 h-3 text-red-600" />
+                <span>Vider tout (حذف الكل)</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg bg-white border border-[#E9DCCB] hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-[#292522] transition-colors cursor-pointer ml-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Indicateurs rapides simples (Stock & Valeur) */}
@@ -300,7 +351,21 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E9DCCB]/60">
-                {supplements.map(supp => {
+                {supplements.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <Package className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+                      <p className="font-bold text-stone-700 text-sm">Aucun supplément enregistré</p>
+                      <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+                        La liste est vide et prête pour votre carte réelle. Utilisez le formulaire ci-dessus pour ajouter vos propres garnitures et extras.
+                      </p>
+                      <span className="text-[11px] text-stone-400 font-arabic block mt-1" dir="rtl">
+                        القائمة فارغة وجاهزة لإضافة مكوناتك الحقيقية.
+                      </span>
+                    </td>
+                  </tr>
+                ) : (
+                  supplements.map(supp => {
                   const isEditing = editingId === supp.id;
                   const isLow = (supp.current_stock || 0) <= (supp.min_stock_alert || 5);
                   const isOut = (supp.current_stock || 0) <= 0;
@@ -433,7 +498,7 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
