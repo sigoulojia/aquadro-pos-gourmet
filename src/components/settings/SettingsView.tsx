@@ -38,7 +38,8 @@ import {
   Trash2,
   ShieldCheck,
   HardDrive,
-  Folder
+  Folder,
+  Bike
 } from 'lucide-react';
 
 import { updateService, UpdateState } from '../../services/update.service';
@@ -88,6 +89,12 @@ export const SettingsView: React.FC = () => {
 
   // Logo du Magasin
   const [storeLogo, setStoreLogo] = useState<string | null>(null);
+
+  // Frais de livraison par défaut
+  const [defaultDeliveryFee, setDefaultDeliveryFee] = useState<number>(() => {
+    const saved = localStorage.getItem('pizzeria_delivery_fee');
+    return saved ? parseFloat(saved) || 200 : 200;
+  });
 
   // Imprimante
   const [printerPaperSize, setPrinterPaperSize] = useState<'58mm' | '80mm'>('80mm');
@@ -166,6 +173,7 @@ export const SettingsView: React.FC = () => {
           updated_at: new Date().toISOString()
         }
       });
+      localStorage.setItem('pizzeria_delivery_fee', defaultDeliveryFee.toString());
       showToast('Configuration magasin enregistrée avec succès', 'success');
     } catch (err: any) {
       showToast(`Erreur : ${err.message}`, 'error');
@@ -290,6 +298,8 @@ export const SettingsView: React.FC = () => {
       const base64 = event.target?.result as string;
       setStoreLogo(base64);
       localStorage.setItem('aquadro_store_logo', base64);
+      localStorage.setItem('pizzeria_store_logo', base64);
+      window.dispatchEvent(new Event('store_logo_updated'));
       showToast('Logo du magasin mis à jour', 'success');
     };
     reader.readAsDataURL(file);
@@ -457,6 +467,8 @@ export const SettingsView: React.FC = () => {
                       onClick={() => {
                         setStoreLogo(null);
                         localStorage.removeItem('aquadro_store_logo');
+                        localStorage.removeItem('pizzeria_store_logo');
+                        window.dispatchEvent(new Event('store_logo_updated'));
                       }}
                       className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600"
                     >
@@ -585,6 +597,37 @@ export const SettingsView: React.FC = () => {
                 onChange={e => setStore({ ...store, activity: e.target.value })}
                 className="w-full p-2 border border-[#E9DCCB] rounded text-xs text-gray-900"
               />
+            </div>
+
+            {/* Service Livraison & Pizzeria */}
+            <div className="pt-3 pb-3 border-t border-b border-[#E9DCCB] bg-[#FFF8EF]/50 p-3.5 rounded-xl">
+              <div className="flex items-center gap-2 mb-2 text-[#E87524]">
+                <Bike className="w-5 h-5" />
+                <h4 className="font-extrabold text-sm text-[#292522]">Service Livraison Pizzeria</h4>
+              </div>
+              <p className="text-[11px] text-stone-500 mb-3">
+                Configurez le montant ou le gain standard du livreur appliqué automatiquement lors de la sélection de "Livraison" sur l'écran de vente.
+              </p>
+              <div className="max-w-xs">
+                <label className="block text-gray-700 font-bold mb-1">
+                  Frais / Gain de Livraison par Défaut (DZD)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={defaultDeliveryFee}
+                    onChange={e => setDefaultDeliveryFee(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 border border-[#E9DCCB] rounded-lg text-sm font-black font-mono text-[#E87524] bg-white focus:ring-2 focus:ring-[#E87524]"
+                    placeholder="200"
+                  />
+                  <span className="font-bold text-xs text-stone-600">DA</span>
+                </div>
+                <span className="text-[10px] text-stone-400 mt-1 block">
+                  Valeur par défaut : 200 DA (modifiable également par commande au comptoir)
+                </span>
+              </div>
             </div>
 
             <div className="pt-3">
@@ -1007,7 +1050,7 @@ export const SettingsView: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Version Installée</span>
-                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.0</p>
+                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.2</p>
                 <span className="text-[11px] text-green-700 font-medium flex items-center gap-1 mt-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Canal Production Stable (NSIS Windows)
                 </span>
@@ -1084,7 +1127,7 @@ export const SettingsView: React.FC = () => {
             {updateState.status === 'up-to-date' && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.0).</span>
+                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.2).</span>
               </div>
             )}
 

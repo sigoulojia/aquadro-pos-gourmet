@@ -64,6 +64,30 @@ export class SalesService {
     return sale;
   }
 
+  // Calculer et incrémenter le numéro de commande du jour (ex: #1, #2, #3...)
+  public async getNextDailyOrderNumber(): Promise<number> {
+    const todayPrefix = new Date().toISOString().slice(0, 10); // Format: YYYY-MM-DD
+    const localKey = `pizzeria_daily_order_counter_${todayPrefix}`;
+    let countInDb = 0;
+    try {
+      const res = await db.select<{ count: number }>(
+        `SELECT COUNT(*) as count FROM sales WHERE created_at LIKE ?`,
+        [`${todayPrefix}%`]
+      );
+      if (res && res.length > 0 && res[0].count !== undefined) {
+        countInDb = Number(res[0].count);
+      }
+    } catch (e) {
+      console.warn('Erreur comptage ventes du jour pour le numéro de ticket:', e);
+    }
+    const rawVal = localStorage.getItem(localKey);
+    const localVal = (rawVal && !isNaN(Number(rawVal))) ? Number(rawVal) : 0;
+    const nextNum = Math.max(countInDb, localVal) + 1;
+    localStorage.setItem(localKey, nextNum.toString());
+    return nextNum;
+  }
+
+
   // Traiter un retour / remboursement avec validation des quantités
   public async processRefund(payload: ProcessRefundPayload & { items?: any[] }): Promise<Refund> {
     const sale = await this.getSaleById(payload.saleId);

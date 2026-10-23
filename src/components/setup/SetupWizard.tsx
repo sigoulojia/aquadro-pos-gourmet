@@ -33,7 +33,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Pizza
 } from 'lucide-react';
 
 interface SetupWizardProps {
@@ -84,12 +85,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     setCurrentStep(2);
   };
 
-  const handleNextStep2 = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rc.trim() || !nif.trim()) {
-      setErrorMessage('Le Registre du Commerce (RC) et le NIF sont requis pour la facturation légale.');
-      return;
-    }
+  const handleNextStep2 = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMessage('');
     setCurrentStep(3);
   };
@@ -180,7 +177,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-              <span>🍕</span>
+              <Pizza className="w-5 h-5 text-[#E87524]" />
               <span>Assistant d'Installation Initiale • Pizzeria POS Algérie</span>
             </h2>
             <p className="text-[11px] text-gray-500">
@@ -419,10 +416,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">Registre de Commerce (RC)</label>
+                  <label className="block font-bold text-gray-700 mb-1">
+                    RC <span className="text-[10px] text-gray-400 font-normal">(Optionnel / إختياري)</span>
+                  </label>
                   <input
                     type="text"
-                    required
+                    placeholder="ex: 16/00-1234567"
                     value={rc}
                     onChange={e => setRc(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
@@ -430,10 +429,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">NIF (Identifiant Fiscal)</label>
+                  <label className="block font-bold text-gray-700 mb-1">
+                    NIF <span className="text-[10px] text-gray-400 font-normal">(Optionnel / إختياري)</span>
+                  </label>
                   <input
                     type="text"
-                    required
+                    placeholder="ex: 000116001234567"
                     value={nif}
                     onChange={e => setNif(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
@@ -441,10 +442,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-gray-700 mb-1">NIS (Identifiant Statistique)</label>
+                  <label className="block font-bold text-gray-700 mb-1">
+                    NIS <span className="text-[10px] text-gray-400 font-normal">(Optionnel / إختياري)</span>
+                  </label>
                   <input
                     type="text"
-                    required
+                    placeholder="ex: 000116001234567"
                     value={nis}
                     onChange={e => setNis(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
@@ -452,22 +455,32 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </div>
               </div>
 
-              <div className="pt-3 flex justify-between">
+              <div className="pt-3 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded flex items-center space-x-1.5 border border-gray-300"
+                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded flex items-center space-x-1.5 border border-gray-300 text-xs"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Retour</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5"
-                >
-                  <span>Continuer vers la Sécurité</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => handleNextStep2()}
+                    className="px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded flex items-center space-x-1.5 border border-stone-300 text-xs cursor-pointer"
+                  >
+                    <span>تخطي هذه المرحلة (Skip)</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-stone-500" />
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-1.5 text-xs shadow-xs cursor-pointer"
+                  >
+                    <span>Continuer vers la Sécurité</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </form>
           )}

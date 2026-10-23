@@ -89,11 +89,26 @@ export class CheckoutService {
 
       try {
         const response: any = await invoke('process_checkout', { payload: rustPayload });
+        const saleId = response?.saleId || response?.sale_id || `sale-${Date.now()}`;
+        const receiptNumber = response?.receiptNumber || response?.receipt_number || `TK-${Date.now().toString().slice(-6)}`;
+        const totalTtc = response?.totalTtc !== undefined ? response.totalTtc : (response?.total_ttc || 0);
+
+        // Enregistrer automatiquement le document commercial officiel (Ticket)
+        try {
+          await documentService.registerDocument({
+            type: 'TICKET',
+            referenceId: receiptNumber,
+            customerOrSupplierName: payload.customerName || (payload.notes ? payload.notes : 'Client Comptoir'),
+            totalTtc: totalTtc
+          });
+        } catch (docErr) {
+          console.warn('Enregistrement document commercial ignoré :', docErr);
+        }
         
         return {
-          id: response.sale_id,
-          receipt_number: response.receipt_number,
-          total_ttc: response.total_ttc,
+          id: saleId,
+          receipt_number: receiptNumber,
+          total_ttc: totalTtc,
           status: 'COMPLETED',
           session_id: payload.sessionId,
           cashier_id: payload.cashierId,

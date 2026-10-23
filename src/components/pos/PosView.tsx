@@ -1,13 +1,21 @@
 // Pizzeria POS Algérie — Écran de Vente au Comptoir Pizzeria (Cashier POS)
-// Conçu spécifiquement pour une pizzeria : Menu visuel par cartes, sélection 1-clic, commande claire et encaissement direct
+// Conçu spécifiquement pour une pizzeria : Menu visuel direct, sélection 1-clic, personnalisation suppléments,
+// pizzas multi-saveurs (2 saisons / 4 saisons), service livraison avec gestion du stock des suppléments,
+// et impression double tickets (Ticket Client + Bon Cuisine Chef). Style sobre, rapide et fonctionnel.
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { productService } from "../../services/product.service";
 import { db } from "../../db/sqlite";
 import { checkoutService, CheckoutItemInput } from "../../services/checkout.service";
 import { caisseService } from "../../services/caisse.service";
 import { printerService } from "../../services/printer.service";
+import { salesService } from "../../services/sales.service";
+import { supplementService, PizzaSupplement } from "../../services/supplement.service";
+import { recipeService, ProductIngredientStatus } from "../../services/recipe.service";
 import { ReceiptModal } from "../common/ReceiptModal";
+import { PizzaCustomizerModal } from "./PizzaCustomizerModal";
+import { MultiPartPizzaModal } from "./MultiPartPizzaModal";
+import { SupplementsManagerModal } from "../products/SupplementsManagerModal";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../common/Toast";
 import { Product, PaymentMethod, CashSession, Sale } from "../../types/database";
@@ -23,13 +31,32 @@ import {
   UtensilsCrossed,
   X,
   Printer,
-  Sparkles
+  Sparkles,
+  Pizza,
+  Coffee,
+  Cake,
+  Utensils,
+  ShoppingBag,
+  Receipt,
+  ChefHat,
+  Bike,
+  Layers,
+  Settings2,
+  Phone,
+  MapPin,
+  User,
+  AlertTriangle,
+  Send
 } from "lucide-react";
 
-interface CartItem extends CheckoutItemInput {
+export interface CartItem extends CheckoutItemInput {
+  cartItemId: string;
   category_id?: string;
   name_ar?: string;
   variant?: string;
+  supplements?: PizzaSupplement[];
+  multiParts?: { name: string; price: number; id?: string }[];
+  notes?: string;
 }
 
 export const PosView: React.FC = () => {
@@ -42,14 +69,36 @@ export const PosView: React.FC = () => {
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = sessionStorage.getItem("pizzeria_current_cart");
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed: CartItem[] = JSON.parse(saved);
+      return parsed.map((item, idx) => ({
+        ...item,
+        cartItemId: item.cartItemId || `${item.productId}-${idx}-${Date.now()}`
+      }));
     } catch {
       return [];
     }
   });
 
-  const [orderType, setOrderType] = useState<"SUR_PLACE" | "A_EMPORTER">("SUR_PLACE");
+  // Type de Commande : Sur Place, À Emporter, ou Livraison
+  const [orderType, setOrderType] = useState<"SUR_PLACE" | "A_EMPORTER" | "LIVRAISON">("SUR_PLACE");
   const [tableNumber, setTableNumber] = useState<string>("Table 1");
+
+  // Champs spécifiques Livraison
+  const [deliveryFee, setDeliveryFee] = useState<number>(() => {
+    const saved = localStorage.getItem("pizzeria_delivery_fee");
+    return saved ? parseFloat(saved) || 200 : 200;
+  });
+  const [deliveryCustomerName, setDeliveryCustomerName] = useState<string>("");
+  const [deliveryPhone, setDeliveryPhone] = useState<string>("");
+  const [deliveryAddress, setDeliveryAddress] = useState<string>("");
+  const [deliveryDriver, setDeliveryDriver] = useState<string>("");
+
+  // Modals Pizzeria
+  const [customizingProduct, setCustomizingProduct] = useState<Product | null>(null);
+  const [showMultiPartModal, setShowMultiPartModal] = useState<boolean>(false);
+  const [multiPartInitialMode, setMultiPartInitialMode] = useState<"2_PARTS" | "4_PARTS">("2_PARTS");
+  const [showSupplementsManager, setShowSupplementsManager] = useState<boolean>(false);
 
   // Sauvegarde automatique du panier courant
   useEffect(() => {
@@ -65,31 +114,43 @@ export const PosView: React.FC = () => {
   const [lastReceipt, setLastReceipt] = useState<any | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
   const [currentStore, setCurrentStore] = useState<any>(null);
+  const [ingredientStatusMap, setIngredientStatusMap] = useState<Record<string, ProductIngredientStatus>>({});
+  const [outOfStockModalProduct, setOutOfStockModalProduct] = useState<Product | null>(null);
+  const [outOfStockRequested, setOutOfStockRequested] = useState<boolean>(false);
+  const [isRestockingFromPos, setIsRestockingFromPos] = useState<boolean>(false);
 
   useEffect(() => {
     loadProducts();
-    caisseService.getActiveSession().then(setActiveSession);
+    caisseService.getActiveSession().then(setActiveSession).catch(() => {});
     const last = printerService.getLastReceipt();
     if (last) setLastReceipt(last);
     db.select<any>("SELECT * FROM stores LIMIT 1")
-      .then(rows => { if (rows && rows.length > 0) setCurrentStore(rows[0]); })
+      .then(rows => {
+        if (rows && rows.length > 0) setCurrentStore(rows[0]);
+      })
       .catch(() => {});
   }, []);
 
   const loadProducts = async () => {
-    const list = await productService.getProducts();
-    setProducts(list.filter(p => p.is_active === 1));
+    try {
+      const list = await productService.getProducts(true);
+      setProducts(list.filter(p => p.is_active === 1));
+      const statusMap = await recipeService.getAllProductsIngredientStatus();
+      setIngredientStatusMap(statusMap);
+    } catch (e) {
+      console.warn("Erreur chargement produits:", e);
+    }
   };
 
-  // Catégories Pizzeria : Uniquement Pizzas et Boissons
+  // Catégories Pizzeria sobres
   const categories = [
-    { id: "ALL", label: "Tout le Menu", icon: "✨" },
-    { id: "cat-pizza", label: "Pizzas", icon: "🍕" },
-    { id: "cat-drink", label: "Boissons", icon: "🥤" }
+    { id: "ALL", label: "Tout le Menu", icon: Sparkles },
+    { id: "cat-pizza", label: "Pizzas", icon: Pizza },
+    { id: "cat-drink", label: "Boissons", icon: Coffee }
   ];
 
-  // Filtrage ultra-rapide mémoïsé (Optimisation CPU 60 FPS pour i5 3e Gen)
-  const filteredProducts = React.useMemo(() => {
+  // Filtrage ultra-rapide
+  const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
     return products.filter(p => {
       const isPizzaOrDrink = !p.category_id || p.category_id === "cat-pizza" || p.category_id === "cat-drink";
@@ -107,18 +168,74 @@ export const PosView: React.FC = () => {
     });
   }, [products, selectedCategory, search]);
 
-  // Ajout 1-clic au panier
-  const handleAddToCart = (product: Product) => {
+  const isViewingPizzas = selectedCategory === "ALL" || selectedCategory === "cat-pizza";
+  const searchLower = search.toLowerCase().trim();
+  const showMultiPartCards = isViewingPizzas && (
+    !searchLower ||
+    searchLower.includes("moitié") ||
+    searchLower.includes("moitie") ||
+    searchLower.includes("نصف") ||
+    searchLower.includes("saison") ||
+    searchLower.includes("فصول") ||
+    searchLower.includes("pizza") ||
+    searchLower.includes("بيتزا")
+  );
+
+  const isPizzaProduct = (product: Product) => {
+    return !product.category_id || product.category_id === "cat-pizza" || product.name_fr.toLowerCase().includes("pizza");
+  };
+
+  // Clic sur une carte :
+  // Si Moitié-Moitié ou 4 Saisons -> ouvre directement le modal multi-saveurs
+  // Si pizza standard -> ouvre la personnalisation (suppléments / notes / quantité)
+  // Si boisson -> ajout direct au panier
+  const handleProductCardClick = (product: Product) => {
+    const lowerName = (product.name_fr || "").toLowerCase();
+    const arName = product.name_ar || "";
+    if (lowerName.includes("moitié") || lowerName.includes("moitie") || arName.includes("نصفين")) {
+      setMultiPartInitialMode("2_PARTS");
+      setShowMultiPartModal(true);
+      return;
+    }
+    if (lowerName.includes("4 saisons") || lowerName.includes("quatre saisons") || arName.includes("فصول")) {
+      setMultiPartInitialMode("4_PARTS");
+      setShowMultiPartModal(true);
+      return;
+    }
+
+    if (isPizzaProduct(product)) {
+      const ingStatus = ingredientStatusMap[product.id];
+      if (ingStatus?.hasRecipe && !ingStatus.isAvailable) {
+        // Pizza avec ingrédients manquants : afficher modal d'alerte et de réapprovisionnement
+        setOutOfStockModalProduct(product);
+        setOutOfStockRequested(false);
+        return;
+      }
+      setCustomizingProduct(product);
+    } else {
+      handleQuickAdd(product);
+    }
+  };
+
+  // Ajout direct 1-clic
+  const handleQuickAdd = (product: Product, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
     setCart(prev => {
-      const idx = prev.findIndex(item => item.productId === product.id);
+      const idx = prev.findIndex(
+        item => item.productId === product.id && (!item.supplements || item.supplements.length === 0) && !item.notes && !item.multiParts
+      );
+
       if (idx >= 0) {
         const next = [...prev];
         next[idx].quantity += 1;
         return next;
       }
+
       return [
         ...prev,
         {
+          cartItemId: `${product.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           productId: product.id,
           name: product.name_fr || (product as any).name || "Article",
           name_ar: product.name_ar,
@@ -132,12 +249,75 @@ export const PosView: React.FC = () => {
     });
   };
 
+  // Ajout depuis le Customizer de Pizza (avec suppléments & notes)
+  const handleAddCustomizedPizza = (customized: {
+    product: Product;
+    quantity: number;
+    supplements: PizzaSupplement[];
+    notes: string;
+    totalUnitPrice: number;
+  }) => {
+    const displayName = customized.product.name_fr || (customized.product as any).name || "Pizza";
+
+    setCart(prev => [
+      ...prev,
+      {
+        cartItemId: `cust-${customized.product.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        productId: customized.product.id,
+        name: displayName,
+        name_ar: customized.product.name_ar,
+        variant: customized.product.variant,
+        category_id: customized.product.category_id,
+        quantity: customized.quantity,
+        unitPrice: customized.totalUnitPrice,
+        discountAmount: 0,
+        supplements: customized.supplements,
+        notes: customized.notes
+      }
+    ]);
+
+    setCustomizingProduct(null);
+    showToast(`${customized.quantity}x ${displayName} ajouté`, "success");
+  };
+
+  // Ajout depuis le Modal Multi-Saveurs (Moitié-Moitié ou 4 Saisons)
+  const handleAddMultiPartPizza = (item: {
+    compositeProduct: Product;
+    quantity: number;
+    supplements: PizzaSupplement[];
+    notes: string;
+    totalUnitPrice: number;
+    multiParts: {
+      type: "2_PARTS" | "4_PARTS";
+      parts: Array<{ name: string; price: number; id: string }>;
+    };
+  }) => {
+    setCart(prev => [
+      ...prev,
+      {
+        cartItemId: `multi-${item.compositeProduct.id}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        productId: item.compositeProduct.id,
+        name: item.compositeProduct.name_fr,
+        category_id: "cat-pizza",
+        quantity: item.quantity,
+        unitPrice: item.totalUnitPrice,
+        discountAmount: 0,
+        supplements: item.supplements,
+        multiParts: item.multiParts.parts,
+        notes: item.notes
+      }
+    ]);
+
+    setShowMultiPartModal(false);
+    showToast(`${item.quantity}x ${item.compositeProduct.name_fr} ajouté`, "success");
+  };
+
   // Modification quantité
-  const handleUpdateQuantity = (productId: string, delta: number) => {
+  const handleUpdateQuantity = (cartItemId: string, delta: number) => {
     setCart(prev => {
       return prev
         .map(item => {
-          if (item.productId === productId) {
+          if (item.cartItemId === cartItemId) {
             const nextQty = item.quantity + delta;
             return nextQty > 0 ? { ...item, quantity: nextQty } : null;
           }
@@ -147,12 +327,12 @@ export const PosView: React.FC = () => {
     });
   };
 
-  // Suppression d article
-  const handleRemoveItem = (productId: string) => {
-    setCart(prev => prev.filter(item => item.productId !== productId));
+  // Suppression d'article
+  const handleRemoveItem = (cartItemId: string) => {
+    setCart(prev => prev.filter(item => item.cartItemId !== cartItemId));
   };
 
-  // Annulation commande avec confirmation
+  // Annulation commande
   const handleCancelOrder = () => {
     if (cart.length === 0) return;
     if (window.confirm("Voulez-vous vraiment annuler la commande en cours ?")) {
@@ -164,7 +344,8 @@ export const PosView: React.FC = () => {
   // Calculs totaux
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalAmount = subtotal;
+  const activeDeliveryFee = orderType === "LIVRAISON" ? Number(deliveryFee) || 0 : 0;
+  const totalAmount = subtotal + activeDeliveryFee;
 
   // Calcul de la monnaie
   const tenderedNumeric = parseFloat(tenderedInput) || 0;
@@ -181,7 +362,7 @@ export const PosView: React.FC = () => {
     setShowPayModal(true);
   };
 
-  // Finaliser la vente
+  // Finaliser la vente, Déduire le stock des suppléments & Impression Double Tickets
   const handleFinalizeSale = async () => {
     if (cart.length === 0 || isProcessing) return;
 
@@ -192,14 +373,28 @@ export const PosView: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const cashierName = user?.name || "Caissier Pizzeria";
+      const dailyOrderNumber = await salesService.getNextDailyOrderNumber();
+      const cashierName = user?.name || "كاشير المحل";
       const cashierId = user?.id || "usr-cashier";
+
+      const orderTypeLabel =
+        orderType === "SUR_PLACE"
+          ? `Sur Place - ${tableNumber}`
+          : orderType === "A_EMPORTER"
+          ? "À Emporter"
+          : `Livraison - ${deliveryCustomerName || "Client"} (${deliveryPhone || "Sans tél"}) - ${deliveryAddress || "Sans adresse"}`;
 
       const sale: Sale = await checkoutService.processCheckout({
         cashierId,
         cashierName,
         sessionId: activeSession?.id,
-        items: cart,
+        items: cart.map(item => ({
+          productId: item.productId,
+          name: item.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          discountAmount: 0
+        })),
         payments: [
           {
             method: paymentMethod,
@@ -208,30 +403,87 @@ export const PosView: React.FC = () => {
             changeGiven: changeGiven
           }
         ],
-        notes: `${orderType === "SUR_PLACE" ? "Sur Place" : "A Emporter"} - ${tableNumber}`
+        notes: orderTypeLabel
       });
 
-      // Construction ticket de caisse Pizzeria
+      // Déduction automatique du stock des suppléments vendus
+      const supplementsToDeduct: Array<{ supplementId: string; quantity: number }> = [];
+      for (const item of cart) {
+        if (item.supplements && item.supplements.length > 0) {
+          for (const s of item.supplements) {
+            supplementsToDeduct.push({
+              supplementId: s.id,
+              quantity: item.quantity
+            });
+          }
+        }
+      }
+      if (supplementsToDeduct.length > 0) {
+        await supplementService.deductSupplementStock(supplementsToDeduct);
+      }
+
+      // Déduction automatique du stock des ingrédients de la recette (Backend SQLite)
+      for (const item of cart) {
+        try {
+          if (item.productId && !item.productId.startsWith('multi-')) {
+            await recipeService.deductRecipeIngredientsForSale(item.productId, item.quantity);
+          } else if (item.multiParts && item.multiParts.length > 0) {
+            // Pour Moitié-Moitié ou 4 Saisons : déduire proportionnellement les ingrédients de chaque partie
+            const fraction = 1 / item.multiParts.length;
+            for (const part of item.multiParts) {
+              if (part.id) {
+                await recipeService.deductRecipeIngredientsForSale(part.id, item.quantity * fraction);
+              }
+            }
+          }
+        } catch (recipeErr) {
+          console.warn("Erreur déduction recette:", recipeErr);
+        }
+      }
+
+      // Construction des données complètes pour tickets thermiques
+      const validDailyOrderNum = (dailyOrderNumber && String(dailyOrderNumber) !== 'undefined' && !isNaN(Number(dailyOrderNumber)))
+        ? Number(dailyOrderNumber)
+        : 1;
+      const validReceiptNum = (sale?.receipt_number && String(sale.receipt_number).trim() !== '' && String(sale.receipt_number) !== 'undefined')
+        ? sale.receipt_number
+        : `TK-${validDailyOrderNum}`;
+
       const receiptData: any = {
-        saleId: sale.id,
-        receiptNumber: sale.receipt_number,
+        saleId: sale?.id || `sale-${Date.now()}`,
+        receiptNumber: validReceiptNum,
+        dailyOrderNumber: validDailyOrderNum,
         dateTime: new Date().toLocaleString("fr-FR"),
         date: new Date().toLocaleDateString("fr-FR"),
         time: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-        cashierName,
-        orderType: orderType === "SUR_PLACE" ? "Sur Place" : "À Emporter",
+        cashierName: cashierName || "Caissier",
+        orderType,
         tableNumber: orderType === "SUR_PLACE" ? tableNumber : undefined,
-        storeName: currentStore?.name_fr || currentStore?.name || "Pizzeria",
+        deliveryFee: activeDeliveryFee,
+        customerName: orderType === "LIVRAISON" ? deliveryCustomerName : undefined,
+        customerPhone: orderType === "LIVRAISON" ? deliveryPhone : undefined,
+        customerAddress: orderType === "LIVRAISON" ? deliveryAddress : undefined,
+        driverName: orderType === "LIVRAISON" ? deliveryDriver : undefined,
+        storeName: currentStore?.name_fr || currentStore?.name || "PIZZERIA GOURMET",
+        storeNameFr: currentStore?.name_fr || currentStore?.name || "PIZZERIA GOURMET",
+        storeNameAr: currentStore?.name_ar || "بيتزيريا",
         storeAddress: currentStore?.address || "",
         storePhone: currentStore?.phone || "",
+        rcNumber: currentStore?.rc_number || "",
+        nifNumber: currentStore?.nif_number || "",
+        aiNumber: currentStore?.art_imposition || "",
         items: cart.map(i => ({
           name: i.name,
+          variant: i.variant,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
-          total: i.quantity * i.unitPrice
+          total: i.quantity * i.unitPrice,
+          supplements: i.supplements,
+          multiParts: i.multiParts ? { type: '2_PARTS', parts: i.multiParts } : undefined,
+          notes: i.notes
         })),
         totalTTC: totalAmount,
-        paymentMethod: paymentMethod === "CASH" ? "Espèces" : "Carte Bancaire",
+        paymentMethod: paymentMethod === "CASH" ? "CASH" : "CARD",
         tenderedAmount: paymentMethod === "CASH" ? tenderedNumeric : totalAmount,
         changeGiven: changeGiven,
         taxAmount: 0,
@@ -241,147 +493,292 @@ export const PosView: React.FC = () => {
       setLastReceipt(receiptData);
       setShowPayModal(false);
       setCart([]);
-      showToast("Commande encaissée avec succès !", "success");
-
-      // Impression automatique ou ouverture aperçu
+      // Impression directe et automatique sans aucune boîte de dialogue ni modal intrusif
       try {
-        await printerService.printReceipt(receiptData);
-      } catch {
-        setShowReceiptModal(true);
+        await printerService.printBothTickets(receiptData, false);
+        showToast("تم الدفع بنجاح وطباعة التيكت مباشرة !", "success");
+      } catch (printErr) {
+        console.warn("Impression directe:", printErr);
+        showToast("تمت معالجة الطلب بنجاح", "success");
       }
     } catch (err: any) {
-      showToast(`Erreur d encaissement : ${err?.message || err}`, "error");
+      showToast(`Erreur d'encaissement : ${err?.message || err}`, "error");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Helper icône par catégorie
-  const getProductEmoji = (p: Product) => {
-    if (p.category_id === "cat-drink") return "🥤";
-    if (p.category_id === "cat-sides") return "🍟";
-    if (p.category_id === "cat-dessert") return "🍰";
-    return "🍕";
-  };
-
   return (
-    <div className="flex-1 flex overflow-hidden select-none bg-[#FFF8EF] font-sans">
+    <div className="flex-1 flex overflow-hidden select-none bg-[#F7F8FA] font-sans">
       {/* ========================================================================= */}
-      {/* COLONNE GAUCHE (70%) : MENU VISUEL & CARTES DES PIZZAS                     */}
+      {/* COLONNE GAUCHE (70%) : MENU VISUEL PROPRE & DIRECT SANS BANNIÈRES ENCOMBRANTES */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col overflow-hidden border-r border-[#E9DCCB]">
-        {/* Barre Supérieure du Menu : Recherche & Catégories */}
-        <div className="bg-white px-5 py-3 border-b border-[#E9DCCB] flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
-          {/* Onglets des Catégories Pizzeria */}
-          <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+      <div className="flex-1 flex flex-col overflow-hidden border-r border-stone-200">
+        {/* Barre Supérieure du Menu : Onglets Catégories, Moitié-Moitié, 4 Saisons & Recherche */}
+        <div className="bg-white px-4 py-2.5 border-b border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-2xs">
+          {/* Onglets Catégories + Raccourcis Moitié-Moitié & 4 Saisons intégrés sobrement */}
+          <div className="flex items-center space-x-1.5 overflow-x-auto w-full sm:w-auto pb-0.5 sm:pb-0 scrollbar-none">
             {categories.map(cat => {
               const isSelected = selectedCategory === cat.id;
+              const IconComp = cat.icon;
               return (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
                     isSelected
-                      ? "bg-[#E87524] text-white shadow-sm shadow-orange-500/25 ring-2 ring-orange-300"
-                      : "bg-[#FFF8EF] text-[#292522] hover:bg-[#FFF3EB] hover:text-[#E87524] border border-[#E9DCCB]"
+                      ? "bg-[#E87524] text-white shadow-xs"
+                      : "bg-stone-50 text-stone-700 hover:bg-orange-50 hover:text-[#E87524] border border-stone-200"
                   }`}
                 >
-                  <span className="text-sm">{cat.icon}</span>
+                  <IconComp className="w-3.5 h-3.5 shrink-0" />
                   <span>{cat.label}</span>
                 </button>
               );
             })}
+
+            {/* Séparateur sobre */}
+            <div className="h-5 w-[1px] bg-stone-200 mx-1 shrink-0" />
+
+            {/* Bouton Pizza Moitié - Moitié */}
+            <button
+              onClick={() => {
+                setMultiPartInitialMode("2_PARTS");
+                setShowMultiPartModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-700 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+              title="Pizza 2 goûts (prix le plus élevé automatique)"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#E87524]" />
+              <span>Moitié - Moitié</span>
+            </button>
+
+            {/* Bouton Pizza 4 Saisons */}
+            <button
+              onClick={() => {
+                setMultiPartInitialMode("4_PARTS");
+                setShowMultiPartModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-700 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+              title="Pizza 4 quartiers (prix le plus élevé automatique)"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>4 Saisons</span>
+            </button>
+
+            {/* Bouton Gérer les Suppléments & Stock */}
+            <button
+              onClick={() => setShowSupplementsManager(true)}
+              className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-600 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+              title="Gérer les suppléments, coûts et stock"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+              <span>Suppléments (Stock)</span>
+            </button>
           </div>
 
           {/* Recherche rapide */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
+          <div className="relative w-full sm:w-60">
+            <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
             <input
               type="text"
               placeholder="Rechercher pizza, boisson..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-8 py-1.5 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524] focus:border-transparent transition-all"
+              className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-stone-50 border border-stone-200 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-[#E87524]"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600"
+                className="absolute right-2 top-2 text-stone-400 hover:text-stone-600"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             )}
           </div>
         </div>
 
-        {/* Grille des Cartes Produits Pizzeria */}
+        {/* Grille des Cartes Produits Pizzeria — Pure, simple et spacieuse */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {filteredProducts.length === 0 ? (
+          {filteredProducts.length === 0 && !showMultiPartCards ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 text-stone-400">
-              <UtensilsCrossed className="w-12 h-12 text-[#E87524]/40 mb-3" />
-              <p className="font-bold text-[#292522] text-sm">
-                {products.length === 0 ? "Votre menu est vide pour le moment" : "Aucun article trouvé"}
-              </p>
-              <p className="text-xs text-stone-500 mt-1 max-w-sm">
-                {products.length === 0
-                  ? "Le propriétaire peut ajouter ses pizzas et boissons depuis la section Menu & Produits."
-                  : "Essayez un autre mot-clé ou catégorie"}
+              <UtensilsCrossed className="w-10 h-10 text-[#E87524]/40 mb-2.5" />
+              <p className="font-bold text-[#292522] text-xs">
+                {products.length === 0 ? "Votre menu est vide" : "Aucun article trouvé"}
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {/* Cartes Spéciales Pizzas dans la catégorie PIZZA : Moitié-Moitié et 4 Saisons */}
+              {showMultiPartCards && (
+                <>
+                  {/* Carte Pizza Moitié - Moitié */}
+                  <div
+                    onClick={() => {
+                      setMultiPartInitialMode("2_PARTS");
+                      setShowMultiPartModal(true);
+                    }}
+                    className="bg-linear-to-br from-white to-[#FFF9F2] rounded-xl border-2 border-dashed border-[#E87524]/60 p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm hover:border-[#E87524] active:scale-[0.99]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-9 h-9 rounded-lg bg-[#FFF3EB] border border-[#E87524]/30 text-[#E87524] flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
+                          <Layers className="w-5 h-5 text-[#E87524]" />
+                        </div>
+                        <span className="bg-[#FFF3EB] text-[#E87524] font-black text-[11px] px-2 py-0.5 rounded border border-[#E87524]/20 font-mono">
+                          حسب الذوق
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-[#292522] text-xs leading-tight group-hover:text-[#E87524] transition-colors">
+                        بيتزا نصفين (Moitié - Moitié)
+                      </h3>
+                      <p className="text-[10px] text-stone-600 font-arabic line-clamp-1 mt-0.5" dir="rtl">
+                        اختر نصفين بأذواق مختلفة في بيتزا واحدة
+                      </p>
+                      <span className="inline-block mt-1 text-[10px] font-bold text-[#E87524] bg-orange-100/70 px-1.5 py-0.5 rounded">
+                        2 أذواق • 2 Saveurs
+                      </span>
+                    </div>
+                    <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-[#E87524] font-bold">
+                      <span>تركيب البيتزا</span>
+                      <div className="w-5 h-5 rounded-md bg-[#E87524] text-white flex items-center justify-center">
+                        <Plus className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Carte Pizza 4 Saisons */}
+                  <div
+                    onClick={() => {
+                      setMultiPartInitialMode("4_PARTS");
+                      setShowMultiPartModal(true);
+                    }}
+                    className="bg-linear-to-br from-white to-[#FFF9F2] rounded-xl border-2 border-dashed border-amber-400 p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm hover:border-amber-500 active:scale-[0.99]"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-300 text-amber-600 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
+                          <Sparkles className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <span className="bg-amber-50 text-amber-700 font-black text-[11px] px-2 py-0.5 rounded border border-amber-200 font-mono">
+                          حسب الأذواق
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-[#292522] text-xs leading-tight group-hover:text-amber-600 transition-colors">
+                        بيتزا 4 فصول (4 Saisons)
+                      </h3>
+                      <p className="text-[10px] text-stone-600 font-arabic line-clamp-1 mt-0.5" dir="rtl">
+                        4 أرباع بأربعة أذواق مختلفة من اختيارك
+                      </p>
+                      <span className="inline-block mt-1 text-[10px] font-bold text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded">
+                        4 أرباع • 4 Saveurs
+                      </span>
+                    </div>
+                    <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-amber-700 font-bold">
+                      <span>تركيب 4 فصول</span>
+                      <div className="w-5 h-5 rounded-md bg-amber-500 text-white flex items-center justify-center">
+                        <Plus className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
               {filteredProducts.map(product => {
-                const cartQty = cart.find(item => item.productId === product.id)?.quantity || 0;
+                const isPizza = isPizzaProduct(product);
+                const ingStatus = ingredientStatusMap[product.id];
+                const isOutOfIngredients = isPizza && ingStatus?.hasRecipe && !ingStatus.isAvailable;
+                const cartQty = cart
+                  .filter(item => item.productId === product.id)
+                  .reduce((sum, item) => sum + item.quantity, 0);
 
                 return (
                   <div
                     key={product.id}
-                    onClick={() => handleAddToCart(product)}
-                    className={`bg-white rounded-2xl border p-3.5 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-xs hover:shadow-md active:scale-[0.98] ${
-                      cartQty > 0
-                        ? "border-[#E87524] ring-2 ring-[#E87524]/20 bg-[#FFFDFB]"
-                        : "border-[#E9DCCB] hover:border-[#FFC928] hover:bg-[#FFFCF7]"
+                    onClick={() => handleProductCardClick(product)}
+                    className={`bg-white rounded-xl border p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm active:scale-[0.99] ${
+                      isOutOfIngredients
+                        ? "border-amber-300 bg-amber-50/30 hover:border-amber-400"
+                        : cartQty > 0
+                        ? "border-[#E87524] ring-1 ring-[#E87524]/30 bg-[#FFFDFB]"
+                        : "border-[#E9DCCB] hover:border-[#E87524]/60 hover:bg-[#FFFCF7]"
                     }`}
                   >
-                    {/* Badge Quantité si déjà au panier */}
+                    {/* Badge Quantité */}
                     {cartQty > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-[#E87524] text-white text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center shadow-md shadow-orange-500/30 ring-2 ring-white animate-in zoom-in-75 duration-100">
+                      <span className="absolute -top-1.5 -right-1.5 bg-[#E87524] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-sm ring-2 ring-white">
                         {cartQty}
                       </span>
                     )}
 
-                    <div>
-                      {/* Icône du produit & Tag Prix */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="w-10 h-10 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-xl shadow-2xs group-hover:scale-105 transition-transform">
-                          {getProductEmoji(product)}
-                        </div>
-                        <span className="bg-[#FFF3EB] text-[#E87524] font-black text-xs px-2 py-1 rounded-lg border border-[#E87524]/20">
-                          {CurrencyUtil.formatDZD(product.selling_price_ttc)}
-                        </span>
-                      </div>
+                    {/* Badge Ingrédients Manquants */}
+                    {isOutOfIngredients && (
+                      <span className="absolute -top-2 left-2 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                        <AlertTriangle className="w-3 h-3 text-amber-600 animate-pulse" />
+                        <span>نقص مقادير</span>
+                      </span>
+                    )}
 
-                      {/* Titre & Ingrédients */}
+                    <div>
+                      {/* Photo réelle ou Icône sobre & Prix */}
+                      {product.image_url ? (
+                        <div className="w-full h-24 rounded-lg overflow-hidden mb-2 bg-stone-100 border border-[#E9DCCB] relative flex items-center justify-center">
+                          <img
+                            src={product.image_url}
+                            alt={product.name_fr}
+                            className={`w-full h-full object-cover group-hover:scale-102 transition-transform duration-150 ${
+                              isOutOfIngredients ? "filter grayscale-30" : ""
+                            }`}
+                          />
+                          <span className="absolute top-1.5 right-1.5 bg-black/75 backdrop-blur-xs text-white font-black text-[11px] px-1.5 py-0.5 rounded shadow-xs font-mono">
+                            {CurrencyUtil.formatDZD(product.selling_price_ttc)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between mb-2">
+                          <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shadow-2xs ${
+                            isOutOfIngredients
+                              ? "bg-amber-100 border-amber-300 text-amber-700"
+                              : "bg-[#FFF8EF] border-[#E9DCCB] text-[#E87524]"
+                          }`}>
+                            {product.category_id === "cat-drink" ? (
+                              <Coffee className="w-4 h-4" />
+                            ) : product.category_id === "cat-dessert" ? (
+                              <Cake className="w-4 h-4" />
+                            ) : (
+                              <Pizza className="w-4 h-4" />
+                            )}
+                          </div>
+                          <span className="bg-[#FFF3EB] text-[#E87524] font-black text-xs px-2 py-0.5 rounded border border-[#E87524]/20 font-mono">
+                            {CurrencyUtil.formatDZD(product.selling_price_ttc)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Titre & Description */}
                       <h3 className="font-bold text-[#292522] text-xs leading-tight line-clamp-1 group-hover:text-[#E87524] transition-colors">
                         {product.name_fr}
                       </h3>
                       {product.name_ar && (
-                        <p className="text-[11px] text-stone-500 font-arabic line-clamp-1 mt-0.5" dir="rtl">
+                        <p className="text-[10px] text-stone-500 font-arabic line-clamp-1 mt-0.5" dir="rtl">
                           {product.name_ar}
                         </p>
                       )}
                       {product.variant && (
-                        <p className="text-[10px] text-stone-600 line-clamp-2 mt-1 leading-snug">
+                        <p className="text-[10px] text-stone-500 line-clamp-1 mt-1 leading-snug">
                           {product.variant}
                         </p>
                       )}
                     </div>
 
-                    {/* Bouton d ajout rapide visuel */}
-                    <div className="mt-3 pt-2 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-stone-700 font-semibold">
-                      <span>Ajouter</span>
-                      <div className="w-5 h-5 rounded-full bg-[#E87524]/10 text-[#E87524] flex items-center justify-center group-hover:bg-[#E87524] group-hover:text-white transition-colors">
-                        <Plus className="w-3 h-3" />
+                    {/* Ligne inférieure simple */}
+                    <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-stone-600 font-semibold">
+                      <span>{isOutOfIngredients ? "طلب المقدار" : isPizza ? "Choisir" : "Ajouter"}</span>
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
+                        isOutOfIngredients
+                          ? "bg-amber-200 text-amber-900 group-hover:bg-amber-300"
+                          : "bg-[#FFF3EB] text-[#E87524] group-hover:bg-[#E87524] group-hover:text-white"
+                      }`}>
+                        {isOutOfIngredients ? <AlertTriangle className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                       </div>
                     </div>
                   </div>
@@ -393,190 +790,282 @@ export const PosView: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* COLONNE DROITE (30%) : COMMANDE EN COURS & ENCAISSEMENT PROMINENT         */}
+      {/* COLONNE DROITE (30%) : COMMANDE EN COURS, SERVICE & TOTAL                 */}
       {/* ========================================================================= */}
-      <div className="w-84 lg:w-96 bg-white flex flex-col justify-between overflow-hidden shadow-sm shrink-0 border-l border-[#E9DCCB]">
-        {/* En-tête du Ticket de Caisse */}
-        <div className="p-3.5 border-b border-[#E9DCCB] bg-[#FFF8EF]">
-          <div className="flex items-center justify-between mb-2">
+      <div className="w-84 lg:w-92 bg-white flex flex-col justify-between overflow-hidden shadow-xs shrink-0 border-l border-stone-200">
+        {/* En-tête : Type de commande */}
+        <div className="p-3 border-b border-stone-200 bg-stone-50 space-y-2">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <span className="text-base">🧾</span>
-              <h2 className="font-extrabold text-sm text-[#292522]">Commande en cours</h2>
+              <Receipt className="w-4 h-4 text-[#E87524]" />
+              <h2 className="font-extrabold text-xs text-stone-800">Commande en cours</h2>
             </div>
-            <span className="text-xs font-bold text-[#E87524] bg-white px-2 py-0.5 rounded-full border border-[#E9DCCB]">
+            <span className="text-[11px] font-bold text-[#E87524] bg-white px-2 py-0.5 rounded-full border border-stone-200">
               {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
             </span>
           </div>
 
-          {/* Toggle Sur Place / À Emporter */}
-          <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border border-[#E9DCCB]">
+          {/* Toggle 3 Services Sobre : Sur Place / À Emporter / Livraison */}
+          <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-stone-200">
             <button
               onClick={() => setOrderType("SUR_PLACE")}
-              className={`py-1 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 orderType === "SUR_PLACE"
-                  ? "bg-[#E87524] text-white shadow-xs"
+                  ? "bg-[#E87524] text-white shadow-2xs"
                   : "text-stone-600 hover:text-[#292522]"
               }`}
             >
-              <span>🍽️</span>
+              <Utensils className="w-3 h-3" />
               <span>Sur Place</span>
             </button>
+
             <button
               onClick={() => setOrderType("A_EMPORTER")}
-              className={`py-1 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
                 orderType === "A_EMPORTER"
-                  ? "bg-[#E87524] text-white shadow-xs"
+                  ? "bg-[#E87524] text-white shadow-2xs"
                   : "text-stone-600 hover:text-[#292522]"
               }`}
             >
-              <span>🥡</span>
+              <ShoppingBag className="w-3 h-3" />
               <span>À Emporter</span>
             </button>
+
+            <button
+              onClick={() => setOrderType("LIVRAISON")}
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                orderType === "LIVRAISON"
+                  ? "bg-[#E87524] text-white shadow-2xs"
+                  : "text-stone-600 hover:text-[#292522]"
+              }`}
+            >
+              <Bike className="w-3 h-3" />
+              <span>Livraison</span>
+            </button>
           </div>
+
+          {/* Configuration Sur Place */}
+          {orderType === "SUR_PLACE" && (
+            <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-[#E9DCCB]">
+              <span className="text-xs font-bold text-stone-600 whitespace-nowrap">Table :</span>
+              <input
+                type="text"
+                value={tableNumber}
+                onChange={e => setTableNumber(e.target.value)}
+                placeholder="Table 1"
+                className="w-full text-xs font-bold text-[#292522] bg-transparent focus:outline-none"
+              />
+            </div>
+          )}
+
+          {/* Configuration Service Livraison (Simple, Directe et Sobre) */}
+          {orderType === "LIVRAISON" && (
+            <div className="bg-white rounded-lg border border-[#E9DCCB] p-2 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-stone-700 flex items-center gap-1">
+                  <Bike className="w-3.5 h-3.5 text-[#E87524]" />
+                  <span>Frais / Gain Livreur :</span>
+                </span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={deliveryFee}
+                    onChange={e => setDeliveryFee(parseFloat(e.target.value) || 0)}
+                    className="w-16 px-1.5 py-0.5 rounded border border-[#E9DCCB] text-xs font-bold font-mono text-[#E87524] text-right bg-stone-50"
+                  />
+                  <span className="text-[11px] text-stone-500 font-bold">DA</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="tel"
+                  value={deliveryPhone}
+                  onChange={e => setDeliveryPhone(e.target.value)}
+                  placeholder="Tél: 05 / 06 / 07..."
+                  className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] font-mono bg-white focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={deliveryCustomerName}
+                  onChange={e => setDeliveryCustomerName(e.target.value)}
+                  placeholder="Nom Client (optionnel)"
+                  className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] bg-white focus:outline-none"
+                />
+              </div>
+
+              <input
+                type="text"
+                value={deliveryAddress}
+                onChange={e => setDeliveryAddress(e.target.value)}
+                placeholder="Adresse de livraison (Quartier, Bâtiment)..."
+                className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] bg-white focus:outline-none"
+              />
+            </div>
+          )}
         </div>
 
         {/* Liste des Articles dans la Commande */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 select-none">
-              <div className="w-14 h-14 rounded-full bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-2xl mb-2">
-                🍕
-              </div>
-              <p className="font-bold text-[#292522] text-xs">Commande vide</p>
-              <p className="text-[11px] text-stone-500 mt-1 max-w-[180px]">
-                Touchez les pizzas et boissons à gauche pour créer la commande
+              <Pizza className="w-8 h-8 text-[#E87524]/60 mb-1.5" />
+              <p className="font-bold text-stone-600 text-xs">Commande vide</p>
+              <p className="text-[11px] text-stone-400 mt-0.5">
+                Sélectionnez les pizzas et boissons
               </p>
             </div>
           ) : (
             cart.map(item => (
               <div
-                key={item.productId}
-                className="bg-[#FFFDFB] rounded-xl border border-[#E9DCCB] p-2.5 flex items-center justify-between gap-2 shadow-2xs hover:border-[#FFC928] transition-colors"
+                key={item.cartItemId}
+                className="bg-[#FFFDFB] rounded-lg border border-[#E9DCCB] p-2 flex flex-col gap-1 shadow-2xs"
               >
-                {/* Infos article */}
-                <div className="flex-1 min-w-0 pr-1">
-                  <h4 className="font-bold text-xs text-[#292522] truncate">{item.name}</h4>
-                  <p className="text-[11px] text-[#E87524] font-semibold">
-                    {CurrencyUtil.formatDZD(item.unitPrice)}
-                  </p>
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex-1 min-w-0 pr-1">
+                    <h4 className="font-bold text-xs text-[#292522] truncate">{item.name}</h4>
+                    <span className="text-[11px] text-[#E87524] font-semibold font-mono">
+                      {CurrencyUtil.formatDZD(item.unitPrice)}
+                    </span>
+                  </div>
+
+                  {/* Contrôles Quantité (-) [qty] (+) */}
+                  <div className="flex items-center gap-1 bg-white border border-[#E9DCCB] rounded p-0.5 shrink-0">
+                    <button
+                      onClick={() => handleUpdateQuantity(item.cartItemId, -1)}
+                      className="w-5 h-5 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                      title="Diminuer"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <span className="w-5 text-center font-bold text-xs text-[#292522]">
+                      {item.quantity}
+                    </span>
+                    <button
+                      onClick={() => handleUpdateQuantity(item.cartItemId, 1)}
+                      className="w-5 h-5 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                      title="Augmenter"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Total Ligne & Bouton Poubelle */}
+                  <div className="text-right pl-1 flex items-center gap-1 shrink-0">
+                    <span className="font-bold text-xs text-[#292522] font-mono">
+                      {CurrencyUtil.formatDZD(item.quantity * item.unitPrice)}
+                    </span>
+                    <button
+                      onClick={() => handleRemoveItem(item.cartItemId)}
+                      className="text-stone-400 hover:text-red-600 p-0.5 rounded transition-colors cursor-pointer"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Contrôles Quantité Simple (-) [qty] (+) */}
-                <div className="flex items-center gap-1 bg-white border border-[#E9DCCB] rounded-lg p-0.5 shadow-2xs">
-                  <button
-                    onClick={() => handleUpdateQuantity(item.productId, -1)}
-                    className="w-6 h-6 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 active:scale-95 transition-colors"
-                    title="Diminuer"
-                  >
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <span className="w-6 text-center font-bold text-xs text-[#292522]">
-                    {item.quantity}
-                  </span>
-                  <button
-                    onClick={() => handleUpdateQuantity(item.productId, 1)}
-                    className="w-6 h-6 rounded flex items-center justify-center text-stone-600 hover:bg-stone-100 active:scale-95 transition-colors"
-                    title="Augmenter"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
+                {/* Composition Multi-Parts */}
+                {item.multiParts && item.multiParts.length > 0 && (
+                  <div className="text-[10px] text-stone-600 bg-stone-50 px-1.5 py-0.5 rounded border border-stone-200">
+                    {item.multiParts.map(p => p.name).join(" + ")}
+                  </div>
+                )}
 
-                {/* Total Ligne & Bouton Poubelle */}
-                <div className="text-right pl-1 flex items-center gap-2">
-                  <span className="font-black text-xs text-[#292522]">
-                    {CurrencyUtil.formatDZD(item.quantity * item.unitPrice)}
-                  </span>
-                  <button
-                    onClick={() => handleRemoveItem(item.productId)}
-                    className="text-stone-400 hover:text-[#B9362B] p-1 rounded hover:bg-red-50 transition-colors"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {/* Suppléments / Extras */}
+                {item.supplements && item.supplements.length > 0 && (
+                  <div className="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1 flex-wrap">
+                    <span className="font-bold">+ Extras :</span>
+                    <span>{item.supplements.map(s => s.name_fr || (s as any).name).join(", ")}</span>
+                  </div>
+                )}
+
+                {/* Notes Chef */}
+                {item.notes && (
+                  <div className="text-[10px] text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 italic">
+                    Note : {item.notes}
+                  </div>
+                )}
               </div>
             ))
           )}
         </div>
 
-        {/* Pied de Commande : Totaux & Bouton Encaisser Prominent */}
-        <div className="p-3.5 border-t border-[#E9DCCB] bg-[#FFF8EF] space-y-3">
-          {/* Ligne Sous-Total */}
+        {/* Pied de Commande : Totaux & Encaissement Direct */}
+        <div className="p-3 border-t border-stone-200 bg-stone-50 space-y-2">
           <div className="flex items-center justify-between text-xs text-stone-600 font-medium">
-            <span>Sous-total HT</span>
-            <span>{CurrencyUtil.formatDZD(subtotal)}</span>
+            <span>Sous-total</span>
+            <span className="font-mono">{CurrencyUtil.formatDZD(subtotal)}</span>
           </div>
 
-          {/* Ligne Grand Total */}
-          <div className="flex items-center justify-between pt-1 border-t border-[#E9DCCB]/60">
-            <span className="font-extrabold text-sm text-[#292522]">TOTAL À PAYER</span>
-            <span className="font-black text-2xl text-[#E87524] tracking-tight">
+          {orderType === "LIVRAISON" && (
+            <div className="flex items-center justify-between text-xs text-[#E87524] font-bold">
+              <span>Frais de Livraison</span>
+              <span className="font-mono">+{CurrencyUtil.formatDZD(activeDeliveryFee)}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1 border-t border-stone-200">
+            <span className="font-extrabold text-xs text-stone-800">TOTAL À PAYER</span>
+            <span className="font-black text-xl text-[#E87524] font-mono tracking-tight">
               {CurrencyUtil.formatDZD(totalAmount)}
             </span>
           </div>
 
-          {/* Boutons d Actions */}
-          <div className="grid grid-cols-4 gap-2 pt-1">
-            {/* Bouton Annuler */}
+          <div className="grid grid-cols-4 gap-2 pt-0.5">
             <button
               onClick={handleCancelOrder}
               disabled={cart.length === 0}
-              className="col-span-1 py-3 bg-white hover:bg-red-50 text-stone-500 hover:text-[#B9362B] border border-[#E9DCCB] hover:border-red-200 rounded-xl font-bold text-xs flex flex-col items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="col-span-1 py-2.5 bg-white hover:bg-red-50 text-stone-500 hover:text-red-700 border border-stone-200 rounded-lg font-bold text-xs flex flex-col items-center justify-center transition-all disabled:opacity-40 cursor-pointer"
               title="Annuler la commande"
             >
-              <Trash2 className="w-4 h-4 mb-0.5" />
-              <span className="text-[10px]">Annuler</span>
+              <Trash2 className="w-3.5 h-3.5 mb-0.5" />
+              <span className="text-[9px]">Annuler</span>
             </button>
 
-            {/* Bouton Encaisser Prominent Orange */}
             <button
               onClick={handleStartCheckout}
               disabled={cart.length === 0}
-              className="col-span-3 py-3.5 bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white rounded-xl font-black text-base flex items-center justify-center gap-2 shadow-lg shadow-orange-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.99] cursor-pointer"
+              className="col-span-3 py-2.5 bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white rounded-lg font-black text-sm flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-40 active:scale-[0.99] cursor-pointer"
             >
-              <CheckCircle className="w-5 h-5" />
+              <CheckCircle className="w-4 h-4" />
               <span>ENCAISSER ({CurrencyUtil.formatDZD(totalAmount)})</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* MODAL DE RÈGLEMENT SIMPLE (ESPÈCES / CARTE CIB)                            */}
-      {/* ========================================================================= */}
+      {/* Modal de Règlement Simple */}
       {showPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none">
-          <div className="bg-white border border-[#E9DCCB] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-[#292522]">
-            {/* Header Modal */}
-            <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none backdrop-blur-xs">
+          <div className="bg-white border border-stone-200 w-full max-w-sm rounded-xl shadow-2xl overflow-hidden flex flex-col text-xs text-stone-800">
+            <div className="px-4 py-3 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-extrabold text-[#292522]">Règlement de la Commande</h3>
-                <p className="text-xs text-stone-500">
-                  {orderType === "SUR_PLACE" ? "Sur Place" : "À Emporter"} • {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
+                <h3 className="text-sm font-extrabold text-stone-800">Règlement de la Commande</h3>
+                <p className="text-[11px] text-stone-500">
+                  {orderType === "SUR_PLACE" ? `Sur Place (${tableNumber})` : orderType === "A_EMPORTER" ? "À Emporter" : "Livraison"} • {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
                 </p>
               </div>
               <button
                 onClick={() => setShowPayModal(false)}
-                className="text-stone-400 hover:text-stone-600 p-1.5 rounded-lg hover:bg-white"
+                className="text-stone-400 hover:text-stone-600 p-1 rounded hover:bg-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Corps Modal */}
-            <div className="p-5 space-y-4">
-              {/* Grand Total à Encaisser */}
-              <div className="bg-[#FFFDFB] p-4 rounded-xl border border-[#E9DCCB] text-center">
-                <span className="text-xs text-stone-500 font-semibold uppercase tracking-wider">Montant Total à Régler</span>
-                <p className="text-3xl font-black text-[#E87524] mt-1">
+            <div className="p-4 space-y-3">
+              <div className="bg-stone-50/70 p-3 rounded-lg border border-stone-200 text-center">
+                <span className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">Montant Total</span>
+                <p className="text-2xl font-black text-[#E87524] font-mono mt-0.5">
                   {CurrencyUtil.formatDZD(totalAmount)}
                 </p>
               </div>
 
-              {/* Choix Mode de Paiement Simple */}
               <div>
-                <label className="block font-bold text-stone-700 mb-1.5 text-xs">Moyen de paiement</label>
+                <label className="block font-bold text-stone-700 mb-1 text-xs">Moyen de paiement</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -584,13 +1073,13 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("CASH");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                    className={`p-2.5 rounded-lg border flex items-center justify-center gap-1.5 font-bold text-xs transition-all cursor-pointer ${
                       paymentMethod === "CASH"
-                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] ring-2 ring-orange-200"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524]"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
                     }`}
                   >
-                    <Banknote className="w-4 h-4 text-emerald-600" />
+                    <Banknote className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Espèces (Cash)</span>
                   </button>
 
@@ -600,52 +1089,47 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("EDAHABIA");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-3 rounded-xl border flex items-center justify-center gap-2 font-bold text-xs transition-all ${
+                    className={`p-2.5 rounded-lg border flex items-center justify-center gap-1.5 font-bold text-xs transition-all cursor-pointer ${
                       paymentMethod !== "CASH"
-                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] ring-2 ring-orange-200"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524]"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
                     }`}
                   >
-                    <CreditCard className="w-4 h-4 text-blue-600" />
+                    <CreditCard className="w-3.5 h-3.5 text-blue-600" />
                     <span>Carte CIB / Dahabia</span>
                   </button>
                 </div>
               </div>
 
-              {/* Détails Espèces : Montant Reçu & Monnaie */}
               {paymentMethod === "CASH" && (
-                <div className="space-y-3 bg-[#FFF8EF]/50 p-3 rounded-xl border border-[#E9DCCB]">
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="font-bold text-stone-700 text-xs">Montant Reçu (DZD)</label>
-                      {/* Presets rapides de billets */}
-                      <div className="flex gap-1 font-mono text-[10px]">
-                        {[totalAmount, 1000, 2000].map(val => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setTenderedInput(val.toString())}
-                            className="px-1.5 py-0.5 rounded bg-white border border-[#E9DCCB] hover:border-orange-300 text-stone-700"
-                          >
-                            {val} DA
-                          </button>
-                        ))}
-                      </div>
+                <div className="space-y-2 bg-stone-50 p-2.5 rounded-lg border border-stone-200">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <label className="font-bold text-stone-700 text-xs">Montant Reçu (DZD)</label>
+                    <div className="flex gap-1 font-mono text-[9px]">
+                      {[totalAmount, Math.ceil(totalAmount / 500) * 500, Math.ceil(totalAmount / 1000) * 1000].filter((v, i, a) => v >= totalAmount && a.indexOf(v) === i).slice(0, 3).map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setTenderedInput(val.toString())}
+                          className="px-1.5 py-0.5 rounded bg-white border border-stone-200 hover:border-orange-300 text-stone-700 cursor-pointer"
+                        >
+                          {val}
+                        </button>
+                      ))}
                     </div>
-                    <input
-                      type="number"
-                      min={totalAmount}
-                      value={tenderedInput}
-                      onChange={e => setTenderedInput(e.target.value)}
-                      className="w-full text-lg font-black font-mono text-center py-2 px-3 bg-white border border-[#E9DCCB] rounded-lg text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
-                      autoFocus
-                    />
                   </div>
+                  <input
+                    type="number"
+                    min={totalAmount}
+                    value={tenderedInput}
+                    onChange={e => setTenderedInput(e.target.value)}
+                    className="w-full text-base font-black font-mono text-center py-1.5 px-2 bg-white border border-stone-200 rounded text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none"
+                    autoFocus
+                  />
 
-                  {/* Monnaie à Rendre */}
-                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-[#E9DCCB]">
+                  <div className="flex items-center justify-between bg-white p-2 rounded border border-stone-200">
                     <span className="font-bold text-xs text-stone-600">Monnaie à rendre :</span>
-                    <span className="font-black text-lg text-emerald-600">
+                    <span className="font-black text-base text-emerald-600 font-mono">
                       {CurrencyUtil.formatDZD(changeGiven)}
                     </span>
                   </div>
@@ -653,12 +1137,11 @@ export const PosView: React.FC = () => {
               )}
             </div>
 
-            {/* Bouton de Confirmation Finale */}
-            <div className="p-4 border-t border-[#E9DCCB] bg-stone-50 flex items-center justify-between gap-3">
+            <div className="p-3 border-t border-stone-200 bg-stone-50 flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={() => setShowPayModal(false)}
-                className="px-4 py-2.5 rounded-xl border border-[#E9DCCB] bg-white font-bold text-xs text-stone-600 hover:bg-stone-100 transition-colors"
+                className="px-3 py-2 rounded-lg border border-stone-200 bg-white font-bold text-xs text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
               >
                 Retour
               </button>
@@ -667,23 +1150,184 @@ export const PosView: React.FC = () => {
                 type="button"
                 onClick={handleFinalizeSale}
                 disabled={isProcessing || (paymentMethod === "CASH" && tenderedNumeric < totalAmount)}
-                className="flex-1 py-3 rounded-xl bg-[#E87524] hover:bg-[#D46317] active:bg-[#B9362B] text-white font-black text-sm flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all disabled:opacity-40 cursor-pointer"
+                className="flex-1 py-2 rounded-lg bg-[#E87524] hover:bg-[#D46317] text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
               >
-                <CheckCircle className="w-4 h-4" />
-                <span>{isProcessing ? "Enregistrement..." : "Valider & Imprimer Ticket"}</span>
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>{isProcessing ? "Validation..." : "Valider & Imprimer 2 Tickets"}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Aperçu Ticket Thermique (si pas d imprimante physique configurée) */}
+      {/* Modal Personnalisation Pizza & Suppléments */}
+      {customizingProduct && (
+        <PizzaCustomizerModal
+          isOpen={true}
+          product={customizingProduct}
+          onClose={() => setCustomizingProduct(null)}
+          onAddToCart={handleAddCustomizedPizza}
+          onOpenSupplementsManager={() => {
+            setCustomizingProduct(null);
+            setShowSupplementsManager(true);
+          }}
+        />
+      )}
+
+      {/* Modal Pizza Multi-Saveurs (Moitié-Moitié & 4 Saisons) */}
+      {showMultiPartModal && (
+        <MultiPartPizzaModal
+          isOpen={true}
+          availablePizzas={products}
+          initialMode={multiPartInitialMode}
+          onClose={() => setShowMultiPartModal(false)}
+          onAddToCart={handleAddMultiPartPizza}
+        />
+      )}
+
+      {/* Modal Gestion des Suppléments & Stock */}
+      {showSupplementsManager && (
+        <SupplementsManagerModal
+          isOpen={true}
+          onClose={() => setShowSupplementsManager(false)}
+        />
+      )}
+
+      {/* Modal Aperçu Double Tickets (Client + Chef) */}
       {showReceiptModal && lastReceipt && (
         <ReceiptModal
           isOpen={true}
           receiptData={lastReceipt}
           onClose={() => setShowReceiptModal(false)}
         />
+      )}
+
+      {/* Modal Caisse : Ingrédients Épuisés & Demande d'Approvisionnement Rapide */}
+      {outOfStockModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-stone-200 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col text-xs text-stone-800">
+            <div className="px-5 py-4 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-stone-800">
+                    المقادير غير كافية لتحضير البيتزا
+                  </h3>
+                  <p className="text-[11px] text-amber-800 font-bold">
+                    {outOfStockModalProduct.name_fr}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOutOfStockModalProduct(null)}
+                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg hover:bg-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 leading-relaxed text-[11px]">
+                ⚠️ لا يمكن تسجيل طلب هذه البيتزا حالياً لأن مخزون المطبخ من المواد الأولية نفد أو غير كافٍ.
+              </div>
+
+              {/* Liste des ingrédients manquants */}
+              {(() => {
+                const status = ingredientStatusMap[outOfStockModalProduct.id];
+                const missing = status?.missingIngredients || [];
+                return (
+                  <div className="space-y-2">
+                    <div className="font-extrabold text-stone-700 text-xs">
+                      المقادير الناقصة في المطبخ ({missing.length}):
+                    </div>
+                    <div className="divide-y divide-stone-100 border border-[#E9DCCB] rounded-xl overflow-hidden bg-[#FFFDFB]">
+                      {missing.map(m => (
+                        <div key={m.ingredient_id} className="p-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <span className="font-bold text-[#292522]">{m.name_fr}</span>
+                            {m.name_ar && <span className="text-[10px] text-stone-500 mr-1.5">({m.name_ar})</span>}
+                            <div className="text-[10px] text-red-600 font-bold">
+                              المطلوب: {m.quantity_required} {m.unit} | المتوفر: {m.current_stock} {m.unit}
+                            </div>
+                          </div>
+                          {/* Restock rapide +5 */}
+                          <button
+                            onClick={async () => {
+                              setIsRestockingFromPos(true);
+                              try {
+                                await recipeService.quickRestockIngredient(m.ingredient_id, 5, 'Réapprovisionnement rapide comptoir');
+                                showToast(`تمت إضافة +5 ${m.unit} إلى ${m.name_fr}`, 'success');
+                                await loadProducts();
+                                setOutOfStockModalProduct(null);
+                              } catch (err: any) {
+                                showToast(`Erreur : ${err?.message || err}`, 'error');
+                              } finally {
+                                setIsRestockingFromPos(false);
+                              }
+                            }}
+                            disabled={isRestockingFromPos}
+                            className="px-2.5 py-1 rounded-lg bg-[#FFF3EB] hover:bg-[#E87524] hover:text-white text-[#E87524] border border-[#E9DCCB] font-bold text-[11px] transition-colors"
+                            title="تزويد المطبخ بـ +5 وحدة فوراً"
+                          >
+                            +5 {m.unit}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action : Envoyer demande d'approvisionnement */}
+              <div className="pt-2">
+                <button
+                  onClick={async () => {
+                    const status = ingredientStatusMap[outOfStockModalProduct.id];
+                    const missing = status?.missingIngredients || [];
+                    for (const m of missing) {
+                      await recipeService.requestIngredientRestock({
+                        ingredientId: m.ingredient_id,
+                        productName: outOfStockModalProduct.name_fr,
+                        requestedBy: user?.name || 'كاشير المحل'
+                      });
+                    }
+                    setOutOfStockRequested(true);
+                    showToast('تم إرسال طلب المقادير لمالك المحل في احتياجات المتجر بنجاح', 'success');
+                  }}
+                  disabled={outOfStockRequested}
+                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
+                    outOfStockRequested
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                      : 'bg-[#E87524] hover:bg-[#D46317] text-white'
+                  }`}
+                >
+                  {outOfStockRequested ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      <span>تم إرسال الطلب لمالك المحل</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>طلب المقادير من الإدارة (إرسال لاحتياجات المتجر)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-t border-stone-200 bg-stone-50 flex justify-end">
+              <button
+                onClick={() => setOutOfStockModalProduct(null)}
+                className="px-4 py-1.5 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold text-xs"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

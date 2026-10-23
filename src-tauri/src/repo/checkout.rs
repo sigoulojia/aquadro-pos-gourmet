@@ -236,8 +236,8 @@ impl CheckoutRepo {
             .bind(&now)
             .execute(&mut *conn).await.map_err(|e| e.to_string())?;
 
-            // FEFO Allocation
-            InventoryRepo::allocate_and_deduct(conn, &pi.product_id, pi.quantity, &final_cashier_id).await?;
+            // FEFO Allocation (do not fail checkout if finished goods stock is 0)
+            let _ = InventoryRepo::allocate_and_deduct(conn, &pi.product_id, pi.quantity, &final_cashier_id).await;
         }
 
         // 6. INSERT INTO payments

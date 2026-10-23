@@ -4,6 +4,7 @@
 import { db } from '../db/sqlite';
 import { Ingredient, RecipeItem, RecipeItemDetail, ProductYield, Product } from '../types/database';
 import { productService } from './product.service';
+import { storeNeedsService } from './storeNeeds.service';
 
 export interface CreateIngredientInput {
   name_fr: string;
@@ -18,6 +19,28 @@ export interface RecipeEntryInput {
   ingredient_id: string;
   quantity_required: number; // dans l'unité de base de l'ingrédient
   unit_display?: string;
+}
+
+export interface MissingIngredientDetail {
+  ingredient_id: string;
+  name_fr: string;
+  name_ar?: string;
+  unit: string;
+  current_stock: number;
+  quantity_required: number;
+  deficit: number;
+}
+
+export interface ProductIngredientStatus {
+  productId: string;
+  productName: string;
+  productNameAr?: string;
+  hasRecipe: boolean;
+  isAvailable: boolean;
+  maxPortions: number;
+  recipeItems: RecipeItemDetail[];
+  missingIngredients: MissingIngredientDetail[];
+  limitingIngredient?: RecipeItemDetail;
 }
 
 export class RecipeService {
@@ -125,9 +148,10 @@ export class RecipeService {
     for (const item of recipeItems) {
       const ing = ingMap.get(item.ingredient_id);
       if (ing) {
-        const portionsPossible = item.quantity_required > 0
+        // Formule stricte : si le stock <= 0 ou quantité requise <= 0 -> STRICTEMENT 0 portions ! Jamais 999999 !
+        const portionsPossible = (item.quantity_required > 0 && ing.current_stock > 0)
           ? Math.floor(ing.current_stock / item.quantity_required)
-          : 999999;
+          : 0;
         const costForPortion = item.quantity_required * ing.cost_per_unit;
 
         details.push({
@@ -205,7 +229,8 @@ export class RecipeService {
       }
     }
 
-    const maxPortions = minPortions === Infinity ? 0 : Math.max(0, minPortions);
+    // Si n'importe quel ingrédient a 0 portion, ou minPortions est négatif/infini, maxPortions = 0 !
+    const maxPortions = (minPortions === Infinity || minPortions <= 0) ? 0 : minPortions;
     const grossMargin = sellingPrice - totalFoodCost;
     const grossMarginPercent = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
 
@@ -243,8 +268,32 @@ export class RecipeService {
     return yields;
   }
 
+  // Initialisation rapide des ingrédients standards de pizzeria
+  public async seedDefaultPizzeriaIngredients(): Promise<void> {
+    const defaults: Array<CreateIngredientInput> = [
+      { name_fr: "Farine Spéciale Pizza", name_ar: "فرينة خاصة بالبيتزا", unit: "kg", current_stock: 25, min_stock_alert: 5, cost_per_unit: 80 },
+      { name_fr: "Sauce Tomate Cuisinée", name_ar: "صلصة طماطم متبلة", unit: "kg", current_stock: 10, min_stock_alert: 2, cost_per_unit: 250 },
+      { name_fr: "Fromage Mozzarella", name_ar: "جبن موزاريلا", unit: "kg", current_stock: 8, min_stock_alert: 2, cost_per_unit: 1400 },
+      { name_fr: "Viande Hachée", name_ar: "لحم مفروم", unit: "kg", current_stock: 5, min_stock_alert: 1, cost_per_unit: 2200 },
+      { name_fr: "Thon à l huile", name_ar: "طون بالزيت", unit: "kg", current_stock: 4, min_stock_alert: 1, cost_per_unit: 1600 },
+      { name_fr: "Champignons Frais", name_ar: "فطر طازج", unit: "kg", current_stock: 3, min_stock_alert: 1, cost_per_unit: 900 },
+      { name_fr: "Olives Noires", name_ar: "زيتون أسود", unit: "kg", current_stock: 3, min_stock_alert: 1, cost_per_unit: 600 },
+      { name_fr: "Poulet Mariné", name_ar: "دجاج متبل", unit: "kg", current_stock: 5, min_stock_alert: 1, cost_per_unit: 950 }
+    ];
+
+    const currentList = await this.getIngredients();
+    const existingNames = new Set(currentList.map(i => i.name_fr.toLowerCase().trim()));
+
+    for (const item of defaults) {
+      if (!existingNames.has(item.name_fr.toLowerCase().trim())) {
+        await this.createIngredient(item);
+      }
+    }
+  }
+
   // Déduire les ingrédients lors de la validation d'une commande
   public async deductRecipeIngredientsForSale(productId: string, quantitySold: number): Promise<void> {
+    if (!productId || quantitySold <= 0) return;
     const recipeItems = await db.select<RecipeItem>(
       'SELECT * FROM recipe_items WHERE product_id = ?',
       [productId]
@@ -252,8 +301,102 @@ export class RecipeService {
 
     for (const item of recipeItems) {
       const totalNeeded = item.quantity_required * quantitySold;
-      await this.adjustStock(item.ingredient_id, -totalNeeded, `Vente x${quantitySold} (${productId})`);
+      if (totalNeeded > 0) {
+        await this.adjustStock(item.ingredient_id, -totalNeeded, `Vente x${quantitySold} (${productId})`);
+      }
     }
+  }
+
+  // Vérifier la conformité des stocks d'ingrédients pour un produit
+  public async checkProductIngredientStatus(product: Product): Promise<ProductIngredientStatus> {
+    const recipeDetails = await this.getRecipeForProduct(product.id);
+    const productName = product.name_fr || (product as any).name || 'Pizza';
+    const productNameAr = product.name_ar;
+
+    if (recipeDetails.length === 0) {
+      return {
+        productId: product.id,
+        productName,
+        productNameAr,
+        hasRecipe: false,
+        isAvailable: true,
+        maxPortions: 999,
+        recipeItems: [],
+        missingIngredients: []
+      };
+    }
+
+    const missingIngredients: MissingIngredientDetail[] = [];
+    let minPortions = Infinity;
+    let limitingItem: RecipeItemDetail | undefined = undefined;
+
+    for (const item of recipeDetails) {
+      if (item.portions_possible < minPortions) {
+        minPortions = item.portions_possible;
+        limitingItem = item;
+      }
+      if (item.ingredient_current_stock < item.quantity_required || item.portions_possible === 0) {
+        missingIngredients.push({
+          ingredient_id: item.ingredient_id,
+          name_fr: item.ingredient_name_fr,
+          name_ar: item.ingredient_name_ar,
+          unit: item.ingredient_unit,
+          current_stock: item.ingredient_current_stock,
+          quantity_required: item.quantity_required,
+          deficit: Math.max(0, item.quantity_required - item.ingredient_current_stock)
+        });
+      }
+    }
+
+    const maxPortions = (minPortions === Infinity || minPortions <= 0) ? 0 : minPortions;
+    const isAvailable = missingIngredients.length === 0 && maxPortions > 0;
+
+    return {
+      productId: product.id,
+      productName,
+      productNameAr,
+      hasRecipe: true,
+      isAvailable,
+      maxPortions,
+      recipeItems: recipeDetails,
+      missingIngredients,
+      limitingIngredient: limitingItem
+    };
+  }
+
+  // Récupérer le statut de tous les produits d'un coup
+  public async getAllProductsIngredientStatus(): Promise<Record<string, ProductIngredientStatus>> {
+    const products = await productService.getProducts(true);
+    const map: Record<string, ProductIngredientStatus> = {};
+    for (const p of products) {
+      map[p.id] = await this.checkProductIngredientStatus(p);
+    }
+    return map;
+  }
+
+  // Émettre un besoin magasin (Store Need) pour un ingrédient manquant en 1 clic
+  public async requestIngredientRestock(params: {
+    ingredientId: string;
+    productName: string;
+    requestedBy: string;
+    suggestedQty?: string;
+  }): Promise<void> {
+    const ing = await this.getIngredientById(params.ingredientId);
+    if (!ing) throw new Error('Ingrédient introuvable');
+
+    const defaultQuantity = params.suggestedQty || `5 ${ing.unit}`;
+    await storeNeedsService.addNeed({
+      item_name: `${ing.name_fr}${ing.name_ar ? ` (${ing.name_ar})` : ''}`,
+      quantity_needed: defaultQuantity,
+      urgency: 'URGENT',
+      notes: `طلب اقتناء عاجل لتوفير بيتزا: ${params.productName} (المخزون الحالي: ${ing.current_stock} ${ing.unit})`,
+      requested_by: params.requestedBy || 'Responsable Cuisine'
+    });
+  }
+
+  // Réapprovisionner rapidement un ingrédient et rendre la pizza disponible
+  public async quickRestockIngredient(ingredientId: string, amount: number, reason?: string): Promise<number> {
+    return await this.adjustStock(ingredientId, amount, reason || `Réapprovisionnement rapide (+${amount})`);
   }
 }
 

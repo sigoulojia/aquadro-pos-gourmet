@@ -99,6 +99,7 @@ export interface Product {
   min_stock_threshold?: number;
   batch_number?: string;
   expiration_date?: string;
+  image_url?: string;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -199,6 +200,7 @@ export interface Sale {
   idempotency_key: string;
   sync_status: 'PENDING' | 'SYNCED' | 'FAILED';
   created_at: string;
+  notes?: string;
   items?: SaleItem[];
   payments?: Payment[];
 }

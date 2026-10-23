@@ -48,11 +48,10 @@ export class InventoryService {
 
     let fefoResult: FefoAllocationResult;
     // Si le produit n'a pas de lot spécifique, créer ou utiliser un lot générique
+    // En Pizzeria / Restauration, les pizzas sont préparées à la commande : ne jamais bloquer la vente
+    const cost = product.purchase_cost !== undefined ? product.purchase_cost : ((product as any).purchase_price || 0);
+
     if (batches.length === 0) {
-      if (product.current_stock < requestedQty) {
-        throw new Error(`Stock insuffisant pour ${product.name_fr || (product as any).name} : ${product.current_stock} disponible(s), ${requestedQty} demandée(s).`);
-      }
-      const cost = product.purchase_cost !== undefined ? product.purchase_cost : ((product as any).purchase_price || 0);
       fefoResult = {
         allocations: [{
           batchId: 'default-batch',
@@ -65,7 +64,24 @@ export class InventoryService {
         remainingRequested: 0
       };
     } else {
-      fefoResult = FefoEngine.allocateStock(batches, requestedQty);
+      try {
+        fefoResult = FefoEngine.allocateStock(batches, requestedQty);
+      } catch (err: any) {
+        if (err?.message?.includes('périmé')) {
+          throw err;
+        }
+        fefoResult = {
+          allocations: [{
+            batchId: 'default-batch',
+            batchNumber: product.barcode || 'STD-LOT',
+            expirationDate: '2028-12-31',
+            quantityAllocated: requestedQty,
+            unitPurchaseCost: cost
+          }],
+          totalAllocated: requestedQty,
+          remainingRequested: 0
+        };
+      }
     }
 
     const items = fefoResult.allocations.map(a => ({

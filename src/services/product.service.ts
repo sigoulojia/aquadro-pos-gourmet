@@ -22,6 +22,7 @@ export interface CreateProductInput {
   tva_rate?: number;
   current_stock?: number;
   min_stock_alert?: number;
+  image_url?: string;
   initial_batch_number?: string;
   initial_expiration_date?: string;
 }
@@ -39,10 +40,11 @@ export class ProductService {
   }
 
   // Liste de tous les produits avec leurs catégories et marques
-  public async getProducts(): Promise<Product[]> {
-    const products = await db.select<Product>(
-      'SELECT * FROM products WHERE is_active = 1'
-    );
+  public async getProducts(includeInactive: boolean = false): Promise<Product[]> {
+    const query = includeInactive
+      ? 'SELECT * FROM products ORDER BY created_at DESC'
+      : 'SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC';
+    const products = await db.select<Product>(query);
     const categories = await db.select<Category>('SELECT * FROM categories');
     const brands = await db.select<Brand>('SELECT * FROM brands');
     const allBatches = await db.select<ProductBatch>('SELECT * FROM product_batches ORDER BY expiration_date ASC');
@@ -149,6 +151,7 @@ export class ProductService {
       tva_rate: input.tva_rate ?? 0.0,
       current_stock: stock,
       min_stock_alert: input.min_stock_alert ?? 5,
+      image_url: input.image_url || undefined,
       is_active: 1,
       created_at: now,
       updated_at: now
@@ -159,15 +162,15 @@ export class ProductService {
         id, sku, barcode, name_fr, name_ar, category_id, brand_id, variant,
         size_weight, unit_of_measure, box_conversion_ratio, purchase_cost,
         selling_price_ttc, min_selling_price_ttc, tva_rate, current_stock,
-        min_stock_alert, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        min_stock_alert, image_url, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         product.id, product.sku, product.barcode, product.name_fr, product.name_ar,
         product.category_id || null, product.brand_id || null, product.variant || null,
         product.size_weight || null, product.unit_of_measure, product.box_conversion_ratio,
         product.purchase_cost, product.selling_price_ttc, product.min_selling_price_ttc,
         product.tva_rate, product.current_stock, product.min_stock_alert,
-        product.is_active, product.created_at, product.updated_at
+        product.image_url || null, product.is_active, product.created_at, product.updated_at
       ]
     );
 

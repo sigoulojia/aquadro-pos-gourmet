@@ -18,15 +18,19 @@ impl InventoryRepo {
             None => return Err("Product not found".to_string()),
         };
 
-        if global_stock < requested_qty {
-            return Err("Insufficient stock".to_string());
-        }
+        // For a Pizzeria POS: Pizzas and dishes are made on order from raw materials.
+        // Even if finished product current_stock is 0, allow checkout and safely update stock if available.
+        let new_stock = if global_stock >= requested_qty {
+            global_stock - requested_qty
+        } else {
+            0.0
+        };
 
-        // Deduct Global Stock
-        sqlx::query("UPDATE products SET current_stock = current_stock - ? WHERE id = ?")
-            .bind(requested_qty)
+        // Deduct Global Stock (safely capped at 0.0 to respect any CHECK constraint)
+        let _ = sqlx::query("UPDATE products SET current_stock = ? WHERE id = ?")
+            .bind(new_stock)
             .bind(product_id)
-            .execute(&mut *conn).await.map_err(|e| e.to_string())?;
+            .execute(&mut *conn).await;
             
         // FEFO allocation
         let batches = sqlx::query("SELECT id, current_stock, batch_number FROM product_batches WHERE product_id = ? AND current_stock > 0 ORDER BY expiration_date ASC")

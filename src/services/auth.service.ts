@@ -60,7 +60,7 @@ export class AuthService {
   private sessionToken: string | null = null;
   private listeners: Array<(user: User | null) => void> = [];
   private idleTimeout: NodeJS.Timeout | null = null;
-  private readonly IDLE_LIMIT = 5 * 60 * 1000; // 5 minutes
+  private readonly IDLE_LIMIT = 60 * 60 * 1000; // 1 heure (60 minutes) pour confort caisse
 
   private constructor() {
     this.setupIdleWatcher();
@@ -77,7 +77,7 @@ export class AuthService {
     if (this.idleTimeout) clearTimeout(this.idleTimeout);
     if (this.currentUser) {
       this.idleTimeout = setTimeout(() => {
-        console.log("Déconnexion automatique pour inactivité (5 minutes)");
+        console.log("Déconnexion automatique pour inactivité (1 heure)");
         this.logout();
       }, this.IDLE_LIMIT);
     }
@@ -119,17 +119,21 @@ export class AuthService {
   }
 
   public async logout(): Promise<void> {
-    if (this.sessionToken) {
+    const token = this.sessionToken;
+    this.currentUser = null;
+    this.sessionToken = null;
+    try {
+      localStorage.removeItem('aquadro_session_token');
+    } catch {}
+    this.notify();
+
+    if (token) {
       try {
-        await invoke('logout_user', { token: this.sessionToken });
+        await invoke('logout_user', { token });
       } catch (e) {
         console.error("Erreur déconnexion backend", e);
       }
     }
-    this.currentUser = null;
-    this.sessionToken = null;
-    localStorage.removeItem('aquadro_session_token');
-    this.notify();
   }
 
   public subscribe(listener: (user: User | null) => void): () => void {
@@ -148,8 +152,12 @@ export class AuthService {
   }
 
   public async getAllUsers(): Promise<User[]> {
-    if (!this.sessionToken) throw new Error("Non authentifié");
-    return await invoke('get_users', { token: this.sessionToken });
+    if (!this.sessionToken) return [];
+    try {
+      return await invoke('get_users', { token: this.sessionToken });
+    } catch {
+      return [];
+    }
   }
 
   public async loginWithPin(pin: string): Promise<User | null> {

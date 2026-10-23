@@ -6,6 +6,7 @@ pub mod auth;
 pub mod repo;
 pub mod logger;
 pub mod runtime;
+pub mod printer_hardware;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
@@ -19,16 +20,18 @@ pub struct TerminalInfo {
 // Native command to trigger raw thermal printer ESC/POS commands
 #[tauri::command]
 fn raw_print_receipt(content: String, printer_name: Option<String>) -> Result<String, String> {
-    crate::logger::log_info("PRINTER", &format!("ESC/POS Print Request: {} chars to printer {:?}", content.len(), printer_name));
-    Ok("Receipt spooled successfully".to_string())
+    printer_hardware::print_raw_receipt(content, printer_name)
 }
 
 // Native command to fire RJ11 drawer kick pulse (ESC p 0 25 250)
 #[tauri::command]
-fn open_cash_drawer(pin: Option<u8>) -> Result<bool, String> {
-    let _kick_pin = pin.unwrap_or(0);
-    crate::logger::log_info("DRAWER", &format!("RJ11 Cash Drawer kick pulse sent to pin {}", _kick_pin));
-    Ok(true)
+fn open_cash_drawer(pin: Option<u8>, printer_name: Option<String>) -> Result<printer_hardware::DrawerKickResult, String> {
+    printer_hardware::trigger_cash_drawer(pin, printer_name)
+}
+
+#[tauri::command]
+fn list_hardware_printers() -> Result<Vec<printer_hardware::HardwareDeviceInfo>, String> {
+    Ok(printer_hardware::scan_available_printers())
 }
 
 #[tauri::command]
@@ -64,6 +67,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             raw_print_receipt,
             open_cash_drawer,
+            list_hardware_printers,
             get_terminal_info,
             commands::process_checkout,
             auth::authenticate_user,

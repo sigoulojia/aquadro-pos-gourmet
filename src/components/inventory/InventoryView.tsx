@@ -65,6 +65,10 @@ export const InventoryView: React.FC = () => {
   const [recipeEntries, setRecipeEntries] = useState<RecipeEntryInput[]>([]);
   const [savingRecipe, setSavingRecipe] = useState<boolean>(false);
 
+  // Modal de sélection manuelle d'ingrédient pour la recette
+  const [showIngredientPicker, setShowIngredientPicker] = useState<boolean>(false);
+  const [pickerSearch, setPickerSearch] = useState<string>('');
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -208,23 +212,36 @@ export const InventoryView: React.FC = () => {
 
   // --- Gestion des Fiches Techniques (Recettes) ---
 
-  const handleAddRecipeRow = () => {
+  const handleOpenIngredientPicker = () => {
     if (ingredients.length === 0) {
-      showToast('Veuillez d\'abord ajouter des ingrédients dans le stock.', 'warning');
+      showToast('يرجى أولاً إضافة مكونات إلى المخزون من تبويب المكونات.', 'warning');
       return;
     }
-    // Choisir le premier ingrédient non encore utilisé, ou le premier disponible
-    const usedIds = new Set(recipeEntries.map(r => r.ingredient_id));
-    const available = ingredients.find(i => !usedIds.has(i.id)) || ingredients[0];
+    setPickerSearch('');
+    setShowIngredientPicker(true);
+  };
+
+  const handleSelectIngredientForRecipe = (ing: Ingredient) => {
+    // Vérifier si déjà présent
+    const exists = recipeEntries.some(r => r.ingredient_id === ing.id);
+    if (exists) {
+      showToast(`المكون "${ing.name_fr}" موجود بالفعل في هذه الوصفة. يمكنك تعديل كميته في الجدول.`, 'info');
+      return;
+    }
+
+    const defaultQty = ing.unit.toLowerCase() === 'kg' ? 0.15 : ing.unit.toLowerCase() === 'g' ? 100 : 1;
 
     setRecipeEntries([
       ...recipeEntries,
       {
-        ingredient_id: available.id,
-        quantity_required: 0.1,
-        unit_display: `0.1 ${available.unit}`
+        ingredient_id: ing.id,
+        quantity_required: defaultQty,
+        unit_display: `${defaultQty} ${ing.unit}`
       }
     ]);
+
+    setShowIngredientPicker(false);
+    showToast(`تمت إضافة "${ing.name_fr}" إلى الوصفة بنجاح`, 'success');
   };
 
   const handleUpdateRecipeRow = (index: number, field: keyof RecipeEntryInput, value: any) => {
@@ -251,6 +268,16 @@ export const InventoryView: React.FC = () => {
       showToast('Erreur lors de l\'enregistrement de la fiche technique.', 'error');
     } finally {
       setSavingRecipe(false);
+    }
+  };
+
+  const handleSeedDefaults = async () => {
+    try {
+      await recipeService.seedDefaultPizzeriaIngredients();
+      showToast('Ingrédients de base ajoutés avec succès !', 'success');
+      await loadAllData();
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, 'error');
     }
   };
 
@@ -312,21 +339,38 @@ export const InventoryView: React.FC = () => {
     let minPortions = Infinity;
     let limitingIngName = '';
 
+    if (recipeEntries.length === 0) {
+      return {
+        foodCost: 0,
+        sellingPrice: currentRecipeProduct.selling_price_ttc || 0,
+        grossMargin: currentRecipeProduct.selling_price_ttc || 0,
+        grossMarginPercent: 100,
+        maxPortions: 0,
+        limitingIngName: 'لم يتم تحديد المقادير بعد'
+      };
+    }
+
     for (const entry of recipeEntries) {
       const ing = ingMap.get(entry.ingredient_id);
       if (ing) {
         const cost = entry.quantity_required * ing.cost_per_unit;
         totalCost += cost;
-        const portions = entry.quantity_required > 0 ? Math.floor(ing.current_stock / entry.quantity_required) : 999999;
+        // Règle stricte : si quantité requise <= 0 ou stock <= 0 -> 0 portions ! Jamais 999999 !
+        const portions = (entry.quantity_required > 0 && ing.current_stock > 0)
+          ? Math.floor(ing.current_stock / entry.quantity_required)
+          : 0;
         if (portions < minPortions) {
           minPortions = portions;
-          limitingIngName = ing.name_fr;
+          limitingIngName = `${ing.name_fr} (${ing.current_stock} ${ing.unit} dispo / ${entry.quantity_required} requis)`;
         }
+      } else {
+        minPortions = 0;
+        limitingIngName = 'Ingrédient manquant';
       }
     }
 
     const sellingPrice = currentRecipeProduct.selling_price_ttc || 0;
-    const maxPortions = minPortions === Infinity || recipeEntries.length === 0 ? 0 : minPortions;
+    const maxPortions = (minPortions === Infinity || minPortions <= 0) ? 0 : minPortions;
     const grossMargin = sellingPrice - totalCost;
     const grossMarginPercent = sellingPrice > 0 ? (grossMargin / sellingPrice) * 100 : 0;
 
@@ -336,7 +380,7 @@ export const InventoryView: React.FC = () => {
       grossMargin: Math.round(grossMargin * 100) / 100,
       grossMarginPercent: Math.round(grossMarginPercent * 10) / 10,
       maxPortions,
-      limitingIngName
+      limitingIngName: maxPortions === 0 && !limitingIngName ? 'المخزون غير كافٍ (0)' : limitingIngName
     };
   }, [currentRecipeProduct, recipeEntries, ingredients]);
 
@@ -373,6 +417,15 @@ export const InventoryView: React.FC = () => {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#E87524]' : ''}`} />
             <span>Actualiser</span>
+          </button>
+
+          <button
+            onClick={handleSeedDefaults}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#E87524] bg-[#FFF3EB] hover:bg-[#FFE7D6] border border-[#E87524]/30 rounded-lg shadow-2xs transition active:scale-95"
+            title="Ajouter automatiquement les ingrédients indispensables de pizzeria (farine, mozzarella, sauce tomate, viande, etc.)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#E87524]" />
+            <span>+ Ingrédients Standards (المواد الأساسية)</span>
           </button>
 
           <button
@@ -1026,8 +1079,9 @@ export const InventoryView: React.FC = () => {
                       </div>
 
                       <button
-                        onClick={handleAddRecipeRow}
-                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#E87524] hover:bg-[#D3641B] rounded-lg shadow-sm transition active:scale-95"
+                        onClick={handleOpenIngredientPicker}
+                        className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-[#E87524] hover:bg-[#D3641B] rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+                        title="اختيار مكون من المخزون لإضافته لهذه الوصفة"
                       >
                         <Plus className="w-4 h-4" />
                         <span>+ Ajouter un Ingrédient</span>
@@ -1140,7 +1194,7 @@ export const InventoryView: React.FC = () => {
                           <div className="text-[10px] uppercase font-bold text-stone-600">
                             Capacité Actuelle
                           </div>
-                          <div className="text-base font-black text-[#E87524] font-mono mt-0.5">
+                          <div className={`text-base font-black font-mono mt-0.5 ${liveRecipeCalculation.maxPortions > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
                             {liveRecipeCalculation.maxPortions} pizzas
                           </div>
                         </div>
@@ -1149,9 +1203,20 @@ export const InventoryView: React.FC = () => {
                           <div className="text-[10px] uppercase font-bold text-stone-600">
                             Ingrédient Limitant
                           </div>
-                          <div className="text-xs font-bold text-stone-700 truncate mt-1">
-                            {liveRecipeCalculation.limitingIngName || 'Aucun (Illimité)'}
+                          <div className={`text-xs font-bold truncate mt-1 ${liveRecipeCalculation.maxPortions === 0 ? 'text-rose-600' : 'text-stone-700'}`}>
+                            {liveRecipeCalculation.limitingIngName || 'Stock suffisant'}
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Alerte rouge si rupture d'un ingrédient dans la recette */}
+                    {liveRecipeCalculation && liveRecipeCalculation.maxPortions === 0 && recipeEntries.length > 0 && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-rose-800 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <div>
+                          <span className="font-bold">المخزون الحالي غير كافٍ (0 بيتزا ممكنة) : </span>
+                          <span>{liveRecipeCalculation.limitingIngName} نفد أو لا يكفي لتحضير بيتزا كاملة. يرجى تزويد المخزون.</span>
                         </div>
                       </div>
                     )}
@@ -1385,6 +1450,130 @@ export const InventoryView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Sélection Manuelle d'un Ingrédient pour la Recette */}
+      {showIngredientPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl border border-[#E9DCCB] shadow-2xl max-w-lg w-full p-5 space-y-4 max-h-[85vh] flex flex-col">
+            {/* En-tête */}
+            <div className="flex items-center justify-between border-b border-[#E9DCCB] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center text-[#E87524]">
+                  <CookingPot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-[#292522]">
+                    اختيار مكوّن للوصفة / Choisir un Ingrédient
+                  </h3>
+                  <p className="text-[11px] text-stone-500 font-medium">
+                    حدد المادة الأولية التي تريد إضافتها لمقادير: <span className="font-bold text-[#E87524]">{currentRecipeProduct?.name_fr}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowIngredientPicker(false)}
+                className="w-8 h-8 rounded-xl bg-white border border-[#E9DCCB] text-stone-500 hover:text-stone-800 hover:bg-stone-100 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Barre de Recherche rapide */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="ابحث عن مكوّن (طماطم، جبن، فرينة، زيتون...)..."
+                value={pickerSearch}
+                onChange={e => setPickerSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl text-xs font-medium focus:border-[#E87524] focus:outline-none"
+              />
+            </div>
+
+            {/* Liste des ingrédients du stock */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[220px] max-h-[360px]">
+              {(() => {
+                const searchLower = pickerSearch.toLowerCase().trim();
+                const filtered = ingredients.filter(i =>
+                  i.name_fr.toLowerCase().includes(searchLower) ||
+                  (i.name_ar && i.name_ar.toLowerCase().includes(searchLower))
+                );
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-stone-400 text-xs">
+                      <Package className="w-8 h-8 mx-auto mb-1.5 opacity-40" />
+                      <p>لا يوجد مكوّن مطابق للبحث.</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map(ing => {
+                  const isAlreadyAdded = recipeEntries.some(r => r.ingredient_id === ing.id);
+                  return (
+                    <div
+                      key={ing.id}
+                      className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${
+                        isAlreadyAdded
+                          ? 'bg-stone-50 border-stone-200 opacity-70'
+                          : 'bg-[#FCFBF9] border-[#E9DCCB] hover:border-[#E87524] hover:bg-amber-50/30'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-[#292522]">{ing.name_fr}</span>
+                          {ing.name_ar && (
+                            <span className="text-[11px] text-stone-500 font-medium font-arabic">({ing.name_ar})</span>
+                          )}
+                          {isAlreadyAdded && (
+                            <span className="text-[10px] bg-stone-200 text-stone-600 px-2 py-0.5 rounded-full font-bold">
+                              ✓ مضاف مسبقاً
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-stone-500 flex items-center gap-2 mt-0.5">
+                          <span>المخزون: <strong className="font-mono text-stone-800">{ing.current_stock} {ing.unit}</strong></span>
+                          <span>•</span>
+                          <span>التكلفة: <strong className="font-mono text-stone-800">{CurrencyUtil.formatDZD(ing.cost_per_unit)}</strong> / {ing.unit}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSelectIngredientForRecipe(ing)}
+                        disabled={isAlreadyAdded}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1 cursor-pointer ${
+                          isAlreadyAdded
+                            ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                            : 'bg-[#E87524] hover:bg-[#D3641B] text-white shadow-xs active:scale-95'
+                        }`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{isAlreadyAdded ? 'موجود' : '+ إضافة'}</span>
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Pied de modal */}
+            <div className="pt-2 border-t border-[#E9DCCB] flex items-center justify-between text-xs">
+              <span className="text-[11px] text-stone-500">
+                إجمالي مكونات المخزون: <strong className="font-mono">{ingredients.length}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowIngredientPicker(false)}
+                className="px-4 py-1.5 border border-[#E9DCCB] text-stone-600 hover:bg-stone-50 rounded-xl transition font-medium cursor-pointer"
+              >
+                إغلاق (Fermer)
+              </button>
+            </div>
           </div>
         </div>
       )}

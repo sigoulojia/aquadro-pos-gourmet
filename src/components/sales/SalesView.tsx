@@ -20,7 +20,11 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
+import { useAuth } from '../../hooks/useAuth';
+
 export const SalesView: React.FC = () => {
+  const { user } = useAuth();
+  const isOwnerOrManager = user?.role === 'owner' || user?.role === 'manager';
   const { showToast } = useToast();
   const [sales, setSales] = useState<Sale[]>([]);
   const [search, setSearch] = useState<string>('');
@@ -119,18 +123,30 @@ export const SalesView: React.FC = () => {
   };
 
   const handleReprint = async (sale: Sale) => {
+    let storeFr = 'PIZZERIA GOURMET';
+    let storeAr = 'بيتزيريا';
+    try {
+      const savedFr = localStorage.getItem('aquadro_store_name');
+      const savedAr = localStorage.getItem('aquadro_store_name_ar');
+      if (savedFr) storeFr = savedFr;
+      if (savedAr) storeAr = savedAr;
+    } catch {}
+
+    const orderType = sale.notes?.includes('Livraison')
+      ? 'LIVRAISON'
+      : sale.notes?.includes('À Emporter')
+      ? 'A_EMPORTER'
+      : 'SUR_PLACE';
+
     const data: ReceiptPrintData = {
-      storeNameFr: 'Aquadro Nutrition Algérie',
-      storeNameAr: 'أبكس كور نوتريشن الجزائر',
-      storeAddress: 'Dely Ibrahim, Alger',
-      storePhone: '0550 12 34 56',
-      rcNumber: '16/00-0987654B19',
-      nifNumber: '001916012345678',
-      fiscalRegime: 'IFU' as const,
+      storeNameFr: storeFr,
+      storeNameAr: storeAr,
       receiptNumber: sale.receipt_number,
+      dailyOrderNumber: sale.receipt_number.slice(-4),
       dateTime: new Date(sale.created_at).toLocaleString(),
-      cashierName: sale.cashier_name || 'Caissier',
+      cashierName: sale.cashier_name || 'البائع',
       customerName: sale.customer_name,
+      orderType,
       items: (sale.items || []).map(i => ({
         name: i.product_name,
         quantity: i.quantity,
@@ -244,7 +260,7 @@ export const SalesView: React.FC = () => {
                         >
                           <Printer className="w-3.5 h-3.5" />
                         </button>
-                        {s.status !== 'REFUNDED' && (
+                        {isOwnerOrManager && s.status !== 'REFUNDED' && (
                           <button
                             onClick={() => handleOpenRefund(s)}
                             className="p-1 hover:bg-[#FFF8EF] rounded text-gray-400 hover:text-amber-600"

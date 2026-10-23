@@ -37,8 +37,12 @@ export const UsersView: React.FC = () => {
   }, []);
 
   const loadUsers = async () => {
-    const list = await authService.getAllUsers();
-    setUsers(list);
+    try {
+      const list = await authService.getAllUsers();
+      setUsers(list);
+    } catch (e) {
+      console.warn("Impossible de charger les utilisateurs", e);
+    }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {

@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    @apply bg-[#FFF8EF] text-[#292522] font-sans antialiased selection:bg-[#E87524] selection:text-white;
+    @apply bg-[#F7F8FA] text-stone-900 font-sans antialiased selection:bg-[#E87524] selection:text-white;
   }
 
   /* Barres de défilement sobres pour ERP/POS */
@@ -13,10 +13,10 @@
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #FFF8EF;
+    background: #F7F8FA;
   }
   ::-webkit-scrollbar-thumb {
-    background: #E9DCCB;
+    background: #D5D9E0;
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {

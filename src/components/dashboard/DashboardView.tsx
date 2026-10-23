@@ -20,12 +20,16 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
+import { useAuth } from '../../hooks/useAuth';
+
 interface DashboardViewProps {
   onNavigateToPOS: () => void;
   onNavigateToInventory: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToPOS, onNavigateToInventory }) => {
+  const { user } = useAuth();
+  const isCashier = user?.role === 'cashier';
   const [metrics, setMetrics] = useState<FinancialMetrics | null>(null);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
@@ -202,12 +206,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigateToPOS, o
         <div className="bg-white rounded border border-gray-200 overflow-hidden">
           <div className="p-2.5 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <span className="font-bold text-gray-900 text-xs">Alertes Stocks & Péremptions FEFO</span>
-            <button
-              onClick={onNavigateToInventory}
-              className="text-[11px] text-blue-600 hover:underline font-medium"
-            >
-              Gérer les stocks
-            </button>
+            {!isCashier && (
+              <button
+                onClick={onNavigateToInventory}
+                className="text-[11px] text-blue-600 hover:underline font-medium"
+              >
+                Gérer les stocks
+              </button>
+            )}
           </div>
 
           <div className="overflow-x-auto">

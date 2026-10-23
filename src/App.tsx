@@ -16,13 +16,13 @@ const CustomersView = React.lazy(() => import("./components/customers/CustomersV
 const CaisseView = React.lazy(() => import("./components/caisse/CaisseView").then(m => ({ default: m.CaisseView })));
 const ExpensesView = React.lazy(() => import("./components/expenses/ExpensesView").then(m => ({ default: m.ExpensesView })));
 const ReportsView = React.lazy(() => import("./components/reports/ReportsView").then(m => ({ default: m.ReportsView })));
-const DocumentsView = React.lazy(() => import("./components/documents/DocumentsView").then(m => ({ default: m.DocumentsView })));
 const JournalView = React.lazy(() => import("./components/journal/JournalView").then(m => ({ default: m.JournalView })));
 const CreditsView = React.lazy(() => import("./components/credits/CreditsView").then(m => ({ default: m.CreditsView })));
 const UsersView = React.lazy(() => import("./components/users/UsersView").then(m => ({ default: m.UsersView })));
 const SettingsView = React.lazy(() => import("./components/settings/SettingsView").then(m => ({ default: m.SettingsView })));
 const SetupWizard = React.lazy(() => import("./components/setup/SetupWizard").then(m => ({ default: m.SetupWizard })));
 const AIAssistantDrawer = React.lazy(() => import("./components/ai/AIAssistantDrawer").then(m => ({ default: m.AIAssistantDrawer })));
+const StoreNeedsView = React.lazy(() => import("./components/needs/StoreNeedsView").then(m => ({ default: m.StoreNeedsView })));
 import { LoginView } from "./components/auth/LoginView";
 import { authService } from "./services/auth.service";
 import { User } from "./types/database";
@@ -45,6 +45,16 @@ export const AppContent: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // Sécurité RBAC : Le caissier ne peut accéder qu'à la caisse, tableau de bord, historique ventes et besoins magasin
+  useEffect(() => {
+    if (currentUser?.role === "cashier") {
+      const allowedViews: NavView[] = ["pos", "dashboard", "sales", "needs"];
+      if (!allowedViews.includes(currentView)) {
+        setCurrentView("pos");
+      }
+    }
+  }, [currentUser, currentView]);
+
   const handleAppReady = () => {
     const completed =
       localStorage.getItem("pizzeria_setup_completed") ||
@@ -64,36 +74,52 @@ export const AppContent: React.FC = () => {
   // Raccourcis clavier globaux POS et Navigation ERP F1-F12
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isCashier = currentUser?.role === "cashier";
       const fKeyMap: Record<string, NavView> = {
         "F1": "pos",
         "F2": "dashboard",
         "F3": "products",
         "F4": "inventory",
         "F5": "sales",
-        "F6": "customers",
+        "F6": "needs",
         "F7": "credits",
         "F8": "caisse",
         "F9": "expenses",
         "F10": "journal",
-        "F11": "reports",
-        "F12": "documents"
+        "F11": "reports"
       };
 
       if (fKeyMap[e.key]) {
+        // Bloquer les raccourcis non autorisés pour le caissier (Strictement Caisse F1, Ventes F5, Besoins F6)
+        if (isCashier && !["pos", "sales", "needs"].includes(fKeyMap[e.key])) {
+          return;
+        }
         e.preventDefault();
         setCurrentView(fKeyMap[e.key]);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [currentUser]);
+
+  // Sécurité et Confidentialité Propriétaire : Bloquer strictement le caissier de toute vue privée ou IA
+  useEffect(() => {
+    if (currentUser?.role === "cashier") {
+      if (isAIOpen) {
+        setIsAIOpen(false);
+      }
+      if (!["pos", "sales", "needs"].includes(currentView)) {
+        setCurrentView("pos");
+      }
+    }
+  }, [currentUser, currentView, isAIOpen]);
 
   if (isInitializing) {
     return <SplashScreen onReady={handleAppReady} />;
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#FFF8EF] text-[#292522] overflow-hidden font-sans">
+    <div className="h-screen w-screen flex flex-col bg-[#F7F8FA] text-[#292522] overflow-hidden font-sans">
       {/* Assistant de premier démarrage (si non complété) */}
       {showSetup && (
         <React.Suspense fallback={null}>
@@ -116,6 +142,7 @@ export const AppContent: React.FC = () => {
             onToggleAI={() => setIsAIOpen(!isAIOpen)}
             isAIOpen={isAIOpen}
             onNavigateToSettings={() => setCurrentView("settings")}
+            onNavigate={(view) => setCurrentView(view)}
           />
 
           {/* Zone Centrale : Navigation Latérale Complète + Vue Active */}
@@ -125,7 +152,7 @@ export const AppContent: React.FC = () => {
               onNavigate={(view) => setCurrentView(view)}
             />
 
-            <main className="flex-1 flex overflow-hidden bg-[#FFF8EF]">
+            <main className="flex-1 flex overflow-hidden bg-[#F7F8FA]">
               {currentView === "pos" ? (
                 <PosView />
               ) : (
@@ -136,6 +163,7 @@ export const AppContent: React.FC = () => {
                       onNavigateToInventory={() => setCurrentView("inventory")}
                     />
                   )}
+                  {currentView === "needs" && <StoreNeedsView />}
                   {currentView === "products" && <ProductsView />}
                   {currentView === "inventory" && <InventoryView />}
                   {currentView === "sales" && <SalesView />}
@@ -143,7 +171,6 @@ export const AppContent: React.FC = () => {
                   {currentView === "caisse" && <CaisseView />}
                   {currentView === "expenses" && <ExpensesView />}
                   {currentView === "reports" && <ReportsView />}
-                  {currentView === "documents" && <DocumentsView />}
                   {currentView === "credits" && <CreditsView />}
                   {currentView === "journal" && <JournalView />}
                   {currentView === "users" && <UsersView />}

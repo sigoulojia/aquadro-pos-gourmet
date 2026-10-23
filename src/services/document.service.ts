@@ -81,6 +81,215 @@ export class DocumentService {
     return record;
   }
 
+  // Synchroniser les ventes existantes vers les documents commerciaux pour que tout apparaisse
+  public async syncFromSales(): Promise<void> {
+    try {
+      const sales = await db.select<any>('SELECT * FROM sales ORDER BY created_at DESC LIMIT 200');
+      const docs = await db.select<any>('SELECT reference_id FROM commercial_documents');
+      const existingRefs = new Set(docs.map(d => d.reference_id));
+
+      for (const s of sales) {
+        const ref = s.receipt_number || s.id;
+        if (!existingRefs.has(ref)) {
+          const docNumber = await this.getNextNumber('TICKET');
+          const docId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          await db.execute(
+            `INSERT INTO commercial_documents (
+              id, document_type, document_number, reference_id,
+              customer_or_supplier_name, total_ttc, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              docId,
+              'TICKET',
+              docNumber,
+              ref,
+              s.customer_name || s.notes || 'Comptoir',
+              s.total_ttc || 0,
+              s.created_at || new Date().toISOString()
+            ]
+          );
+          existingRefs.add(ref);
+        }
+      }
+    } catch (e) {
+      console.warn('Erreur synchronisation documents depuis ventes:', e);
+    }
+  }
+
+  // Créer une Facture Commerciale formelle (pour entreprise, traiteur ou événement)
+  public async createInvoice(data: {
+    customerName: string;
+    customerNif?: string;
+    customerRc?: string;
+    customerAddress?: string;
+    customerPhone?: string;
+    totalTtc: number;
+    notes?: string;
+    items?: Array<{ name: string; quantity: number; unitPrice: number; total: number }>;
+  }): Promise<DocumentRecord> {
+    const docNumber = await this.getNextNumber('FACTURE');
+    const docId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const ref = `FAC-REF-${Date.now().toString().slice(-6)}`;
+    const now = new Date().toISOString();
+
+    const clientNotes = [
+      data.customerNif ? `NIF: ${data.customerNif}` : '',
+      data.customerRc ? `RC: ${data.customerRc}` : '',
+      data.customerAddress ? `Adr: ${data.customerAddress}` : '',
+      data.customerPhone ? `Tél: ${data.customerPhone}` : '',
+      data.notes ? `Note: ${data.notes}` : ''
+    ].filter(Boolean).join(' | ');
+
+    const customerDisplay = `${data.customerName}${clientNotes ? ` (${clientNotes})` : ''}`;
+
+    await db.execute(
+      `INSERT INTO commercial_documents (
+        id, document_type, document_number, reference_id,
+        customer_or_supplier_name, total_ttc, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        docId,
+        'FACTURE',
+        docNumber,
+        ref,
+        customerDisplay,
+        data.totalTtc,
+        now
+      ]
+    );
+
+    // Si des articles sont fournis, on peut créer une vente associée pour l'historique
+    if (data.items && data.items.length > 0) {
+      const saleId = `sale-${docId}`;
+      try {
+        await db.execute(
+          `INSERT INTO sales (id, receipt_number, customer_name, total_ttc, cashier_id, cashier_name, status, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            saleId,
+            docNumber,
+            data.customerName,
+            data.totalTtc,
+            'usr-owner',
+            'Propriétaire',
+            'COMPLETED',
+            `Facture ${docNumber} - ${data.notes || ''}`,
+            now
+          ]
+        );
+
+        for (const item of data.items) {
+          const itemId = `item-${Math.random().toString(36).substring(2, 8)}`;
+          await db.execute(
+            `INSERT INTO sale_items (id, sale_id, product_id, name, quantity, unit_price, total_price, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              itemId,
+              saleId,
+              'prod-custom',
+              item.name,
+              item.quantity,
+              item.unitPrice,
+              item.total,
+              now
+            ]
+          );
+        }
+      } catch (err) {
+        console.warn('Vente associée à la facture ignorée:', err);
+      }
+    }
+
+    return {
+      id: docId,
+      document_type: 'FACTURE',
+      document_number: docNumber,
+      reference_id: ref,
+      customer_or_supplier_name: customerDisplay,
+      total_ttc: data.totalTtc,
+      created_at: now
+    };
+  }
+
+  // Convertir un Ticket de caisse existant en Facture Commerciale
+  public async convertTicketToInvoice(ticket: DocumentRecord, clientInfo: {
+    customerName: string;
+    customerNif?: string;
+    customerRc?: string;
+    customerAddress?: string;
+    customerPhone?: string;
+  }): Promise<DocumentRecord> {
+    const docNumber = await this.getNextNumber('FACTURE');
+    const docId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const now = new Date().toISOString();
+
+    const clientNotes = [
+      clientInfo.customerNif ? `NIF: ${clientInfo.customerNif}` : '',
+      clientInfo.customerRc ? `RC: ${clientInfo.customerRc}` : '',
+      clientInfo.customerAddress ? `Adr: ${clientInfo.customerAddress}` : '',
+      clientInfo.customerPhone ? `Tél: ${clientInfo.customerPhone}` : '',
+      `Issu du Ticket: ${ticket.document_number}`
+    ].filter(Boolean).join(' | ');
+
+    const customerDisplay = `${clientInfo.customerName} (${clientNotes})`;
+
+    await db.execute(
+      `INSERT INTO commercial_documents (
+        id, document_type, document_number, reference_id,
+        customer_or_supplier_name, total_ttc, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        docId,
+        'FACTURE',
+        docNumber,
+        ticket.reference_id,
+        customerDisplay,
+        ticket.total_ttc,
+        now
+      ]
+    );
+
+    return {
+      id: docId,
+      document_type: 'FACTURE',
+      document_number: docNumber,
+      reference_id: ticket.reference_id,
+      customer_or_supplier_name: customerDisplay,
+      total_ttc: ticket.total_ttc,
+      created_at: now
+    };
+  }
+
+  // Récupérer les articles associés à un document
+  public async getDocumentItems(doc: DocumentRecord): Promise<Array<{ name: string; quantity: number; unit_price: number; total_price: number }>> {
+    try {
+      // 1. Chercher par receipt_number ou reference_id ou id dans sales
+      const sales = await db.select<any>(
+        'SELECT id FROM sales WHERE receipt_number = ? OR id = ? OR receipt_number = ? LIMIT 1',
+        [doc.reference_id, doc.reference_id, doc.document_number]
+      );
+
+      if (sales.length > 0) {
+        const saleId = sales[0].id;
+        const items = await db.select<any>(
+          'SELECT name, quantity, unit_price, total_price FROM sale_items WHERE sale_id = ?',
+          [saleId]
+        );
+        if (items.length > 0) return items;
+      }
+    } catch {}
+
+    // Repli article générique
+    return [
+      {
+        name: `Prestation Restauration (${doc.document_type === 'FACTURE' ? 'Facturation' : 'Consommation'})`,
+        quantity: 1,
+        unit_price: doc.total_ttc,
+        total_price: doc.total_ttc
+      }
+    ];
+  }
+
   // Liste des documents
   public async getDocuments(type?: DocumentType, limit: number = 100): Promise<DocumentRecord[]> {
     let query = 'SELECT * FROM commercial_documents';

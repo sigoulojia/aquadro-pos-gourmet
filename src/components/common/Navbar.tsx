@@ -10,6 +10,7 @@ import { printerService } from '../../services/printer.service';
 import { authService } from '../../services/auth.service';
 import { User, CashSession } from '../../types/database';
 import { db } from '../../db/sqlite';
+import { useToast } from './Toast';
 import {
   Clock,
   Globe,
@@ -21,8 +22,13 @@ import {
   KeyRound,
   CheckCircle,
   AlertCircle,
-  LogOut
+  LogOut,
+  Vault,
+  Bell
 } from 'lucide-react';
+import { NotificationsDropdown } from './NotificationsDropdown';
+import { notificationService } from '../../services/notification.service';
+import { NavView } from './Sidebar';
 
 
 // Composant horloge isolé pour empêcher tout re-render de la barre complète (Optimisation i5 3e Gen / CPU modeste)
@@ -46,18 +52,60 @@ interface NavbarProps {
   onToggleAI: () => void;
   isAIOpen: boolean;
   onNavigateToSettings: () => void;
+  onNavigate?: (view: NavView) => void;
 }
 
-const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigateToSettings }) => {
+const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigateToSettings, onNavigate }) => {
   const { user } = useAuth();
+  const { showToast } = useToast();
+  const logoInputRef = React.useRef<HTMLInputElement>(null);
+  const userMenuRef = React.useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useI18n();
   const [session, setSession] = useState<CashSession | null>(null);
   const [pendingSync, setPendingSync] = useState<number>(0);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
-  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [drawerPulseNotice, setDrawerPulseNotice] = useState<boolean>(false);
   const [storeName, setStoreName] = useState<string>("");
+  const [storeLogo, setStoreLogo] = useState<string | null>(() => {
+    return localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
+  });
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      showToast("L'image est trop volumineuse (max 3 Mo)", "warning");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        const base64 = reader.result;
+        setStoreLogo(base64);
+        localStorage.setItem('aquadro_store_logo', base64);
+        localStorage.setItem('pizzeria_store_logo', base64);
+        window.dispatchEvent(new Event('store_logo_updated'));
+        showToast('Logo du magasin mis à jour avec succès !', 'success');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    const handleLogoUpdate = () => {
+      const logo = localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
+      setStoreLogo(logo);
+    };
+    window.addEventListener('storage', handleLogoUpdate);
+    window.addEventListener('store_logo_updated', handleLogoUpdate);
+    return () => {
+      window.removeEventListener('storage', handleLogoUpdate);
+      window.removeEventListener('store_logo_updated', handleLogoUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     db.select<{ name_fr?: string; name?: string }>("SELECT name_fr, name FROM stores LIMIT 1")
@@ -73,11 +121,15 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
 
   useEffect(() => {
     const refreshStatus = async () => {
-      const active = await caisseService.getActiveSession();
-      setSession(active);
-      const pending = await syncService.getPendingCount();
-      setPendingSync(pending);
-      setIsOnline(navigator.onLine);
+      try {
+        const active = await caisseService.getActiveSession();
+        setSession(active);
+        const pending = await syncService.getPendingCount();
+        setPendingSync(pending);
+        setIsOnline(navigator.onLine);
+      } catch (err) {
+        // Ignorer les erreurs temporaires lors des transitions d'authentification
+      }
     };
     refreshStatus();
     const interval = setInterval(refreshStatus, 20000);
@@ -85,50 +137,102 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
   }, []);
 
   useEffect(() => {
-    authService.getAllUsers().then(setAllUsers);
-  }, []);
+    const refreshNotifications = async () => {
+      if (user?.role === 'cashier') {
+        setUnreadNotificationsCount(0);
+        return;
+      }
+      try {
+        const count = await notificationService.getUnreadCount();
+        setUnreadNotificationsCount(count);
+      } catch (e) {
+        console.warn('Erreur rafraîchissement notifications navbar', e);
+      }
+    };
+    refreshNotifications();
+    const interval = setInterval(refreshNotifications, 15000);
+    window.addEventListener('notifications_updated', refreshNotifications);
+    window.addEventListener('store_needs_updated', refreshNotifications);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('notifications_updated', refreshNotifications);
+      window.removeEventListener('store_needs_updated', refreshNotifications);
+    };
+  }, [user?.role]);
 
   const handleKickDrawer = async () => {
-    await printerService.kickCashDrawer();
-    setDrawerPulseNotice(true);
-    setTimeout(() => setDrawerPulseNotice(false), 2000);
+    try {
+      await printerService.kickCashDrawer();
+      setDrawerPulseNotice(true);
+      setTimeout(() => setDrawerPulseNotice(false), 2000);
+      showToast('Signal d\'ouverture envoyé au tiroir-caisse avec succès', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Impossible d\'ouvrir le tiroir-caisse', 'error');
+    }
   };
 
-  const handleLogout = async () => {
-    if (session) {
-      const printZ = window.confirm("Voulez-vous imprimer le ticket Z (Total de la journée) avant de vous déconnecter ?");
-      if (printZ) {
-        try {
-          const closed = await caisseService.closeShift({
-            sessionId: session.id,
-            actualCountedCash: session.expected_cash_drawer,
-            closingNotes: 'Auto-clôture à la déconnexion'
-          });
-          const zData = await caisseService.getZReportData(closed.id);
-          // TODO: printerService.printZReport(zData);
-          await printerService.printZReport(zData);
-        } catch (e) {
-          console.error("Erreur clôture Z", e);
-        }
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
       }
+    };
+    if (showUserMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
     }
-    authService.logout();
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showUserMenu]);
+
+  const handleLogout = async () => {
     setShowUserMenu(false);
+    try {
+      await authService.logout();
+    } catch (e) {
+      console.error("Erreur déconnexion:", e);
+    }
   };
 
   return (
-    <header className="h-12 bg-white border-b border-[#E9DCCB] bg-[#FFF8EF] px-4 flex items-center justify-between select-none z-30 text-gray-800 text-xs">
+    <header className="h-14 bg-white border-b border-stone-200 px-4 flex items-center justify-between select-none z-30 text-stone-800 text-xs shadow-xs">
       {/* 1. Établissement & Nom du Magasin */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-2.5">
-          <div className="w-7 h-7 bg-gradient-to-tr from-[#E87524] to-[#FFC928] text-white font-black rounded-lg flex items-center justify-center text-sm shadow-sm ring-1 ring-[#FFC928]">
-            🍕
+          <input
+            type="file"
+            ref={logoInputRef}
+            onChange={handleLogoUpload}
+            accept="image/*"
+            className="hidden"
+          />
+          <div
+            onClick={() => {
+              if (user?.role !== 'cashier') {
+                logoInputRef.current?.click();
+              }
+            }}
+            className={`w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl flex items-center justify-center shadow-xs ring-1 ring-stone-200 overflow-hidden shrink-0 relative group ${
+              user?.role !== 'cashier' ? 'cursor-pointer hover:ring-2 hover:ring-[#E87524]' : ''
+            }`}
+            title={user?.role !== 'cashier' ? "Cliquer pour changer le logo du magasin (انقر لتغيير لوغو المحل)" : undefined}
+          >
+            <img
+              src={storeLogo || "/pizzeria-logo.jpg"}
+              alt="Logo Pizzeria"
+              className="w-full h-full object-contain p-0.5"
+            />
+            {user?.role !== 'cashier' && (
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[8px] text-white font-bold text-center">
+                تغيير
+              </div>
+            )}
           </div>
           <div>
-            <span className="font-extrabold tracking-tight text-[#292522] text-sm flex items-center gap-1.5">
+            <span className="font-black tracking-tight text-stone-900 text-sm sm:text-base flex items-center gap-2">
               <span>Pizzeria POS</span>
               {storeName ? (
-                <span className="text-[10px] bg-amber-100 text-[#E87524] px-1.5 py-0.5 rounded font-mono font-bold">
+                <span className="text-[10px] sm:text-xs bg-orange-50 text-[#E87524] border border-orange-200/60 px-2 py-0.5 rounded-md font-mono font-bold">
                   {storeName}
                 </span>
               ) : null}
@@ -137,9 +241,9 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
         </div>
 
         {/* État de la Session de Caisse Active */}
-        <div className="hidden md:flex items-center space-x-1.5 px-2 py-0.5 rounded border text-[11px] font-medium bg-gray-50 border-gray-200">
-          <span className={`w-2 h-2 rounded-full ${session ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          <span className="text-gray-700">
+        <div className="hidden md:flex items-center space-x-2 px-2.5 py-1 rounded-xl border text-[11px] font-bold bg-stone-50 border-stone-200 shadow-2xs">
+          <span className={`w-2 h-2 rounded-full ${session ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+          <span className="text-stone-700">
             {session ? `${t('caisse.statusOpen')} (${session.cashier_name})` : t('caisse.statusClosed')}
           </span>
         </div>
@@ -150,22 +254,22 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
         {/* Impulsion Tiroir-Caisse RJ11 */}
         <button
           onClick={handleKickDrawer}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded border text-xs font-medium transition-colors ${
+          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs sm:text-[13px] font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
             drawerPulseNotice
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-              : 'bg-white hover:bg-gray-50 border-gray-300 text-gray-700'
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+              : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-800'
           }`}
           title="Envoyer impulsion électrique 24V au tiroir-caisse RJ11"
         >
-          <KeyRound className="w-3.5 h-3.5 text-gray-500" />
+          <Vault className="w-4 h-4 text-[#E87524]" />
           <span>{drawerPulseNotice ? 'Tiroir Ouvert' : 'Tiroir'}</span>
         </button>
 
         {/* Statut Réseau & Synchronisation Outbox */}
         <button 
-          onClick={onNavigateToSettings}
-          className="flex items-center space-x-1.5 px-2 py-1 rounded border border-gray-200 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer text-[11px] text-gray-600"
-          title="Aller à la file d'attente de synchronisation"
+          onClick={user?.role === 'owner' ? onNavigateToSettings : undefined}
+          className={`flex items-center space-x-1.5 px-2 py-1 rounded border border-gray-200 bg-gray-50 text-[11px] text-gray-600 ${user?.role === 'owner' ? 'hover:bg-gray-100 cursor-pointer' : 'cursor-default'}`}
+          title={user?.role === 'owner' ? "Aller à la file d'attente de synchronisation" : "Statut du réseau"}
         >
           {isOnline ? (
             <Wifi className="w-3.5 h-3.5 text-emerald-600" />
@@ -196,24 +300,62 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
       {/* 3. Copilote & Profil Caissier */}
       <div className="flex items-center space-x-2">
 
-        {/* Bouton Assistant IA (Sobre) */}
-        <button
-          onClick={onToggleAI}
-          className={`flex items-center space-x-1 px-2.5 py-1 rounded border text-xs font-medium transition-colors ${
-            isAIOpen
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-300'
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>{t('app.retailCopilot')}</span>
-        </button>
+        {/* Bouton Notifications & Alertes Proactives (Réservé au Propriétaire / Admin) */}
+        {user?.role !== 'cashier' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className={`relative flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
+                showNotifications
+                  ? 'bg-orange-50 border-[#E87524] text-[#E87524]'
+                  : unreadNotificationsCount > 0
+                  ? 'bg-white hover:bg-orange-50/50 border-orange-300 text-stone-800'
+                  : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-700'
+              }`}
+              title="Notifications & Alertes du magasin (إشعارات وتنبيهات)"
+            >
+              <div className="relative flex items-center justify-center">
+                <Bell className={`w-3.5 h-3.5 ${unreadNotificationsCount > 0 ? 'text-[#E87524]' : 'text-stone-500'}`} />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse ring-2 ring-white" />
+                )}
+              </div>
+              <span className="hidden sm:inline">Notifications</span>
+              {unreadNotificationsCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ml-0.5">
+                  {unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+
+            <NotificationsDropdown
+              isOpen={showNotifications}
+              onClose={() => setShowNotifications(false)}
+              onNavigate={onNavigate}
+            />
+          </div>
+        )}
+
+        {/* Bouton Assistant IA (Réservé au Propriétaire / Admin) */}
+        {user?.role !== 'cashier' && (
+          <button
+            onClick={onToggleAI}
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded border text-xs font-medium transition-colors ${
+              isAIOpen
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white hover:bg-gray-50 text-gray-700 border-gray-300'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{t('app.retailCopilot')}</span>
+          </button>
+        )}
 
         {/* Menu Utilisateur / Changement de Caissier */}
-        <div className="relative">
+        <div className="relative" ref={userMenuRef}>
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center space-x-1.5 px-2.5 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
           >
             <UserCheck className="w-3.5 h-3.5 text-gray-500" />
             <span className="font-semibold text-gray-900">{user?.name || 'Caissier'}</span>
@@ -231,7 +373,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
               <div className="space-y-0.5">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center space-x-2 px-2 py-2 rounded text-left text-xs text-red-600 hover:bg-red-50 font-semibold transition-colors"
+                  className="w-full flex items-center space-x-2 px-2 py-2 rounded text-left text-xs text-red-600 hover:bg-red-50 font-semibold transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Se déconnecter</span>

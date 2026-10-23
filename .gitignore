@@ -10,6 +10,7 @@ build/
 coverage/
 
 # Tauri/Rust build
+src-tauri/target
 src-tauri/target/
 target/
 
