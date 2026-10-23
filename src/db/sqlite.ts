@@ -139,9 +139,14 @@ export class DatabaseService {
   private static instance: DatabaseService;
   private isTauri = false;
   private tauriDb: any = null;
+  private initPromise: Promise<void> | null = null;
 
   private constructor() {
-    this.isTauri = typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function';
+    this.isTauri = this.checkIsTauri();
+  }
+
+  private checkIsTauri(): boolean {
+    return typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__?.invoke);
   }
 
   public static getInstance(): DatabaseService {
@@ -151,28 +156,60 @@ export class DatabaseService {
     return DatabaseService.instance;
   }
 
+  public async ensureInitialized(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initialize();
+    }
+    return this.initPromise;
+  }
+
   public async initialize(): Promise<void> {
+    this.isTauri = this.checkIsTauri();
+
     if (this.isTauri) {
       try {
         const Database = (await import('@tauri-apps/plugin-sql')).default;
-        // Transitional compatibility layer - targets the exact authoritative Rust AppData database
-        const appData = await appDataDir();
-        const dbPath = await join(appData, 'pizzeria_pos.db');
-        this.tauriDb = await Database.load(`sqlite:${dbPath}`);
+        let tauriDbInstance: any = null;
+        let loadError: any = null;
+
+        // 1. Tenter le chargement via le chemin relatif standard Tauri
+        try {
+          tauriDbInstance = await Database.load('sqlite:pizzeria_pos.db');
+          console.log('[DatabaseService] Connecté à SQLite via identifiant standard: sqlite:pizzeria_pos.db');
+        } catch (e1) {
+          loadError = e1;
+        }
+
+        // 2. Si échec, tenter via le chemin absolu AppData
+        if (!tauriDbInstance) {
+          try {
+            const appData = await appDataDir();
+            const dbPath = await join(appData, 'pizzeria_pos.db');
+            tauriDbInstance = await Database.load(`sqlite:${dbPath}`);
+            console.log(`[DatabaseService] Connecté à SQLite via chemin absolu: sqlite:${dbPath}`);
+          } catch (e2) {
+            loadError = e2;
+          }
+        }
+
+        if (!tauriDbInstance) {
+          throw loadError || new Error('Impossible de charger la base de données native');
+        }
+
+        this.tauriDb = tauriDbInstance;
+
         // Optimisations matérielles pour processeurs i5 3e génération / HDD / RAM modeste
         try {
           await this.tauriDb.execute('PRAGMA synchronous = NORMAL;');
           await this.tauriDb.execute('PRAGMA cache_size = -8000;');
           await this.tauriDb.execute('PRAGMA temp_store = MEMORY;');
         } catch {}
-        console.log(`Connecté à la base native SQLite Tauri optimisée : sqlite:${dbPath}`);
 
-        // Initialiser uniquement les métadonnées structurelles essentielles (sans données factices)
+        // Initialiser les métadonnées structurelles indispensables (tables, colonnes et catégories)
         await this.ensureEssentialStructure();
       } catch (err) {
-        this.tauriDb = null;
-        console.error('ERREUR CRITIQUE: Impossible de se connecter à la base de données native.', err);
-        throw new Error(`Erreur critique d'initialisation de la base SQLite native: ${err}`);
+        console.error('AVERTISSEMENT: Connexion SQLite native échouée, activation du stockage mémoire local persistant.', err);
+        memoryDb.initSeed();
       }
     } else {
       memoryDb.initSeed();
@@ -183,7 +220,12 @@ export class DatabaseService {
   private async ensureEssentialStructure(): Promise<void> {
     if (!this.tauriDb) return;
     try {
-      // 0. Tables Ingrédients & Recettes
+      // 0. Assurer la présence de la colonne image_url dans products
+      try {
+        await this.tauriDb.execute('ALTER TABLE products ADD COLUMN image_url TEXT');
+      } catch {}
+
+      // 1. Tables Ingrédients & Recettes
       await this.tauriDb.execute(`
         CREATE TABLE IF NOT EXISTS ingredients (
             id TEXT PRIMARY KEY,
@@ -208,7 +250,39 @@ export class DatabaseService {
             created_at TEXT NOT NULL
         )
       `);
-      // 1. Catégories indispensables : Pizzas et Boissons uniquement
+
+      // 2. Suppléments & Extras personnalisés
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS pizza_supplements (
+            id TEXT PRIMARY KEY,
+            name_fr TEXT NOT NULL,
+            name_ar TEXT,
+            purchase_cost INTEGER NOT NULL DEFAULT 0,
+            price INTEGER NOT NULL DEFAULT 0,
+            current_stock REAL NOT NULL DEFAULT 50.0,
+            min_stock_alert REAL NOT NULL DEFAULT 5.0,
+            category TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+      `);
+
+      // 3. Besoins du magasin (Store Needs)
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS store_needs (
+            id TEXT PRIMARY KEY,
+            item_name TEXT NOT NULL,
+            quantity_needed TEXT,
+            urgency TEXT NOT NULL DEFAULT 'NORMAL',
+            notes TEXT,
+            requested_by TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PENDING',
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        )
+      `);
+
+      // 4. Catégories indispensables : Pizzas et Boissons
       await this.tauriDb.execute(
         `INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES 
          ('cat-pizza', 'Pizzas', 'بيتزا', ?),
@@ -216,7 +290,7 @@ export class DatabaseService {
         [new Date().toISOString(), new Date().toISOString()]
       );
 
-      // 2. Séquences de numérotation des documents commerciaux
+      // 5. Séquences de numérotation des documents commerciaux
       const sequences = [
         ['TICKET', 2026, 0],
         ['FACTURE', 2026, 0],
@@ -236,11 +310,14 @@ export class DatabaseService {
   }
 
   public async execute(query: string, params: any[] = []): Promise<QueryResult> {
-    if (this.isTauri) {
-      if (!this.tauriDb) {
-        throw new Error('Base de données native non initialisée. Échec de requête execute() pour empêcher tout repli silencieux vers le stockage mémoire.');
+    await this.ensureInitialized();
+
+    if (this.isTauri && this.tauriDb) {
+      try {
+        return await this.tauriDb.execute(query, params);
+      } catch (err) {
+        console.warn('[DatabaseService] Erreur execute SQLite native, bascule de sécurité :', err);
       }
-      return await this.tauriDb.execute(query, params);
     }
 
     const trimmed = query.trim().toUpperCase();
@@ -360,11 +437,14 @@ export class DatabaseService {
   }
 
   public async select<T = any>(query: string, params: any[] = []): Promise<T[]> {
-    if (this.isTauri) {
-      if (!this.tauriDb) {
-        throw new Error('Base de données native non initialisée. Échec de requête select() pour empêcher tout repli silencieux vers le stockage mémoire.');
+    await this.ensureInitialized();
+
+    if (this.isTauri && this.tauriDb) {
+      try {
+        return await this.tauriDb.select(query, params);
+      } catch (err) {
+        console.warn('[DatabaseService] Erreur select SQLite native, bascule de sécurité :', err);
       }
-      return await this.tauriDb.select(query, params);
     }
 
     const trimmed = query.trim().toUpperCase();

@@ -38,6 +38,7 @@ pub async fn apply_gate_1c_migrations(pool: &SqlitePool) -> Result<(), sqlx::Err
             tva_rate REAL DEFAULT 0.0,
             current_stock REAL NOT NULL DEFAULT 0.0 CHECK(current_stock >= 0.0),
             min_stock_alert REAL NOT NULL DEFAULT 5.0,
+            image_url TEXT,
             is_active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL

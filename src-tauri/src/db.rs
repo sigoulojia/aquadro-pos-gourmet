@@ -82,17 +82,16 @@ pub async fn init_structural_metadata(pool: &SqlitePool) -> Result<(), Box<dyn s
     use sqlx::Row;
     let now = chrono::Utc::now().to_rfc3339();
 
+    // 0. Ensure schema compatibility columns exist
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN image_url TEXT;").execute(pool).await;
+
     // 1. Categories (Pizzas and Boissons ONLY, ready for owner items)
-    let cat_count: i64 = sqlx::query("SELECT count(*) FROM categories")
-        .fetch_one(pool).await?.get(0);
-    if cat_count == 0 {
-        sqlx::query(
-            r#"INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES 
-            ('cat-pizza', 'Pizzas', 'بيتزا', ?),
-            ('cat-drink', 'Boissons', 'مشروبات', ?)"#
-        ).bind(&now).bind(&now).execute(pool).await?;
-        crate::logger::log_info("DATABASE", "Initialized clean categories: Pizzas & Boissons");
-    }
+    let _ = sqlx::query(
+        r#"INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES 
+        ('cat-pizza', 'Pizzas', 'بيتزا', ?),
+        ('cat-drink', 'Boissons', 'مشروبات', ?)"#
+    ).bind(&now).bind(&now).execute(pool).await;
+    crate::logger::log_info("DATABASE", "Verified clean categories: Pizzas & Boissons");
 
     // 2. Document sequences (Counters for receipts, invoices, etc.)
     let seq_count: i64 = sqlx::query("SELECT count(*) FROM document_sequences")

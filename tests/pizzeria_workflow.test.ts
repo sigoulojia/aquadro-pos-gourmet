@@ -130,10 +130,33 @@ describe("Pizzeria POS — End-to-End Cashier & Ordering Workflow", () => {
     expect(found).toBeDefined();
     expect(found?.selling_price_ttc).toBe(1400);
 
-    // Update price
-    await productService.updateProduct(created.id, { selling_price_ttc: 1550 });
+    // Update price and verify virtual attributes do not break update
+    await productService.updateProduct(created.id, {
+      selling_price_ttc: 1550,
+      name: "Pizza Truffe & Champignons (Modifié)"
+    });
     const updatedProducts = await productService.getProducts();
     const updatedFound = updatedProducts.find(p => p.id === created.id);
     expect(updatedFound?.selling_price_ttc).toBe(1550);
+  });
+
+  it("creates and updates a product with custom image_url and custom category safely", async () => {
+    const customPizza = await productService.createProduct({
+      name_fr: "Pizza 4 Fromages Royale",
+      name_ar: "بيتزا 4 أجبان ملكية",
+      category_id: "cat-custom-gourmet",
+      sku: "PIZ-4FROM-ROYAL",
+      barcode: "613999000099",
+      purchase_cost: 500,
+      selling_price_ttc: 1200,
+      current_stock: 30,
+      image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    });
+
+    expect(customPizza.id).toBeDefined();
+    expect(customPizza.image_url).toBeDefined();
+
+    const fetched = await productService.getProductById(customPizza.id);
+    expect(fetched?.name_fr).toBe("Pizza 4 Fromages Royale");
   });
 });

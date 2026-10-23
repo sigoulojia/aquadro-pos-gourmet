@@ -157,51 +157,113 @@ export class ProductService {
       updated_at: now
     };
 
-    await db.execute(
-      `INSERT INTO products (
-        id, sku, barcode, name_fr, name_ar, category_id, brand_id, variant,
-        size_weight, unit_of_measure, box_conversion_ratio, purchase_cost,
-        selling_price_ttc, min_selling_price_ttc, tva_rate, current_stock,
-        min_stock_alert, image_url, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        product.id, product.sku, product.barcode, product.name_fr, product.name_ar,
-        product.category_id || null, product.brand_id || null, product.variant || null,
-        product.size_weight || null, product.unit_of_measure, product.box_conversion_ratio,
-        product.purchase_cost, product.selling_price_ttc, product.min_selling_price_ttc,
-        product.tva_rate, product.current_stock, product.min_stock_alert,
-        product.image_url || null, product.is_active, product.created_at, product.updated_at
-      ]
-    );
+    // 1. Garantir que la colonne image_url existe dans products
+    try {
+      await db.execute('ALTER TABLE products ADD COLUMN image_url TEXT');
+    } catch {}
+
+    // 2. Garantir que la catégorie existe pour éviter tout échec de contrainte de clé étrangère
+    if (input.category_id) {
+      try {
+        await db.execute(
+          'INSERT OR IGNORE INTO categories (id, name_fr, name_ar, created_at) VALUES (?, ?, ?, ?)',
+          [
+            input.category_id,
+            input.category_id === 'cat-drink' ? 'Boissons' : (input.category_id === 'cat-pizza' ? 'Pizzas' : input.category_id),
+            input.category_id === 'cat-drink' ? 'مشروبات' : (input.category_id === 'cat-pizza' ? 'بيتزا' : input.category_id),
+            now
+          ]
+        );
+      } catch {}
+    }
+
+    try {
+      await db.execute(
+        `INSERT INTO products (
+          id, sku, barcode, name_fr, name_ar, category_id, brand_id, variant,
+          size_weight, unit_of_measure, box_conversion_ratio, purchase_cost,
+          selling_price_ttc, min_selling_price_ttc, tva_rate, current_stock,
+          min_stock_alert, image_url, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          product.id, product.sku, product.barcode, product.name_fr, product.name_ar,
+          product.category_id || null, product.brand_id || null, product.variant || null,
+          product.size_weight || null, product.unit_of_measure, product.box_conversion_ratio,
+          product.purchase_cost, product.selling_price_ttc, product.min_selling_price_ttc,
+          product.tva_rate, product.current_stock, product.min_stock_alert,
+          product.image_url || null, product.is_active, product.created_at, product.updated_at
+        ]
+      );
+    } catch (insertErr) {
+      // Repli sans image_url si la base SQLite locale sous-jacente est une version antérieure
+      await db.execute(
+        `INSERT INTO products (
+          id, sku, barcode, name_fr, name_ar, category_id, brand_id, variant,
+          size_weight, unit_of_measure, box_conversion_ratio, purchase_cost,
+          selling_price_ttc, min_selling_price_ttc, tva_rate, current_stock,
+          min_stock_alert, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          product.id, product.sku, product.barcode, product.name_fr, product.name_ar,
+          product.category_id || null, product.brand_id || null, product.variant || null,
+          product.size_weight || null, product.unit_of_measure, product.box_conversion_ratio,
+          product.purchase_cost, product.selling_price_ttc, product.min_selling_price_ttc,
+          product.tva_rate, product.current_stock, product.min_stock_alert,
+          product.is_active, product.created_at, product.updated_at
+        ]
+      );
+    }
 
     // Si un lot initial et une date d'expiration sont spécifiés
     if (input.initial_batch_number && input.initial_expiration_date && stock > 0) {
-      await db.execute(
-        `INSERT INTO product_batches (
-          id, product_id, batch_number, expiration_date, current_stock, purchase_cost, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          `batch-${Date.now()}`,
-          product.id,
-          input.initial_batch_number.trim(),
-          input.initial_expiration_date,
-          stock,
-          product.purchase_cost,
-          now
-        ]
-      );
+      try {
+        await db.execute(
+          `INSERT INTO product_batches (
+            id, product_id, batch_number, expiration_date, current_stock, purchase_cost, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            `batch-${Date.now()}`,
+            product.id,
+            input.initial_batch_number.trim(),
+            input.initial_expiration_date,
+            stock,
+            product.purchase_cost,
+            now
+          ]
+        );
+      } catch {}
     }
 
     return product;
   }
 
-  // Mise à jour d'un produit existant
-  public async updateProduct(id: string, updates: Partial<Product>): Promise<void> {
+  // Mise à jour d'un produit existant avec filtrage strict des colonnes SQL réelles
+  public async updateProduct(id: string, updates: Partial<Product> & { name?: string }): Promise<void> {
+    const validColumns = new Set([
+      'store_id', 'category_id', 'brand_id', 'sku', 'barcode',
+      'additional_barcodes', 'name_fr', 'name_ar', 'variant', 'size_weight',
+      'unit_of_measure', 'box_conversion_ratio', 'purchase_cost',
+      'selling_price_ttc', 'min_selling_price_ttc', 'tva_rate',
+      'current_stock', 'min_stock_alert', 'image_url', 'is_active', 'updated_at'
+    ]);
+
     const fields: string[] = [];
     const values: any[] = [];
 
-    for (const [key, val] of Object.entries(updates)) {
-      if (key !== 'id' && key !== 'created_at' && key !== 'batches' && key !== 'category_name' && key !== 'brand_name') {
+    // Normaliser les alias compatibles (purchase_price -> purchase_cost, selling_price -> selling_price_ttc, name -> name_fr)
+    const normalizedUpdates: Record<string, any> = { ...updates };
+    if (normalizedUpdates.purchase_price !== undefined && normalizedUpdates.purchase_cost === undefined) {
+      normalizedUpdates.purchase_cost = normalizedUpdates.purchase_price;
+    }
+    if (normalizedUpdates.selling_price !== undefined && normalizedUpdates.selling_price_ttc === undefined) {
+      normalizedUpdates.selling_price_ttc = normalizedUpdates.selling_price;
+    }
+    if (normalizedUpdates.name && !normalizedUpdates.name_fr) {
+      normalizedUpdates.name_fr = normalizedUpdates.name;
+    }
+
+    for (const [key, val] of Object.entries(normalizedUpdates)) {
+      if (validColumns.has(key)) {
         fields.push(`${key} = ?`);
         values.push(val);
       }

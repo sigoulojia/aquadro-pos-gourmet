@@ -227,7 +227,6 @@ export const ProductsView: React.FC = () => {
         // Modification
         await productService.updateProduct(editingProduct.id, {
           name_fr: formData.name_fr,
-          name: formData.name_fr,
           name_ar: formData.name_ar,
           category_id: formData.category_id,
           variant: formData.variant,

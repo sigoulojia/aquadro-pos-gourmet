@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS products (
     tva_rate REAL DEFAULT 0.0,
     current_stock REAL NOT NULL DEFAULT 0.0,
     min_stock_alert REAL NOT NULL DEFAULT 5.0,
+    image_url TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -109,6 +110,33 @@ CREATE TABLE IF NOT EXISTS recipe_items (
 );
 CREATE INDEX IF NOT EXISTS idx_recipe_prod ON recipe_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_ing ON recipe_items(ingredient_id);
+
+-- 4d. Suppléments & Extras Personnalisés Pizzeria (Mozzarella, Champignons...)
+CREATE TABLE IF NOT EXISTS pizza_supplements (
+    id TEXT PRIMARY KEY,
+    name_fr TEXT NOT NULL,
+    name_ar TEXT,
+    purchase_cost INTEGER NOT NULL DEFAULT 0,
+    price INTEGER NOT NULL DEFAULT 0,
+    current_stock REAL NOT NULL DEFAULT 50.0,
+    min_stock_alert REAL NOT NULL DEFAULT 5.0,
+    category TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+-- 4e. Besoins du Magasin (Ruptures & Demandes d'Achat direct caisse)
+CREATE TABLE IF NOT EXISTS store_needs (
+    id TEXT PRIMARY KEY,
+    item_name TEXT NOT NULL,
+    quantity_needed TEXT,
+    urgency TEXT NOT NULL DEFAULT 'NORMAL',
+    notes TEXT,
+    requested_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
 
 -- 5. Lots de Produits & Traçabilité FEFO
 CREATE TABLE IF NOT EXISTS product_batches (
