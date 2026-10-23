@@ -1,7 +1,9 @@
 // Aquadro POS — Native Printer & Cash Drawer Hardware Controller
 // Gère l'envoi de commandes brutes ESC/POS et l'impulsion électrique RJ11 (Tiroir-Caisse)
 
+#[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
+#[cfg(target_os = "linux")]
 use std::io::Write;
 use std::process::Command;
 use serde::{Deserialize, Serialize};
@@ -164,10 +166,11 @@ pub fn trigger_cash_drawer(pin: Option<u8>, preferred_printer: Option<String>) -
     #[cfg(target_os = "windows")]
     {
         let printer_arg = preferred_printer.as_deref().unwrap_or("");
-        // Envoi via un script temporaire ou commande spooler Windows
+        let hex_bytes: Vec<String> = payload.iter().map(|b| format!("0x{:02X}", b)).collect();
+        let bytes_joined = hex_bytes.join(",");
         let ps_script = format!(
-            r#"$bytes = [byte[]]@(0x1B,0x70,0x00,0x19,0xFA,0x1B,0x70,0x01,0x19,0xFA);
-$printerName = if ('{0}' -ne '') {{ '{0}' }} else {{ (Get-WmiObject -Query 'SELECT Name FROM Win32_Printer WHERE Default = True').Name }};
+            r#"$bytes = [byte[]]@({0});
+$printerName = if ('{1}' -ne '') {{ '{1}' }} else {{ (Get-WmiObject -Query 'SELECT Name FROM Win32_Printer WHERE Default = True').Name }};
 if ($printerName) {{
     $tempFile = [System.IO.Path]::GetTempFileName();
     [System.IO.File]::WriteAllBytes($tempFile, $bytes);
@@ -177,6 +180,7 @@ if ($printerName) {{
 }} else {{
     Write-Error "No printer found"
 }}"#,
+            bytes_joined,
             printer_arg
         );
 
@@ -335,6 +339,42 @@ pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> 
                 let _ = child.wait();
                 crate::logger::log_info("PRINTER", &format!("Ticket transmis à CUPS sur '{}'", p));
                 return Ok(format!("Ticket envoyé à l'imprimante CUPS '{}'", p));
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let printer_arg = preferred_printer.as_deref().unwrap_or("");
+        let hex_bytes: Vec<String> = bytes.iter().map(|b| format!("0x{:02X}", b)).collect();
+        let bytes_joined = hex_bytes.join(",");
+        let ps_script = format!(
+            r#"$bytes = [byte[]]@({0});
+$printerName = if ('{1}' -ne '') {{ '{1}' }} else {{ (Get-WmiObject -Query 'SELECT Name FROM Win32_Printer WHERE Default = True').Name }};
+if ($printerName) {{
+    $tempFile = [System.IO.Path]::GetTempFileName();
+    [System.IO.File]::WriteAllBytes($tempFile, $bytes);
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c copy /b `"$tempFile`" `"`\`\localhost\`$printerName`"" -NoNewWindow -Wait;
+    Remove-Item $tempFile -Force;
+    Write-Output "OK:$printerName"
+}}"#,
+            bytes_joined,
+            printer_arg
+        );
+
+        if let Ok(output) = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-NonInteractive")
+            .arg("-Command")
+            .arg(&ps_script)
+            .output()
+        {
+            if output.status.success() {
+                let out_str = String::from_utf8_lossy(&output.stdout);
+                if out_str.contains("OK:") {
+                    crate::logger::log_info("PRINTER", "Ticket imprimé via Windows Spooler");
+                    return Ok("Ticket imprimé via Windows Spooler".to_string());
+                }
             }
         }
     }
