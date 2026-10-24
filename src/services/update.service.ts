@@ -136,7 +136,7 @@ export class UpdateService {
 
     try {
       const update = await check({
-        timeout: 10000, // 10s network timeout
+        timeout: 30000, // 30s network timeout for resilient connection
       });
 
       if (update && update.available) {
@@ -243,7 +243,7 @@ export class UpdateService {
           this.notify();
         }
       }, {
-        timeout: 60000,
+        timeout: 180000, // 3 minutes timeout for download
         restartAfterInstall: true,
       });
     } catch (err: unknown) {
