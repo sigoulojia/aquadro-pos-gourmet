@@ -1083,7 +1083,7 @@ export const SettingsView: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Version Installée</span>
-                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v4.0.0</p>
+                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.4</p>
                 <span className="text-[11px] text-green-700 font-medium flex items-center gap-1 mt-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Canal Production Stable (NSIS Windows)
                 </span>
@@ -1160,7 +1160,7 @@ export const SettingsView: React.FC = () => {
             {updateState.status === 'up-to-date' && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <span>Votre système Aquadro POS est parfaitement à jour (v4.0.0).</span>
+                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.4).</span>
               </div>
             )}
 

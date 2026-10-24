@@ -1,6 +1,6 @@
 [package]
 name = "aquadro-pos"
-version = "4.0.0"
+version = "1.0.4"
 description = "Aquadro POS Gourmet — Pizzeria Point of Sale"
 authors = ["Aquadro POS Team"]
 edition = "2021"
