@@ -166,6 +166,8 @@ export interface SaleItem {
   total_price?: number;
   unit_purchase_cost_snapshot: number; // Snapshot figé au moment de la vente
   unit_purchase_price?: number;
+  supplements?: any;
+  notes?: string | null;
   created_at: string;
 }
 
@@ -237,10 +239,16 @@ export type ExpenseCategory =
   | 'WATER'
   | 'INTERNET'
   | 'PACKAGING'
+  | 'PIZZA_BOXES'
+  | 'NAPKINS'
   | 'TRANSPORT'
   | 'MAINTENANCE'
   | 'CLEANING'
   | 'SUPPLIES'
+  | 'INGREDIENTS_PURCHASE'
+  | 'SUPPLEMENTS_PURCHASE'
+  | 'SALARY'
+  | 'CHEF_SALARY'
   | 'OTHER';
 
 export interface Expense {

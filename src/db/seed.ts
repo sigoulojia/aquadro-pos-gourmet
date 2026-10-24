@@ -1,18 +1,18 @@
-// Aquadro POS Algérie V2 — Clean Seed Data
-// Base de données vierge prête pour la production
+// Aquadro POS Algérie — Base Vierge Prête Pour La Production
+// Aucune donnée factice ou par défaut : l'utilisateur entre tout lui-même
 
 export const SEED_STORE = {
   id: 'store-001',
-  name: 'Mon Magasin',
-  code: 'MAG-01',
-  address: 'Adresse du magasin',
-  phone: '0000 00 00 00',
-  email: 'contact@magasin.dz',
-  tax_number: 'NIF: 000000000000000 - RC: 00/00-0000000',
-  receipt_header: 'MON MAGASIN\nBienvenue',
-  receipt_footer: 'Merci de votre visite !',
+  name: 'Aquadro Pizzeria Gourmet',
+  code: 'AQUADRO-01',
+  address: '',
+  phone: '',
+  email: '',
+  tax_number: '',
+  receipt_header: 'AQUADRO\nPIZZERIA GOURMET',
+  receipt_footer: 'MERCI DE VOTRE VISITE',
   currency: 'DZD',
-  tax_rate: 0.0, 
+  tax_rate: 0.0,
   is_active: 1,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString()
@@ -43,7 +43,7 @@ export const SEED_PERMISSIONS = [
   { id: 'p15', code: 'ai.assistant', description: 'Utilisation du copilote IA', category: 'AI' }
 ];
 
-// Un seul compte Admin par défaut
+// Seul compte Admin pour la première connexion (Code PIN par défaut: 1234)
 export const SEED_USERS = [
   {
     id: 'user-001',
@@ -51,189 +51,19 @@ export const SEED_USERS = [
     role_id: 'role-owner',
     role: 'owner' as const,
     name: 'Admin',
-    email: 'admin@magasin.dz',
-    // Default PIN: 1234
+    email: 'admin@aquadro.dz',
     pin_hash: 'a1b2c3d4e5f60718:8f258a12e34567890abcdef1234567890abcdef1234567890abcdef123456789',
-    phone: '0000000000',
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'user-002',
-    store_id: 'store-001',
-    role_id: 'role-manager',
-    role: 'manager' as const,
-    name: 'Yacine Amrani',
-    email: 'yacine@magasin.dz',
-    pin_hash: 'a1b2c3d4e5f60718:8f258a12e34567890abcdef1234567890abcdef1234567890abcdef123456789',
-    phone: '0550000002',
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'user-003',
-    store_id: 'store-001',
-    role_id: 'role-cashier',
-    role: 'cashier' as const,
-    name: 'Sarah Connor',
-    email: 'sarah@magasin.dz',
-    pin_hash: 'a1b2c3d4e5f60718:8f258a12e34567890abcdef1234567890abcdef1234567890abcdef123456789',
-    phone: '0550000003',
+    phone: '',
     is_active: 1,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
 ];
 
-export const SEED_CATEGORIES = [
-  { id: 'cat-001', name_fr: 'Protéines', name_ar: 'بروتينات', created_at: new Date().toISOString() },
-  { id: 'cat-002', name_fr: 'Créatines', name_ar: 'كرياتين', created_at: new Date().toISOString() },
-  { id: 'cat-003', name_fr: 'Acides Aminés', name_ar: 'أحماض أمينية', created_at: new Date().toISOString() }
-];
-
-export const SEED_BRANDS = [
-  { id: 'brand-001', name: 'Optimum Nutrition', created_at: new Date().toISOString() },
-  { id: 'brand-002', name: 'Dymatize', created_at: new Date().toISOString() }
-];
-
-export const SEED_SUPPLIERS = [
-  {
-    id: 'sup-001',
-    name: 'Distributeur Sport Algérie',
-    phone: '023000000',
-    email: 'contact@sports-dz.com',
-    address: 'Alger, Algérie',
-    current_balance: 0,
-    created_at: new Date().toISOString()
-  }
-];
-
-export const SEED_PRODUCTS = [
-  {
-    id: 'prod-001',
-    store_id: 'store-001',
-    category_id: 'cat-001',
-    brand_id: 'brand-001',
-    name: 'Optimum Nutrition Gold Standard Whey 2.27kg',
-    name_fr: 'Optimum Nutrition Gold Standard Whey 2.27kg',
-    name_ar: 'أوبتيموم نوتريشن واي بروتين 2.27 كغ',
-    sku: 'ON-WHEY-2KG',
-    barcode: '748927028669',
-    purchase_cost: 13000,
-    purchase_price: 13000,
-    selling_price_ttc: 16800,
-    selling_price: 16800,
-    current_stock: 35,
-    min_stock_alert: 5,
-    min_stock_threshold: 5,
-    unit_of_measure: 'UNIT',
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'prod-002',
-    store_id: 'store-001',
-    category_id: 'cat-002',
-    brand_id: 'brand-001',
-    name: 'Creatine Monohydrate 300g',
-    name_fr: 'Creatine Monohydrate 300g',
-    name_ar: 'كرياتين مونوهيدرات 300 غ',
-    sku: 'ON-CREATINE-300G',
-    barcode: '748927028670',
-    purchase_cost: 3200,
-    purchase_price: 3200,
-    selling_price_ttc: 4500,
-    selling_price: 4500,
-    current_stock: 20,
-    min_stock_alert: 5,
-    min_stock_threshold: 5,
-    unit_of_measure: 'UNIT',
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  },
-  {
-    id: 'prod-003',
-    store_id: 'store-001',
-    category_id: 'cat-003',
-    brand_id: 'brand-001',
-    name: 'BCAA Energy 280g',
-    name_fr: 'BCAA Energy 280g',
-    name_ar: 'بي سي إيه إيه إنرجي 280 غ',
-    sku: 'BCAA-280G',
-    barcode: '748927028671',
-    purchase_cost: 3800,
-    purchase_price: 3800,
-    selling_price_ttc: 5200,
-    selling_price: 5200,
-    current_stock: 15,
-    min_stock_alert: 5,
-    min_stock_threshold: 5,
-    unit_of_measure: 'UNIT',
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
-
-export const SEED_CUSTOMERS = [
-  {
-    id: 'cust-001',
-    store_id: 'store-001',
-    name: 'Mohamed Benali',
-    phone: '0550123456',
-    email: 'mohamed@example.dz',
-    loyalty_points: 150,
-    total_spent: 45000,
-    current_debt: 0,
-    is_active: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  }
-];
-
-export const SEED_BATCHES = [
-  {
-    id: 'batch-001',
-    product_id: 'prod-001',
-    batch_number: 'LOT-2026-EARLY',
-    expiration_date: '2027-01-15',
-    current_stock: 10,
-    purchase_cost: 13000,
-    purchase_price: 13000,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'batch-002',
-    product_id: 'prod-001',
-    batch_number: 'LOT-2026-LATE',
-    expiration_date: '2027-08-30',
-    current_stock: 25,
-    purchase_cost: 13500,
-    purchase_price: 13500,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'batch-003',
-    product_id: 'prod-002',
-    batch_number: 'LOT-2026-CREA',
-    expiration_date: '2027-12-31',
-    current_stock: 20,
-    purchase_cost: 3200,
-    purchase_price: 3200,
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 'batch-004',
-    product_id: 'prod-003',
-    batch_number: 'LOT-2026-BCAA',
-    expiration_date: '2027-10-31',
-    current_stock: 15,
-    purchase_cost: 3800,
-    purchase_price: 3800,
-    created_at: new Date().toISOString()
-  }
-];
+// Zéro données par défaut — l'utilisateur saisit l'intégralité de son catalogue et ses partenaires
+export const SEED_CATEGORIES: any[] = [];
+export const SEED_BRANDS: any[] = [];
+export const SEED_SUPPLIERS: any[] = [];
+export const SEED_PRODUCTS: any[] = [];
+export const SEED_CUSTOMERS: any[] = [];
+export const SEED_BATCHES: any[] = [];

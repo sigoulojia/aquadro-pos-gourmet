@@ -99,6 +99,15 @@ export const InventoryView: React.FC = () => {
 
   // Sélectionner un produit pour afficher et modifier sa recette
   const handleSelectProductForRecipe = async (prodId: string) => {
+    // Sauvegarder automatiquement l'ancienne recette avant de changer de plat si modifié
+    if (selectedProductId && selectedProductId !== prodId) {
+      try {
+        await recipeService.saveRecipe(selectedProductId, recipeEntries);
+      } catch (err) {
+        console.warn('Auto-save prior product recipe:', err);
+      }
+    }
+
     setSelectedProductId(prodId);
     const details = await recipeService.getRecipeForProduct(prodId);
     setRecipeEntries(
@@ -168,14 +177,38 @@ export const InventoryView: React.FC = () => {
   };
 
   const handleDeleteIngredient = async (id: string, name: string) => {
-    if (!window.confirm(`Confirmez-vous la suppression de l\'ingrédient "${name}" ?`)) return;
     try {
+      // Mise à jour optimiste immédiate de l'interface
+      setIngredients(prev => prev.filter(i => i.id !== id));
+      setYields(prev => prev.filter(y => y.limitingIngredient?.id !== id));
+
       await recipeService.deleteIngredient(id);
-      showToast(`Ingrédient "${name}" supprimé.`, 'info');
+      showToast(`تم حذف المقدار "${name}" بنجاح من المخزون والوصفات`, 'info');
       await loadAllData();
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Erreur suppression ingrédient:', err);
+      showToast(`فشل حذف المقدار: ${err?.message || err}`, 'error');
+      await loadAllData();
+    }
+  };
+
+  // Application rapide d'une recette standard pour pizzas sans fiche
+  const handleApplyQuickRecipe = async (productId: string) => {
+    if (ingredients.length === 0) {
+      showToast('يرجى إضافة مقادير للمخزن أولاً.', 'warning');
+      return;
+    }
+
+    try {
+      await recipeService.applyDefaultPizzaRecipe(productId);
+      showToast('تم ربط وحفظ وصفة قياسية سريعة للبيتزا بنجاح !', 'success');
+      await loadAllData();
+      if (selectedProductId === productId) {
+        await handleSelectProductForRecipe(productId);
+      }
+    } catch (err: any) {
       console.error(err);
-      showToast('Erreur lors de la suppression.', 'error');
+      showToast(`فشل تطبيق الوصفة السريعة: ${err?.message || err}`, 'error');
     }
   };
 
@@ -221,7 +254,7 @@ export const InventoryView: React.FC = () => {
     setShowIngredientPicker(true);
   };
 
-  const handleSelectIngredientForRecipe = (ing: Ingredient) => {
+  const handleSelectIngredientForRecipe = async (ing: Ingredient) => {
     // Vérifier si déjà présent
     const exists = recipeEntries.some(r => r.ingredient_id === ing.id);
     if (exists) {
@@ -230,30 +263,74 @@ export const InventoryView: React.FC = () => {
     }
 
     const defaultQty = ing.unit.toLowerCase() === 'kg' ? 0.15 : ing.unit.toLowerCase() === 'g' ? 100 : 1;
+    const newEntry: RecipeEntryInput = {
+      ingredient_id: ing.id,
+      quantity_required: defaultQty,
+      unit_display: `${defaultQty} ${ing.unit}`
+    };
 
-    setRecipeEntries([
-      ...recipeEntries,
-      {
-        ingredient_id: ing.id,
-        quantity_required: defaultQty,
-        unit_display: `${defaultQty} ${ing.unit}`
-      }
-    ]);
-
+    const newEntries = [...recipeEntries, newEntry];
+    setRecipeEntries(newEntries);
     setShowIngredientPicker(false);
-    showToast(`تمت إضافة "${ing.name_fr}" إلى الوصفة بنجاح`, 'success');
+
+    // Sauvegarde automatique immédiate dans la base de données
+    if (selectedProductId) {
+      try {
+        await recipeService.saveRecipe(selectedProductId, newEntries);
+        const ylds = await recipeService.calculateAllYields();
+        setYields(ylds);
+        showToast(`تمت إضافة وحفظ "${ing.name_fr}" في مقادير البيتزا بنجاح !`, 'success');
+      } catch (err: any) {
+        console.error('Erreur auto-save ingrédient:', err);
+        showToast(`فشل حفظ المقدار: ${err?.message || err}`, 'error');
+      }
+    }
   };
 
-  const handleUpdateRecipeRow = (index: number, field: keyof RecipeEntryInput, value: any) => {
+  const handleUpdateRecipeRow = async (index: number, field: keyof RecipeEntryInput, value: any) => {
     const updated = [...recipeEntries];
-    updated[index] = { ...updated[index], [field]: value };
+    let finalVal = value;
+    if (field === 'quantity_required') {
+      const rawStr = String(value).replace(',', '.');
+      finalVal = parseFloat(rawStr) || 0;
+    }
+    updated[index] = { ...updated[index], [field]: finalVal };
+
+    const curIngId = field === 'ingredient_id' ? finalVal : updated[index].ingredient_id;
+    const curQty = field === 'quantity_required' ? finalVal : updated[index].quantity_required;
+    const matchedIng = ingredients.find(i => i.id === curIngId);
+    if (matchedIng) {
+      updated[index].unit_display = `${curQty} ${matchedIng.unit}`;
+    }
+
     setRecipeEntries(updated);
+
+    // Auto-save immédiat si produit sélectionné et données valides
+    if (selectedProductId && curIngId && (field === 'ingredient_id' ? !!finalVal : curQty > 0)) {
+      try {
+        await recipeService.saveRecipe(selectedProductId, updated);
+        const ylds = await recipeService.calculateAllYields();
+        setYields(ylds);
+      } catch (err) {
+        console.warn('Erreur auto-save row update:', err);
+      }
+    }
   };
 
-  const handleRemoveRecipeRow = (index: number) => {
+  const handleRemoveRecipeRow = async (index: number) => {
     const updated = [...recipeEntries];
     updated.splice(index, 1);
     setRecipeEntries(updated);
+    if (selectedProductId) {
+      try {
+        await recipeService.saveRecipe(selectedProductId, updated);
+        const ylds = await recipeService.calculateAllYields();
+        setYields(ylds);
+        showToast('تم حذف المقدار من الوصفة وتحديث السعة الإنتاجية بنجاح', 'info');
+      } catch (err: any) {
+        console.error('Erreur retrait ingrédient de la recette:', err);
+      }
+    }
   };
 
   const handleSaveRecipe = async () => {
@@ -261,11 +338,12 @@ export const InventoryView: React.FC = () => {
     setSavingRecipe(true);
     try {
       await recipeService.saveRecipe(selectedProductId, recipeEntries);
-      showToast('Fiche technique enregistrée avec succès !', 'success');
+      showToast('تم حفظ وتثبيت كافة مقادير البيتزا بنجاح !', 'success');
       await loadAllData();
-    } catch (err) {
+      await handleSelectProductForRecipe(selectedProductId);
+    } catch (err: any) {
       console.error(err);
-      showToast('Erreur lors de l\'enregistrement de la fiche technique.', 'error');
+      showToast(`خطأ أثناء حفظ مقادير الوصفة: ${err?.message || err}`, 'error');
     } finally {
       setSavingRecipe(false);
     }
@@ -555,6 +633,54 @@ export const InventoryView: React.FC = () => {
         {/* ========================================================================= */}
         {activeTab === 'CAPACITY' && (
           <div className="space-y-4">
+            {/* KPI Dashboard de Rendement Global */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-gradient-to-br from-emerald-50 to-white p-4 rounded-xl border border-emerald-200 shadow-xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <CookingPot className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider block">
+                    إجمالي سعة التحضير الممكنة (Capacité Globale)
+                  </span>
+                  <div className="text-xl font-black text-emerald-900 font-mono">
+                    {yields.filter(y => y.hasRecipe).reduce((sum, y) => sum + y.maxPortions, 0)} <span className="text-xs font-normal">بيتزا جاهزة</span>
+                  </div>
+                  <span className="text-[10px] text-stone-500">حساب فوري من رصيد المقادير المتوفرة</span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-orange-50 to-white p-4 rounded-xl border border-[#E9DCCB] shadow-xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#E87524] flex items-center justify-center shrink-0">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-stone-600 tracking-wider block">
+                    قيمة المقادير الأولية (Valeur Ingrédients)
+                  </span>
+                  <div className="text-xl font-black text-[#292522] font-mono">
+                    {CurrencyUtil.formatDZD(ingredients.reduce((sum, ing) => sum + (ing.current_stock * ing.cost_per_unit), 0))}
+                  </div>
+                  <span className="text-[10px] text-stone-500">{ingredients.length} مكونات في المخزن</span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-blue-50 to-white p-4 rounded-xl border border-blue-200 shadow-xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-blue-800 tracking-wider block">
+                    جاهزية الوصفات (Fiches Configurées)
+                  </span>
+                  <div className="text-xl font-black text-blue-900 font-mono">
+                    {yields.filter(y => y.hasRecipe).length} / {yields.length} <span className="text-xs font-normal">أطباق معدة</span>
+                  </div>
+                  <span className="text-[10px] text-stone-500">{yields.filter(y => !y.hasRecipe).length} بحاجة لوصفة</span>
+                </div>
+              </div>
+            </div>
+
             {/* Barre de Filtre & Recherche */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-[#E9DCCB] shadow-xs">
               <div className="relative flex-1 min-w-[240px]">
@@ -770,12 +896,20 @@ export const InventoryView: React.FC = () => {
                             </div>
                           </>
                         ) : (
-                          <div className="py-6 text-center text-xs text-stone-600 space-y-2">
+                          <div className="py-6 text-center text-xs text-stone-600 space-y-2.5">
                             <Info className="w-6 h-6 mx-auto text-amber-500" />
-                            <p>Aucune fiche technique configurée pour ce plat.</p>
-                            <p className="text-[11px] text-stone-600">
-                              Définissez les ingrédients pour calculer le nombre de portions réalisables.
+                            <p className="font-bold">Aucune fiche technique configurée pour ce plat.</p>
+                            <p className="text-[11px] text-stone-500 max-w-xs mx-auto">
+                              لم يتم ربط هذا الطبق بمقادير المخزون بعد لحساب عدد البيتزا الممكن إعدادها.
                             </p>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyQuickRecipe(y.productId)}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center gap-1.5 mx-auto cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>⚡ تطبيق وصفة قياسية سريعة</span>
+                            </button>
                           </div>
                         )}
                       </div>
@@ -915,7 +1049,7 @@ export const InventoryView: React.FC = () => {
                             {ing.min_stock_alert} {ing.unit}
                           </td>
                           <td className="py-3 px-3 font-mono text-stone-800 font-medium">
-                            {CurrencyUtil.formatDZD(ing.cost_per_unit)}
+                            {CurrencyUtil.formatDZD(ing.cost_per_unit)}<span className="text-[10px] text-stone-500 ml-1">/ {ing.unit}</span>
                           </td>
                           <td className="py-3 px-3 font-mono font-bold text-[#E87524]">
                             {CurrencyUtil.formatDZD(stockValue)}
@@ -1313,7 +1447,7 @@ export const InventoryView: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-bold text-stone-600 uppercase mb-1">
-                    Stock Initial
+                    Stock Initial ({ingForm.unit})
                   </label>
                   <input
                     type="number"
@@ -1341,19 +1475,42 @@ export const InventoryView: React.FC = () => {
                   />
                 </div>
 
-                <div>
+              <div>
                   <label className="block text-[11px] font-bold text-stone-600 uppercase mb-1">
-                    Coût d'Achat par Unité (DA)
+                    Prix d'achat par {ingForm.unit} (DA) *
                   </label>
                   <input
                     type="number"
                     step="any"
                     min="0"
-                    placeholder="ex: 120"
+                    placeholder={`ex: ${ingForm.unit === 'kg' ? '120' : ingForm.unit === 'g' ? '0.12' : ingForm.unit === 'L' ? '80' : ingForm.unit === 'ml' ? '0.08' : '50'}`}
                     value={ingForm.cost_per_unit}
                     onChange={e => setIngForm({ ...ingForm, cost_per_unit: parseFloat(e.target.value) || 0 })}
                     className="w-full p-2.5 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl font-mono focus:border-[#E87524] focus:outline-none text-right"
                   />
+                  {/* Conseil de saisie selon l'unité */}
+                  <div className="mt-1 text-[10px] text-stone-500 leading-tight">
+                    {ingForm.unit === 'g' && (
+                      <span className="text-amber-700 font-medium">
+                        ⚠️ Prix par gramme. Ex: si 1 kg de farine = 80 DA → saisir 0.08 DA/g
+                      </span>
+                    )}
+                    {ingForm.unit === 'ml' && (
+                      <span className="text-amber-700 font-medium">
+                        ⚠️ Prix par ml. Ex: si 1 L = 80 DA → saisir 0.08 DA/ml
+                      </span>
+                    )}
+                    {ingForm.unit === 'kg' && (
+                      <span className="text-emerald-700 font-medium">
+                        ✓ Saisir directement le prix du kg en DA
+                      </span>
+                    )}
+                    {ingForm.unit === 'L' && (
+                      <span className="text-emerald-700 font-medium">
+                        ✓ Saisir directement le prix du litre en DA
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

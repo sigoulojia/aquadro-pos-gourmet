@@ -2,6 +2,8 @@
 // Table des tickets, réimpression thermique et retours autorisés par code PIN Responsable
 
 import React, { useState, useEffect } from 'react';
+import { db } from '../../db/sqlite';
+import { recipeService } from '../../services/recipe.service';
 import { salesService } from '../../services/sales.service';
 import { authService } from '../../services/auth.service';
 import { printerService, ReceiptPrintData } from '../../services/printer.service';
@@ -122,47 +124,111 @@ export const SalesView: React.FC = () => {
     }
   };
 
-  const handleReprint = async (sale: Sale) => {
-    let storeFr = 'PIZZERIA GOURMET';
+  const prepareReceiptData = async (sale: Sale): Promise<ReceiptPrintData> => {
+    // 1. Priorité absolue : vérifier si le reçu complet existe déjà dans l'archive
+    const cached = printerService.getArchivedReceipt(sale.receipt_number) 
+                || printerService.getArchivedReceipt(sale.id);
+    if (cached) {
+      return cached;
+    }
+
+    // 2. Sinon, reconstruction fidèle à partir des tables SQLite
+    let storeFr = 'AQUADRO';
     let storeAr = 'بيتزيريا';
+    let storePhone = '';
+    let storeAddress = '';
     try {
-      const savedFr = localStorage.getItem('aquadro_store_name');
-      const savedAr = localStorage.getItem('aquadro_store_name_ar');
-      if (savedFr) storeFr = savedFr;
-      if (savedAr) storeAr = savedAr;
+      const stores = await db.select<any>('SELECT * FROM stores LIMIT 1');
+      if (stores && stores.length > 0) {
+        storeFr = stores[0].name_fr || stores[0].name || 'AQUADRO';
+        storeAr = stores[0].name_ar || 'بيتزيريا';
+        storePhone = stores[0].phone || '';
+        storeAddress = stores[0].address || '';
+      }
     } catch {}
 
-    const orderType = sale.notes?.includes('Livraison')
+    const noteUpper = String(sale.notes || '').toUpperCase();
+    const orderType = (noteUpper.includes('LIVRAISON') || noteUpper.includes('DELIVERY'))
       ? 'LIVRAISON'
-      : sale.notes?.includes('À Emporter')
+      : (noteUpper.includes('EMPORTER') || noteUpper.includes('TAKEAWAY') || noteUpper.includes('A_EMPORTER'))
       ? 'A_EMPORTER'
       : 'SUR_PLACE';
 
-    const data: ReceiptPrintData = {
-      storeNameFr: storeFr,
-      storeNameAr: storeAr,
-      receiptNumber: sale.receipt_number,
-      dailyOrderNumber: sale.receipt_number.slice(-4),
-      dateTime: new Date(sale.created_at).toLocaleString(),
-      cashierName: sale.cashier_name || 'البائع',
-      customerName: sale.customer_name,
-      orderType,
-      items: (sale.items || []).map(i => ({
-        name: i.product_name,
+    const items = await Promise.all((sale.items || []).map(async (i) => {
+      let baseIngredients: string[] = [];
+      let productName = i.product_name;
+
+      if (i.product_id) {
+        try {
+          if (!productName || productName === 'Article') {
+            const prods = await db.select<any>('SELECT * FROM products WHERE id = ?', [i.product_id]);
+            if (prods && prods.length > 0) {
+              productName = prods[0].name_fr || prods[0].name || productName;
+            }
+          }
+          const recipeDetails = await recipeService.getRecipeForProduct(i.product_id);
+          baseIngredients = recipeDetails.map(d => d.ingredient_name_fr).filter(Boolean);
+        } catch (e) {}
+      }
+
+      let parsedSupplements = (i as any).supplements;
+      if (typeof parsedSupplements === 'string' && parsedSupplements.trim().startsWith('[')) {
+        try {
+          parsedSupplements = JSON.parse(parsedSupplements);
+        } catch {}
+      }
+
+      return {
+        name: productName || 'Pizza',
         quantity: i.quantity,
         unitPrice: i.unit_price_ttc,
-        total: i.total_ttc
-      })),
+        total: i.total_ttc,
+        ingredients: baseIngredients,
+        supplements: parsedSupplements,
+        notes: (i as any).notes
+      };
+    }));
+
+    const cleanOrderNum = printerService.getCleanOrderNumber(undefined, sale.receipt_number);
+
+    const reconstructed: ReceiptPrintData = {
+      storeName: 'AQUADRO',
+      storeNameFr: storeFr,
+      storeNameAr: storeAr,
+      storeAddress,
+      storePhone,
+      receiptNumber: sale.receipt_number,
+      dailyOrderNumber: cleanOrderNum,
+      dateTime: new Date(sale.created_at).toLocaleString('fr-FR'),
+      cashierName: sale.cashier_name || 'Caissier',
+      customerName: sale.customer_name,
+      orderType,
+      items,
       subtotalHT: sale.total_ttc,
       taxAmount: 0,
       taxRate: 0,
       totalTTC: sale.total_ttc,
       paymentMethod: sale.payments?.[0]?.payment_method || 'CASH',
-      tenderedAmount: sale.total_ttc,
-      changeGiven: 0
+      tenderedAmount: sale.payments?.[0]?.tendered_amount || sale.total_ttc,
+      changeGiven: sale.payments?.[0]?.change_given || 0
     };
-    setSelectedReceiptData(data);
-    setShowReceiptModal(true);
+
+    printerService.archiveReceipt(reconstructed);
+    return reconstructed;
+  };
+
+  const handleOpenReceipt = async (sale: Sale) => {
+    try {
+      const data = await prepareReceiptData(sale);
+      setSelectedReceiptData(data);
+      setShowReceiptModal(true);
+    } catch (err: any) {
+      showToast(`Erreur chargement ticket : ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleReprint = async (sale: Sale) => {
+    await handleOpenReceipt(sale);
   };
 
   return (
@@ -216,7 +282,11 @@ export const SalesView: React.FC = () => {
                 </tr>
               ) : (
                 filteredSales.map(s => (
-                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={s.id}
+                    onClick={() => handleOpenReceipt(s)}
+                    className="hover:bg-amber-50/50 cursor-pointer transition-colors"
+                  >
                     <td className="py-2 px-3 font-mono font-bold text-gray-900">{s.receipt_number}</td>
                     <td className="py-2 px-3 font-mono text-gray-500 text-[11px]">
                       {new Date(s.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
@@ -244,17 +314,17 @@ export const SalesView: React.FC = () => {
                         {s.status === 'COMPLETED' ? 'VALIDÉE' : s.status === 'REFUNDED' ? 'REMBOURSÉE' : 'PARTIELLEMENT REMB.'}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-3 text-center" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-center space-x-1">
                         <button
-                          onClick={() => handleOpenDetail(s)}
+                          onClick={() => handleOpenReceipt(s)}
                           className="p-1 hover:bg-[#FFF8EF] rounded text-gray-600 hover:text-[#E87524]"
-                          title="Détails de la vente"
+                          title="Vérifier le Ticket (Reçu Client & Cuisine)"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleReprint(s)}
+                          onClick={() => handleOpenReceipt(s)}
                           className="p-1 hover:bg-[#FFF8EF] rounded text-gray-600 hover:text-[#E87524]"
                           title="Réimprimer le ticket"
                         >
@@ -325,6 +395,23 @@ export const SalesView: React.FC = () => {
                   </div>
                 ))}
               </div>
+
+              {/* Lignes de Règlements Encaissés */}
+              {selectedSale.payments && selectedSale.payments.length > 0 && (
+                <div className="pt-2 border-t border-[#E9DCCB] space-y-1">
+                  <span className="text-[11px] font-semibold text-gray-700 block">Règlements Encaissés :</span>
+                  {selectedSale.payments.map((p, idx) => (
+                    <div key={p.id || idx} className="flex justify-between items-center text-xs bg-gray-50 p-1.5 rounded border border-gray-100 font-mono">
+                      <span className="font-sans font-medium text-gray-700">
+                        {p.payment_method === 'CASH' ? 'Espèces (Cash)' : p.payment_method}
+                      </span>
+                      <span className="font-bold text-emerald-700">
+                        {CurrencyUtil.formatDZD(p.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="pt-2 border-t border-[#E9DCCB] flex justify-between items-baseline font-bold text-sm">
                 <span>Total Net TTC :</span>

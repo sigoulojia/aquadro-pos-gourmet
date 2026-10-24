@@ -202,7 +202,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
 
       {/* Footer Info */}
       <div className="absolute bottom-4 text-center text-[11px] text-slate-500">
-        Aquadro POS v1.0.2 • SQLite WAL Authoritative • AppData Storage
+        Aquadro POS v4.0.0 • SQLite WAL Authoritative • AppData Storage
       </div>
     </div>
   );

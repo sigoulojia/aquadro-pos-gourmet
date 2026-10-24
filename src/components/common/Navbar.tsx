@@ -58,7 +58,6 @@ interface NavbarProps {
 const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNavigateToSettings, onNavigate }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const logoInputRef = React.useRef<HTMLInputElement>(null);
   const userMenuRef = React.useRef<HTMLDivElement>(null);
   const { language, setLanguage, t } = useI18n();
   const [session, setSession] = useState<CashSession | null>(null);
@@ -72,27 +71,6 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
   const [storeLogo, setStoreLogo] = useState<string | null>(() => {
     return localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
   });
-
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      showToast("L'image est trop volumineuse (max 3 Mo)", "warning");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        const base64 = reader.result;
-        setStoreLogo(base64);
-        localStorage.setItem('aquadro_store_logo', base64);
-        localStorage.setItem('pizzeria_store_logo', base64);
-        window.dispatchEvent(new Event('store_logo_updated'));
-        showToast('Logo du magasin mis à jour avec succès !', 'success');
-      }
-    };
-    reader.readAsDataURL(file);
-  };
 
   useEffect(() => {
     const handleLogoUpdate = () => {
@@ -199,34 +177,12 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
       {/* 1. Établissement & Nom du Magasin */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-2.5">
-          <input
-            type="file"
-            ref={logoInputRef}
-            onChange={handleLogoUpload}
-            accept="image/*"
-            className="hidden"
-          />
-          <div
-            onClick={() => {
-              if (user?.role !== 'cashier') {
-                logoInputRef.current?.click();
-              }
-            }}
-            className={`w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl flex items-center justify-center shadow-xs ring-1 ring-stone-200 overflow-hidden shrink-0 relative group ${
-              user?.role !== 'cashier' ? 'cursor-pointer hover:ring-2 hover:ring-[#E87524]' : ''
-            }`}
-            title={user?.role !== 'cashier' ? "Cliquer pour changer le logo du magasin (انقر لتغيير لوغو المحل)" : undefined}
-          >
+          <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-xl flex items-center justify-center shadow-xs ring-1 ring-stone-200 overflow-hidden shrink-0">
             <img
               src={storeLogo || "/pizzeria-logo.jpg"}
               alt="Logo Pizzeria"
               className="w-full h-full object-contain p-0.5"
             />
-            {user?.role !== 'cashier' && (
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[8px] text-white font-bold text-center">
-                تغيير
-              </div>
-            )}
           </div>
           <div>
             <span className="font-black tracking-tight text-stone-900 text-sm sm:text-base flex items-center gap-2">

@@ -19,7 +19,8 @@ import {
   Power,
   Package,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
 
 interface PizzaAvailabilityModalProps {
@@ -43,6 +44,7 @@ export const PizzaAvailabilityModal: React.FC<PizzaAvailabilityModalProps> = ({
   const [requestedIngredients, setRequestedIngredients] = useState<Record<string, boolean>>({});
   const [isRestockingId, setIsRestockingId] = useState<string | null>(null);
   const [customRestockQty, setCustomRestockQty] = useState<Record<string, string>>({});
+  const [isApplyingDefaultRecipe, setIsApplyingDefaultRecipe] = useState<boolean>(false);
 
   if (!isOpen || !product) return null;
 
@@ -82,6 +84,20 @@ export const PizzaAvailabilityModal: React.FC<PizzaAvailabilityModalProps> = ({
       showToast(`Erreur d'ajustement : ${err?.message || err}`, 'error');
     } finally {
       setIsRestockingId(null);
+    }
+  };
+
+  const handleApplyQuickDefaultRecipe = async () => {
+    if (!product) return;
+    setIsApplyingDefaultRecipe(true);
+    try {
+      await recipeService.applyDefaultPizzaRecipe(product.id);
+      showToast('تم ربط وحفظ المقادير القياسية للبيتزا بنجاح !', 'success');
+      await onRefresh();
+    } catch (err: any) {
+      showToast(`فشل ربط المقادير: ${err?.message || err}`, 'error');
+    } finally {
+      setIsApplyingDefaultRecipe(false);
     }
   };
 
@@ -324,12 +340,23 @@ export const PizzaAvailabilityModal: React.FC<PizzaAvailabilityModalProps> = ({
               </div>
             </div>
           ) : (
-            <div className="p-4 rounded-xl border border-dashed border-[#E9DCCB] bg-[#FFF8EF]/50 text-center space-y-2">
-              <Package className="w-8 h-8 text-stone-400 mx-auto" />
-              <p className="text-xs font-bold text-stone-700">لم يتم ربط مقادير (Fiche Technique) لهذه البيتزا بعد</p>
-              <p className="text-[11px] text-stone-500">
-                يمكنك التوجه إلى قسم <span className="font-bold text-[#E87524]">المخزون ← الفاتورة التقنية</span> لتحديد المقادير (الفرينة، الجبن، الصلصة) حتى يتم تتبع التوفر بدقة.
-              </p>
+            <div className="p-6 rounded-2xl border-2 border-dashed border-[#E9DCCB] bg-[#FFF8EF]/60 text-center space-y-3">
+              <Package className="w-10 h-10 text-[#E87524]/60 mx-auto" />
+              <div>
+                <h4 className="text-sm font-bold text-[#292522]">لم يتم ربط مقادير (Fiche Technique) لهذه البيتزا بعد</h4>
+                <p className="text-[11px] text-stone-600 mt-1 max-w-md mx-auto">
+                  لتمكين حساب سعة التحضير وتتبع توفر هذه البيتزا في الكاسة تلقائياً، يمكنك تطبيق المقادير القياسية بنقرة واحدة أو تخصيصها من شاشة المخزون.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyQuickDefaultRecipe}
+                disabled={isApplyingDefaultRecipe}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#E87524] hover:bg-[#D3641B] text-white rounded-xl font-bold text-xs shadow-md transition active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{isApplyingDefaultRecipe ? 'جاري الحفظ...' : '⚡ ربط وحفظ مقادير قياسية (فرينة + صلصة + جبن)'}</span>
+              </button>
             </div>
           )}
 

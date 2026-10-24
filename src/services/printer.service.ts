@@ -33,10 +33,11 @@ export interface ReceiptPrintData {
     unitPrice: number;
     discount?: number;
     total: number;
+    ingredients?: string[];
     supplements?: Array<{ id: string; name_fr: string; price: number } | string>;
     multiParts?: {
       type: '2_PARTS' | '4_PARTS';
-      parts: Array<{ name: string; price: number }>;
+      parts: Array<{ name: string; price: number; ingredients?: string[] }>;
     };
     notes?: string;
   }>;
@@ -104,6 +105,62 @@ export class PrinterService {
     return null;
   }
 
+  // Archivage automatique pour réimpression fidèle depuis l'historique des ventes
+  public archiveReceipt(data: ReceiptPrintData): void {
+    if (!data) return;
+    this.lastReceiptData = data;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aquadro_last_receipt', JSON.stringify(data));
+        if (data.receiptNumber) {
+          localStorage.setItem(`aquadro_receipt_${data.receiptNumber}`, JSON.stringify(data));
+        }
+        if ((data as any).saleId) {
+          localStorage.setItem(`aquadro_receipt_sale_${(data as any).saleId}`, JSON.stringify(data));
+        }
+        const histRaw = localStorage.getItem('aquadro_receipts_history');
+        const history: Record<string, ReceiptPrintData> = histRaw ? JSON.parse(histRaw) : {};
+        if (data.receiptNumber) {
+          history[data.receiptNumber] = data;
+        }
+        if ((data as any).saleId) {
+          history[(data as any).saleId] = data;
+        }
+        const keys = Object.keys(history);
+        if (keys.length > 200) {
+          delete history[keys[0]];
+        }
+        localStorage.setItem('aquadro_receipts_history', JSON.stringify(history));
+      } catch (e) {}
+    }
+  }
+
+  // Récupération du reçu original avec tous ses suppléments et recettes
+  public getArchivedReceipt(key: string): ReceiptPrintData | null {
+    if (!key) return null;
+    if (typeof window !== 'undefined') {
+      try {
+        const byRec = localStorage.getItem(`aquadro_receipt_${key}`);
+        if (byRec) return JSON.parse(byRec);
+
+        const bySale = localStorage.getItem(`aquadro_receipt_sale_${key}`);
+        if (bySale) return JSON.parse(bySale);
+
+        const histRaw = localStorage.getItem('aquadro_receipts_history');
+        if (histRaw) {
+          const history: Record<string, ReceiptPrintData> = JSON.parse(histRaw);
+          if (history[key]) return history[key];
+          for (const [k, v] of Object.entries(history)) {
+            if (k.includes(key) || key.includes(k) || (v as any).saleId === key) {
+              return v;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+
   public generateTextReceipt(data: ReceiptPrintData): string {
     return this.generateReceiptText(data);
   }
@@ -138,7 +195,19 @@ export class PrinterService {
     return `TK-${today}-${dailyNum}`;
   }
 
-  // Génération du texte formaté pour ticket de caisse (ESC/POS simplifié et propre pour Pizzeria)
+  // Normalisation du mode de commande : SUR PLACE, À EMPORTER ou LIVRAISON (sans numéro de table)
+  public getOrderTypeLabel(orderType?: string): 'SUR PLACE' | 'À EMPORTER' | 'LIVRAISON' {
+    const raw = String(orderType || '').toUpperCase().trim();
+    if (raw.includes('LIVRAISON') || raw.includes('DELIVERY')) {
+      return 'LIVRAISON';
+    }
+    if (raw.includes('EMPORTER') || raw.includes('TAKEAWAY') || raw.includes('TAKE_AWAY') || raw.includes('A_EMPORTER')) {
+      return 'À EMPORTER';
+    }
+    return 'SUR PLACE';
+  }
+
+  // Génération du texte formaté pour ticket de caisse Client (ESC/POS épuré et lisible)
   public generateReceiptText(data: ReceiptPrintData): string {
     const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const cols = is80 ? 44 : 32;
@@ -161,104 +230,113 @@ export class PrinterService {
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const receiptNumClean = this.getCleanReceiptNumber(data.receiptNumber, orderNumClean);
 
-    // 1. Entête du Restaurant (Simple, sans mentions fiscales inutiles)
-    const storeFr = data.storeNameFr || data.storeName || 'PIZZERIA GOURMET';
-    out.push(center(storeFr.toUpperCase()));
-    if (data.storeNameAr) out.push(center(data.storeNameAr));
-    if (data.storePhone) out.push(center(`الهاتف: ${data.storePhone}`));
+    // 1. En-tête : AQUADRO
+    out.push(center('AQUADRO'));
+    const storeFr = data.storeNameFr || data.storeName;
+    if (storeFr && !storeFr.toUpperCase().includes('AQUADRO')) {
+      out.push(center(storeFr));
+    }
+    if (data.storePhone) out.push(center(`Tél : ${data.storePhone}`));
     if (data.storeAddress) out.push(center(data.storeAddress));
 
-    // 2. Bannière N° Commande Proéminente
-    out.push(separator);
-    out.push(center(`*** طـلـب رقـم : #${orderNumClean} ***`));
-    out.push(center(`COMMANDE N° #${orderNumClean}`));
-    out.push(separator);
-
-    // 3. Détails du Service & Vente
-    const isDelivery = String(data.orderType || '').toUpperCase().includes('LIVRAISON');
-    const isTakeaway = String(data.orderType || '').toUpperCase().includes('EMPORTER');
-    const orderTypeLabel = isDelivery
-      ? 'توصيل منزلي (LIVRAISON)'
-      : isTakeaway
-      ? 'سفري (À EMPORTER)'
-      : `محلي (${data.tableNumber || 'طاولة'}) (SUR PLACE)`;
-
-    out.push(twoCols(`النوع: ${orderTypeLabel}`, ''));
-    out.push(twoCols(`التاريخ: ${data.dateTime}`, ''));
-    out.push(twoCols(`البائع: ${data.cashierName || 'البائع'}`, `وصل: ${receiptNumClean}`));
-
-    if (isDelivery) {
-      if (data.customerName) out.push(`الزبون: ${data.customerName}`);
-      if (data.customerPhone) out.push(`الهاتف: ${data.customerPhone}`);
-      if (data.customerAddress) out.push(`العنوان: ${data.customerAddress}`);
-      if (data.driverName) out.push(`عامل التوصيل: ${data.driverName}`);
-    } else if (data.customerName) {
-      out.push(`الزبون: ${data.customerName}`);
-    }
     out.push(line);
 
-    // 4. Articles vendus (Clair et rapide)
-    out.push(twoCols('الطلب / ARTICLE', 'المجموع'));
+    // 2. Numéro de commande, Mode de commande et Date
+    out.push(center(`COMMANDE N° ${orderNumClean}`));
+    const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
+    out.push(center(`>>> ${orderTypeLabel} <<<`));
+    out.push(twoCols(`Ticket : ${receiptNumClean}`, `Date : ${data.dateTime}`));
+    if (data.cashierName) {
+      out.push(`Caissier : ${data.cashierName}`);
+    }
+
+    if (orderTypeLabel === 'LIVRAISON' && data.customerName) {
+      out.push(`Client : ${data.customerName}${data.customerPhone ? ' (' + data.customerPhone + ')' : ''}`);
+      if (data.customerAddress) {
+        out.push(`Adresse : ${data.customerAddress}`);
+      }
+    }
+
+    out.push(separator);
+
+    // 3. Articles commandés
+    out.push(twoCols('Article', 'Total'));
     out.push(line);
 
     for (const item of data.items) {
-      const itemTitle = item.variant ? `${item.name} (${item.variant})` : item.name;
-      out.push(itemTitle);
+      const itemTitle = `${item.quantity}x ${(item.name || '').toUpperCase()}${item.variant ? ` (${item.variant})` : ''}`;
+      const totalStr = CurrencyUtil.formatDZD(item.total);
+      out.push(twoCols(itemTitle, totalStr));
+
+      if (item.quantity > 1) {
+        out.push(`  (${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})`);
+      }
+
       if (item.multiParts && item.multiParts.parts) {
         item.multiParts.parts.forEach((p, idx) => {
-          out.push(`  • ف ${idx + 1}: ${p.name}`);
+          out.push(`  • Partie ${idx + 1} : ${p.name}`);
         });
       }
+
       if (item.supplements && item.supplements.length > 0) {
         const supps = item.supplements
           .map(s => (typeof s === 'string' ? s : `${s.name_fr} (+${CurrencyUtil.formatDZD(s.price)})`))
           .join(', ');
-        out.push(`  + إضافات: ${supps}`);
+        out.push(`  + Supplément : ${supps}`);
       }
+
       if (item.notes) {
-        out.push(`  * ملاحظة: ${item.notes}`);
+        out.push(`  Note : ${item.notes}`);
       }
-      const detailStr = `  ${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)}`;
-      const totalStr = CurrencyUtil.formatDZD(item.total);
-      out.push(twoCols(detailStr, totalStr));
     }
 
     if (data.deliveryFee && data.deliveryFee > 0) {
       out.push(line);
-      out.push(twoCols('رسوم التوصيل:', CurrencyUtil.formatDZD(data.deliveryFee)));
+      out.push(twoCols('Frais de livraison :', CurrencyUtil.formatDZD(data.deliveryFee)));
+    }
+
+    if (data.discountTotal && data.discountTotal > 0) {
+      out.push(twoCols('Remise :', `-${CurrencyUtil.formatDZD(data.discountTotal)}`));
+    }
+
+    if (data.taxAmount && data.taxAmount > 0) {
+      out.push(twoCols(`TVA (${((data.taxRate || 0) * 100).toFixed(0)}%) :`, CurrencyUtil.formatDZD(data.taxAmount)));
     }
 
     out.push(separator);
 
-    // 5. Total & Règlements (Simple et net)
+    // 4. Montant net à payer
     const totalTTC = data.totalTTC ?? data.grandTotal ?? 0;
+    out.push(twoCols('TOTAL À PAYER :', CurrencyUtil.formatDZD(totalTTC)));
+
+    // 5. Règlements
     const paymentMethod = data.paymentMethod || data.payments?.[0]?.method || 'CASH';
     const tenderedAmount = data.tenderedAmount ?? data.payments?.[0]?.tendered ?? totalTTC;
     const changeGiven = data.changeGiven ?? data.payments?.[0]?.change ?? 0;
 
-    out.push(twoCols('المجموع الكلي (TOTAL):', CurrencyUtil.formatDZD(totalTTC)));
+    const paymentLabel = paymentMethod === 'CASH'
+      ? 'Espèces'
+      : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
-    if (paymentMethod === 'CASH') {
-      out.push(twoCols('طريقة الدفع:', 'نقداً (Espèces)'));
-      if (tenderedAmount > 0) {
-        out.push(twoCols('المدفوع:', CurrencyUtil.formatDZD(tenderedAmount)));
-        out.push(twoCols('المتبقي للزبون:', CurrencyUtil.formatDZD(changeGiven)));
+    out.push(twoCols('Mode de règlement :', paymentLabel));
+
+    if (paymentMethod === 'CASH' && tenderedAmount > 0) {
+      out.push(twoCols('Montant reçu :', CurrencyUtil.formatDZD(tenderedAmount)));
+      if (changeGiven > 0) {
+        out.push(twoCols('Monnaie rendue :', CurrencyUtil.formatDZD(changeGiven)));
       }
-    } else {
-      out.push(twoCols('طريقة الدفع:', paymentMethod === 'CARD' ? 'بطاقة بنكية' : paymentMethod));
     }
 
     out.push(separator);
 
-    // 6. Pied de ticket chaleureux
-    out.push(center('صحة و عافية'));
-    out.push(center('شكراً لزيارتكم ونتشرف بخدمتكم دائماً'));
-    out.push(center('MERCI DE VOTRE VISITE'));
+    // 6. Message de remerciement
+    out.push(center('Merci pour votre visite !'));
+    out.push(center('À bientôt'));
 
     return out.join('\n');
   }
 
-  // Génération du rendu HTML thermique épuré et moderne pour le client
+  // Génération du rendu HTML thermique épuré et lisible pour le client
   public generateReceiptHtml(data: ReceiptPrintData): string {
     const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const totalTTC = data.totalTTC ?? data.grandTotal ?? 0;
@@ -269,150 +347,143 @@ export class PrinterService {
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const receiptNumClean = this.getCleanReceiptNumber(data.receiptNumber, orderNumClean);
 
-    const storeFr = data.storeNameFr || data.storeName || 'PIZZERIA GOURMET';
-    const storeAr = data.storeNameAr || 'بيتزيريا';
+    const storeFr = data.storeNameFr || data.storeName || '';
+    const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
     let logoHtml = '';
     if (typeof window !== 'undefined') {
       try {
-        const logoBase64 = localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
+        const logoBase64 = localStorage.getItem('aquadro_store_logo');
         if (logoBase64) {
-          logoHtml = `<div style="text-align: center; margin-bottom: 6px;"><img src="${logoBase64}" style="max-width: 80px; max-height: 80px; display: inline-block; object-fit: contain;" alt="Logo" /></div>`;
+          logoHtml = `<div style="text-align: center; margin-bottom: 4px;"><img src="${logoBase64}" style="max-width: 110px; max-height: 55px; object-fit: contain;" alt="Logo" /></div>`;
         }
       } catch (e) {}
     }
 
-    const isDelivery = String(data.orderType || '').toUpperCase().includes('LIVRAISON');
-    const isTakeaway = String(data.orderType || '').toUpperCase().includes('EMPORTER');
-    const orderTypeLabel = isDelivery
-      ? 'توصيل منزلي / LIVRAISON'
-      : isTakeaway
-      ? 'سفري / À EMPORTER'
-      : `محلي (${data.tableNumber || 'طاولة'}) / SUR PLACE`;
+    const paymentLabel = paymentMethod === 'CASH'
+      ? 'Espèces'
+      : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
     return `
-      <div class="thermal-receipt" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #111; line-height: 1.35; width: 100%; box-sizing: border-box;">
-        <!-- EN-TETE DU RESTAURANT -->
-        ${logoHtml}
-        <div style="text-align: center; margin-bottom: 6px;">
-          <div style="font-size: 15px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${storeFr}</div>
-          ${storeAr ? `<div style="font-size: 13px; font-weight: bold; direction: rtl; margin-top: 2px;">${storeAr}</div>` : ''}
-          ${data.storePhone ? `<div style="font-size: 10.5px; margin-top: 2px;">الهاتف: <strong>${data.storePhone}</strong></div>` : ''}
-          ${data.storeAddress ? `<div style="font-size: 10px; color: #444; margin-top: 1px;">${data.storeAddress}</div>` : ''}
+      <div class="thermal-receipt" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.35; width: 100%; box-sizing: border-box; font-size: 11px;">
+        <!-- EN-TETE AQUADRO -->
+        <div style="text-align: center; margin-bottom: 8px;">
+          ${logoHtml}
+          <div style="font-size: 19px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;">AQUADRO</div>
+          ${storeFr && !storeFr.toUpperCase().includes('AQUADRO') ? `<div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${storeFr}</div>` : ''}
+          ${data.storePhone ? `<div style="font-size: 10px; margin-top: 2px;">Tél : ${data.storePhone}</div>` : ''}
+          ${data.storeAddress ? `<div style="font-size: 9.5px; margin-top: 1px;">${data.storeAddress}</div>` : ''}
         </div>
 
-        <!-- BANNIÈRE NUMÉRO DE COMMANDE DU JOUR TRÈS VISIBLE -->
-        <div style="border: 2px dashed #111; background: #fafafa; padding: 6px 4px; text-align: center; margin: 6px 0; border-radius: 8px;">
-          <div style="font-size: 11px; font-weight: bold; color: #555; direction: rtl;">طلب رقم</div>
-          <div style="font-size: 32px; font-weight: 900; letter-spacing: 2px; color: #000; margin: 1px 0; line-height: 1.1;">#${orderNumClean}</div>
-          <div style="font-size: 10.5px; font-weight: 800; background: #eee; padding: 2px 8px; display: inline-block; border-radius: 4px; margin-top: 2px;">
-            ${orderTypeLabel}
-          </div>
-          <div style="font-size: 9px; color: #777; font-family: monospace; margin-top: 3px;">وصل: ${receiptNumClean}</div>
+        <!-- NUMÉRO ET TYPE DE COMMANDE -->
+        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; text-align: center; margin-bottom: 8px;">
+          <div style="font-size: 18px; font-weight: 900;">COMMANDE #${orderNumClean}</div>
+          <div style="font-size: 12px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px;">${orderTypeLabel}</div>
         </div>
 
-        <!-- DETAILS VENTE & CAISSIER -->
-        <div style="font-size: 10px; margin: 6px 0; border-bottom: 1px dashed #000; padding-bottom: 5px;">
+        <!-- DATE & INFORMATIONS SERVICE -->
+        <div style="font-size: 10px; margin-bottom: 8px; border-bottom: 1px dashed #000; padding-bottom: 6px; line-height: 1.4;">
           <div style="display: flex; justify-content: space-between;">
-            <span>التاريخ:</span>
-            <strong>${data.dateTime}</strong>
+            <span>Ticket : <strong>${receiptNumClean}</strong></span>
+            <span>Date : ${data.dateTime}</span>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-            <span>البائع:</span>
-            <strong>${data.cashierName || 'البائع'}</strong>
-          </div>
-          ${isDelivery ? `
-            <div style="background: #f7f7f7; border: 1px solid #ddd; padding: 5px; margin-top: 4px; border-radius: 4px; font-size: 9.5px;">
-              ${data.customerName ? `<div><strong>الزبون:</strong> ${data.customerName}</div>` : ''}
-              ${data.customerPhone ? `<div><strong>الهاتف:</strong> <span style="font-weight: bold;">${data.customerPhone}</span></div>` : ''}
-              ${data.customerAddress ? `<div><strong>العنوان:</strong> ${data.customerAddress}</div>` : ''}
-              ${data.driverName ? `<div><strong>عامل التوصيل:</strong> ${data.driverName}</div>` : ''}
-            </div>
-          ` : (data.customerName ? `
-            <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-              <span>الزبون:</span>
-              <strong>${data.customerName}</strong>
-            </div>
-          ` : '')}
-        </div>
-
-        <!-- TABLEAU DES ARTICLES -->
-        <table style="width: 100%; border-collapse: collapse; font-size: 10.5px; text-align: left;">
-          <thead>
-            <tr style="border-bottom: 1.5px solid #000; font-size: 10px;">
-              <th style="padding: 3px 0; text-align: right; direction: rtl;">الطلب</th>
-              <th style="text-align: center; padding: 3px 0; width: 34px;">العدد</th>
-              <th style="text-align: right; padding: 3px 0; width: 55px;">السعر</th>
-              <th style="text-align: right; padding: 3px 0; width: 60px;">المجموع</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.items.map(item => {
-              const suppNames = item.supplements && item.supplements.length > 0
-                ? item.supplements.map(s => typeof s === 'string' ? s : `${s.name_fr} (+${CurrencyUtil.formatDZD(s.price)})`).join(', ')
-                : '';
-              return `
-              <tr>
-                <td colspan="4" style="padding-top: 5px; font-weight: bold; text-align: right; direction: rtl;">
-                  ${item.name} ${item.variant ? `<span style="font-size: 9.5px; font-weight: normal;">(${item.variant})</span>` : ''}
-                  ${item.multiParts && item.multiParts.parts ? `
-                    <div style="font-size: 9px; font-weight: normal; color: #444; margin-top: 1px;">
-                      ${item.multiParts.parts.map((p, idx) => `<div>• ف ${idx + 1}: ${p.name}</div>`).join('')}
-                    </div>
-                  ` : ''}
-                  ${suppNames ? `<div style="font-size: 9px; font-weight: normal; color: #333;">+ إضافات: ${suppNames}</div>` : ''}
-                  ${item.notes ? `<div style="font-size: 9px; font-style: italic; color: #555;">* ملاحظة: ${item.notes}</div>` : ''}
-                </td>
-              </tr>
-              <tr style="border-bottom: 1px dotted #ccc;">
-                <td style="padding-bottom: 4px;"></td>
-                <td style="text-align: center; padding-bottom: 4px; font-weight: bold;">${item.quantity}</td>
-                <td style="text-align: right; padding-bottom: 4px;">${CurrencyUtil.formatDZD(item.unitPrice)}</td>
-                <td style="text-align: right; padding-bottom: 4px; font-weight: bold;">${CurrencyUtil.formatDZD(item.total)}</td>
-              </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-
-        ${data.deliveryFee && data.deliveryFee > 0 ? `
-          <div style="display: flex; justify-content: space-between; font-size: 10.5px; padding: 4px 0; border-top: 1px dotted #000;">
-            <span>رسوم التوصيل:</span>
-            <strong>${CurrencyUtil.formatDZD(data.deliveryFee)}</strong>
-          </div>
-        ` : ''}
-
-        <!-- TOTAL GENERAL SIMPLE ET NET -->
-        <div style="margin-top: 6px; border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 6px 0;">
-          <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 900;">
-            <span>المجموع (TOTAL):</span>
-            <span>${CurrencyUtil.formatDZD(totalTTC)}</span>
-          </div>
-        </div>
-
-        <!-- MODE DE PAIEMENT & MONNAIE RENDUE -->
-        <div style="font-size: 10px; margin-top: 5px; padding: 2px 0;">
-          <div style="display: flex; justify-content: space-between;">
-            <span>طريقة الدفع:</span>
-            <strong>${paymentMethod === 'CASH' ? 'نقداً (Espèces)' : paymentMethod === 'CARD' ? 'بطاقة بنكية' : paymentMethod}</strong>
-          </div>
-          ${paymentMethod === 'CASH' && tenderedAmount > 0 ? `
-            <div style="display: flex; justify-content: space-between; margin-top: 2px;">
-              <span>المدفوع:</span>
-              <span>${CurrencyUtil.formatDZD(tenderedAmount)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-top: 2px;">
-              <span>المتبقي للزبون:</span>
-              <span>${CurrencyUtil.formatDZD(changeGiven)}</span>
+          ${data.cashierName ? `<div>Caissier : <strong>${data.cashierName}</strong></div>` : ''}
+          ${orderTypeLabel === 'LIVRAISON' && data.customerName ? `
+            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #000;">
+              <div>Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}</div>
+              ${data.customerAddress ? `<div>Adresse : ${data.customerAddress}</div>` : ''}
             </div>
           ` : ''}
         </div>
 
-        <!-- PIED DE TICKET CHALEUREUX -->
-        <div style="text-align: center; font-size: 10px; margin-top: 10px; border-top: 1px dashed #000; padding-top: 6px;">
-          <div style="font-size: 15px; font-weight: 900; color: #000; margin-bottom: 2px;">صحة و عافية</div>
-          <div style="font-size: 11px; font-weight: bold; direction: rtl; margin-bottom: 2px;">شكرًا لزيارتكم ونتشرف بخدمتكم دائماً</div>
-          <div style="font-size: 9px; color: #666;">MERCI DE VOTRE VISITE • BON APPÉTIT</div>
+        <!-- LISTE DES ARTICLES COMMANDES -->
+        <div style="border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 5px;">
+            <span>Article</span>
+            <span>Total</span>
+          </div>
+          ${data.items.map(item => {
+            const suppNames = item.supplements && item.supplements.length > 0
+              ? item.supplements.map(s => typeof s === 'string' ? s : `${s.name_fr} (+${CurrencyUtil.formatDZD(s.price)})`).join(', ')
+              : '';
+            const unitPriceStr = item.quantity > 1 ? `(${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})` : '';
+            return `
+              <div style="margin-bottom: 6px; font-size: 10.5px; word-break: break-word;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                  <div style="font-weight: bold; padding-right: 6px;">
+                    ${item.quantity}x ${item.name}${item.variant ? ` (${item.variant})` : ''}
+                  </div>
+                  <div style="font-weight: bold; white-space: nowrap;">
+                    ${CurrencyUtil.formatDZD(item.total)}
+                  </div>
+                </div>
+                ${unitPriceStr ? `<div style="font-size: 9.5px; color: #333; margin-left: 18px;">${unitPriceStr}</div>` : ''}
+                ${item.multiParts && item.multiParts.parts ? `
+                  <div style="font-size: 9.5px; color: #333; margin-left: 18px; margin-top: 1px;">
+                    ${item.multiParts.parts.map((p, idx) => `<div>• Partie ${idx + 1} : ${p.name}</div>`).join('')}
+                  </div>
+                ` : ''}
+                ${suppNames ? `<div style="font-size: 9.5px; color: #222; margin-left: 18px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
+                ${item.notes ? `<div style="font-size: 9.5px; font-style: italic; color: #444; margin-left: 18px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <!-- SOUS-TOTAUX ET AJUSTEMENTS -->
+        ${(data.deliveryFee && data.deliveryFee > 0) || (data.discountTotal && data.discountTotal > 0) || (data.taxAmount && data.taxAmount > 0) ? `
+          <div style="font-size: 10px; margin-bottom: 6px;">
+            ${data.deliveryFee && data.deliveryFee > 0 ? `
+              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                <span>Frais de livraison :</span>
+                <span>${CurrencyUtil.formatDZD(data.deliveryFee)}</span>
+              </div>
+            ` : ''}
+            ${data.discountTotal && data.discountTotal > 0 ? `
+              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                <span>Remise :</span>
+                <span>-${CurrencyUtil.formatDZD(data.discountTotal)}</span>
+              </div>
+            ` : ''}
+            ${data.taxAmount && data.taxAmount > 0 ? `
+              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                <span>TVA (${((data.taxRate || 0) * 100).toFixed(0)}%) :</span>
+                <span>${CurrencyUtil.formatDZD(data.taxAmount)}</span>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+
+        <!-- TOTAL A PAYER -->
+        <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 6px 0; margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 15px; font-weight: 900;">
+          <span>TOTAL À PAYER :</span>
+          <span>${CurrencyUtil.formatDZD(totalTTC)}</span>
+        </div>
+
+        <!-- PAIEMENT -->
+        <div style="font-size: 10px; line-height: 1.4; margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between;">
+            <span>Mode de règlement :</span>
+            <strong>${paymentLabel}</strong>
+          </div>
+          ${paymentMethod === 'CASH' && tenderedAmount > 0 ? `
+            <div style="display: flex; justify-content: space-between;">
+              <span>Montant reçu :</span>
+              <span>${CurrencyUtil.formatDZD(tenderedAmount)}</span>
+            </div>
+            ${changeGiven > 0 ? `
+              <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                <span>Monnaie rendue :</span>
+                <span>${CurrencyUtil.formatDZD(changeGiven)}</span>
+              </div>
+            ` : ''}
+          ` : ''}
+        </div>
+
+        <!-- PIED DE TICKET AMICAL -->
+        <div style="text-align: center; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px;">
+          <div style="font-weight: bold;">Merci pour votre visite !</div>
+          <div style="font-size: 10px; color: #444; margin-top: 2px;">À bientôt chez AQUADRO</div>
         </div>
       </div>
     `;
@@ -646,13 +717,10 @@ export class PrinterService {
 
   // Imprimer le ticket
   public async printReceipt(data: ReceiptPrintData, triggerBrowserPrint = true): Promise<void> {
-    this.lastReceiptData = data;
+    this.archiveReceipt(data);
     const config = this.getConfig();
 
     if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('aquadro_last_receipt', JSON.stringify(data));
-      } catch (e) {}
 
       // Mettre à jour la zone dédiée #thermal-print-area pour @media print
       let printArea = document.getElementById('thermal-print-area');
@@ -699,7 +767,7 @@ export class PrinterService {
   // TICKET CUISINE / BON PIZZAIOLO (POUR LE CHEF)
   // =========================================================================
 
-  // Génération du texte pour Bon de Cuisine (Pizzaiolo)
+  // Génération du texte pour Bon de Cuisine (Chef Copy / Pizzaiolo)
   public generateKitchenTicketText(data: ReceiptPrintData): string {
     const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const cols = is80 ? 44 : 32;
@@ -719,44 +787,38 @@ export class PrinterService {
 
     const out: string[] = [];
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
+    const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
     out.push(separator);
-    out.push(center('*** بـون المـطبـخ - الشـيـف ***'));
-    out.push(center(`طـلـب رقـم : #${orderNumClean}`));
+    out.push(center('BON DE CUISINE • PIZZAIOLO'));
+    out.push(center(`COMMANDE N° ${orderNumClean}`));
+    out.push(center(`>>> ${orderTypeLabel} <<<`));
     out.push(separator);
 
-    const isDelivery = String(data.orderType || '').toUpperCase().includes('LIVRAISON');
-    const isTakeaway = String(data.orderType || '').toUpperCase().includes('EMPORTER');
-    const typeLabel = isDelivery
-      ? '>>> توصيل منزلي / LIVRAISON <<<'
-      : isTakeaway
-      ? '>>> سفري / À EMPORTER <<<'
-      : `>>> محلي / SUR PLACE (${data.tableNumber || 'طاولة 1'}) <<<`;
-    out.push(center(typeLabel));
+    out.push(twoCols(`Heure : ${data.dateTime}`, data.cashierName ? `Serveur : ${data.cashierName}` : ''));
 
-    out.push(twoCols(`الوقت: ${data.dateTime}`, `البائع: ${data.cashierName || 'البائع'}`));
-
-    if (isDelivery) {
+    if (orderTypeLabel === 'LIVRAISON' && data.customerName) {
       out.push(line);
-      if (data.customerName) out.push(`الزبون: ${data.customerName}`);
-      if (data.customerPhone) out.push(`الهاتف: ${data.customerPhone}`);
-      if (data.customerAddress) out.push(`العنوان: ${data.customerAddress}`);
-      if (data.driverName) out.push(`عامل التوصيل: ${data.driverName}`);
-    } else if (data.customerName) {
-      out.push(`الزبون: ${data.customerName}`);
+      out.push(`Client : ${data.customerName}${data.customerPhone ? ' (' + data.customerPhone + ')' : ''}`);
+      if (data.customerAddress) {
+        out.push(`Adresse : ${data.customerAddress}`);
+      }
     }
 
-    out.push(line);
-    out.push(twoCols('الكمية - الصنف', 'ملاحظات وإضافات'));
-    out.push(line);
+    out.push(separator);
 
+    // Articles opérationnels pour le Chef (Noms, Ingrédients de base et Suppléments à ajouter)
     for (const item of data.items) {
-      const itemTitle = `${item.quantity}x ${item.name}${item.variant ? ` (${item.variant})` : ''}`;
-      out.push(itemTitle);
+      out.push(`[ ${item.quantity}x ]  ${(item.name || '').toUpperCase()}${item.variant ? ` (${item.variant})` : ''}`);
+
+      if (item.ingredients && item.ingredients.length > 0) {
+        out.push(`    • Ingrédients : ${item.ingredients.join(', ')}`);
+      }
 
       if (item.multiParts && item.multiParts.parts) {
         item.multiParts.parts.forEach((p, idx) => {
-          out.push(`  • فصل ${idx + 1}: ${p.name}`);
+          const partIng = p.ingredients && p.ingredients.length > 0 ? ` (${p.ingredients.join(', ')})` : '';
+          out.push(`    • Partie ${idx + 1} : ${p.name}${partIng}`);
         });
       }
 
@@ -764,110 +826,100 @@ export class PrinterService {
         const supps = item.supplements
           .map(s => (typeof s === 'string' ? s : s.name_fr))
           .join(', ');
-        out.push(`  + إضافات: ${supps}`);
+        out.push(`    + AJOUTER SUPPLÉMENT : ${supps}`);
       }
 
       if (item.notes) {
-        out.push(`  * ملاحظة: ${item.notes}`);
+        out.push(`    * NOTE / CUISSON : ${item.notes}`);
       }
-    }
 
-    out.push(separator);
-    out.push(center('*** بالتوفيق للشيف ***'));
+      out.push(line);
+    }
 
     return out.join('\n');
   }
 
-  // Rendu HTML du Bon de Cuisine pour le Pizzaiolo (plus petit et compact en format tableau)
+  // Rendu HTML du Bon de Cuisine pour le Chef (Pizzaiolo)
   public generateKitchenTicketHtml(data: ReceiptPrintData): string {
-    const isDelivery = String(data.orderType || '').toUpperCase().includes('LIVRAISON');
-    const isTakeaway = String(data.orderType || '').toUpperCase().includes('EMPORTER');
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
+    const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
     return `
-      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; line-height: 1.25; width: 100%; max-width: 95%; margin: 0 auto; box-sizing: border-box; font-size: 10px;">
-        <!-- EN-TETE BON CUISINE -->
-        <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 3px; margin-bottom: 4px;">
-          <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.5px;">*** بـون المـطبـخ / الشـيـف ***</div>
-          <div style="font-size: 9.5px; font-weight: bold; color: #444;">BON CUISINE PIZZAIOLO</div>
+      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.35; width: 100%; box-sizing: border-box; font-size: 11px;">
+        <!-- EN-TETE BON DE CUISINE -->
+        <div style="text-align: center; border: 1.5px solid #000; padding: 6px 4px; margin-bottom: 8px; border-radius: 4px;">
+          <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px;">BON DE CUISINE • PIZZAIOLO</div>
+          <div style="font-size: 26px; font-weight: 900; line-height: 1.1; margin: 2px 0;">COMMANDE N° ${orderNumClean}</div>
+          <div style="font-size: 13px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${orderTypeLabel}</div>
         </div>
 
-        <!-- NUMÉRO DE COMMANDE PROÉMINENT DU CHEF -->
-        <div style="text-align: center; border: 2px solid #000; background-color: #f2f2f2; padding: 4px 2px; margin-bottom: 4px; border-radius: 6px;">
-          <div style="font-size: 10px; font-weight: bold; color: #444;">طلب رقم</div>
-          <div style="font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #000; line-height: 1.1;">#${orderNumClean}</div>
-        </div>
-
-        <!-- BADGE TYPE DE COMMANDE VISIBLE -->
-        <div style="text-align: center; border: 1.5px solid #000; padding: 4px 2px; font-size: 11.5px; font-weight: 900; background-color: #f8f8f8; margin-bottom: 4px; border-radius: 4px;">
-          ${isDelivery ? 'توصيل منزلي / LIVRAISON' : isTakeaway ? 'سفري / À EMPORTER' : `محلي (${data.tableNumber || 'طاولة'}) / SUR PLACE`}
-        </div>
-
-        ${isDelivery ? `
-          <div style="font-size: 9.5px; background: #fafafa; border: 1px dashed #000; padding: 4px; margin-bottom: 4px; border-radius: 3px;">
-            ${data.customerName ? `<div><strong>الزبون:</strong> ${data.customerName}</div>` : ''}
-            ${data.customerPhone ? `<div><strong>الهاتف:</strong> <span style="font-weight: bold; font-size: 10.5px;">${data.customerPhone}</span></div>` : ''}
-            ${data.customerAddress ? `<div><strong>العنوان:</strong> ${data.customerAddress}</div>` : ''}
-            ${data.driverName ? `<div><strong>عامل التوصيل:</strong> ${data.driverName}</div>` : ''}
+        <!-- DETAILS DATE & SERVEUR -->
+        <div style="font-size: 10px; margin-bottom: 8px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
+          <div style="display: flex; justify-content: space-between;">
+            <span>Heure : <strong>${data.dateTime}</strong></span>
+            ${data.cashierName ? `<span>Serveur : <strong>${data.cashierName}</strong></span>` : ''}
           </div>
-        ` : (data.customerName ? `<div style="font-size: 9.5px; margin-bottom: 4px;"><strong>الزبون:</strong> ${data.customerName}</div>` : '')}
-
-        <div style="display: flex; justify-content: space-between; font-size: 9.5px; margin-bottom: 4px; border-bottom: 1px dashed #000; padding-bottom: 2px;">
-          <span>الوقت: ${data.dateTime}</span>
-          <span>البائع: <strong>${data.cashierName || 'البائع'}</strong></span>
+          ${orderTypeLabel === 'LIVRAISON' && data.customerName ? `
+            <div style="margin-top: 3px;">
+              Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}
+            </div>
+          ` : ''}
         </div>
 
-        <!-- TABLEAU DES CONTENUS POUR LE CHEF -->
-        <table style="width: 100%; border-collapse: collapse; font-size: 10.5px; border: 1.5px solid #000; margin-top: 4px;">
-          <thead>
-            <tr style="background: #222; color: #fff;">
-              <th style="padding: 3px 2px; text-align: center; width: 34px; border: 1px solid #444; font-size: 10px;">العدد</th>
-              <th style="padding: 3px 4px; text-align: right; border: 1px solid #444; font-size: 10px; direction: rtl;">الصنف والنوع</th>
-              <th style="padding: 3px 4px; text-align: right; border: 1px solid #444; font-size: 10px; direction: rtl;">الإضافات وملاحظات التحضير</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.items.map((item, idx) => {
-              const suppNames = item.supplements && item.supplements.length > 0
-                ? item.supplements.map(s => typeof s === 'string' ? s : s.name_fr).join('، ')
-                : '';
-              return `
-                <tr style="border-bottom: 1.5px solid #000; background: ${idx % 2 === 0 ? '#fff' : '#fcfcfc'};">
-                  <td style="padding: 4px 2px; text-align: center; font-weight: 900; font-size: 13px; border: 1px solid #000; vertical-align: top;">
-                    ${item.quantity}x
-                  </td>
-                  <td style="padding: 4px; border: 1px solid #000; vertical-align: top; text-align: right; direction: rtl;">
-                    <div style="font-weight: 900; font-size: 11.5px; text-transform: uppercase;">${item.name}</div>
-                    ${item.variant ? `<div style="font-size: 9.5px; color: #333; margin-top: 1px;">• النوع: <strong>${item.variant}</strong></div>` : ''}
-                    ${item.multiParts && item.multiParts.parts ? `
-                      <div style="font-size: 9px; color: #222; margin-top: 1px;">
-                        ${item.multiParts.parts.map((p, pIdx) => `<div>- ف ${pIdx + 1}: <strong>${p.name}</strong></div>`).join('')}
-                      </div>
-                    ` : ''}
-                  </td>
-                  <td style="padding: 4px; border: 1px solid #000; vertical-align: top; text-align: right; direction: rtl;">
-                    ${suppNames ? `
-                      <div style="font-size: 9.5px; font-weight: bold; color: #000;">
-                        + إضافات: ${suppNames}
-                      </div>
-                    ` : ''}
-                    ${item.notes ? `
-                      <div style="font-size: 9px; font-weight: bold; color: #b91c1c; margin-top: 2px; background: #fee2e2; padding: 1px 3px; border-radius: 2px;">
-                        * ملاحظة: ${item.notes}
-                      </div>
-                    ` : ''}
-                    ${!suppNames && !item.notes && !item.multiParts ? `<span style="color: #888; font-size: 8.5px;">عادي</span>` : ''}
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+        <!-- LISTE DES ARTICLES POUR LE CHEF -->
+        <div style="margin-bottom: 8px;">
+          ${data.items.map(item => {
+            const suppNames = item.supplements && item.supplements.length > 0
+              ? item.supplements.map(s => typeof s === 'string' ? s : s.name_fr).join(', ')
+              : '';
+            const ingredientsStr = item.ingredients && item.ingredients.length > 0
+              ? item.ingredients.join(', ')
+              : '';
+            return `
+              <div style="border-bottom: 1.5px solid #000; padding: 7px 0; word-break: break-word;">
+                <!-- NOM ET QUANTITE -->
+                <div style="display: flex; align-items: baseline; gap: 8px;">
+                  <span style="font-size: 17px; font-weight: 900; min-width: 40px;">${item.quantity}x</span>
+                  <span style="font-size: 14px; font-weight: 900; text-transform: uppercase;">
+                    ${(item.name || '').toUpperCase()}${item.variant ? ` <span style="font-size: 11px; font-weight: normal;">(${item.variant})</span>` : ''}
+                  </span>
+                </div>
 
-        <!-- PIED DE BON CUISINE -->
-        <div style="border-top: 1.5px solid #000; margin-top: 6px; padding-top: 3px; text-align: center; font-size: 9px; font-weight: bold;">
-          <div>وقت استلام الطلب: ${data.dateTime} • طلب #${orderNumClean}</div>
-          <div style="font-size: 10px; margin-top: 2px;">*** بالتوفيق للشيف ***</div>
+                <!-- INGREDIENTS DE BASE DE LA RECETTE -->
+                ${ingredientsStr ? `
+                  <div style="margin-left: 48px; font-size: 10px; color: #111; margin-top: 2px;">
+                    • Ingrédients : <strong>${ingredientsStr}</strong>
+                  </div>
+                ` : ''}
+
+                <!-- SI MULTI-PARTS (MOITIE-MOITIE / 4 SAISONS) -->
+                ${item.multiParts && item.multiParts.parts ? `
+                  <div style="margin-left: 48px; font-size: 10px; color: #111; margin-top: 2px;">
+                    ${item.multiParts.parts.map((p, idx) => `
+                      <div style="margin-top: 1px;">
+                        • Partie ${idx + 1} : <strong>${p.name}</strong>
+                        ${p.ingredients && p.ingredients.length > 0 ? `<span style="color: #333;"> (${p.ingredients.join(', ')})</span>` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+
+                <!-- SUPPLEMENTS QUE LE CHEF DOIT AJOUTER -->
+                ${suppNames ? `
+                  <div style="margin-left: 48px; font-size: 11px; font-weight: 900; color: #000; margin-top: 3px; border: 1px dashed #000; padding: 2px 5px; display: inline-block;">
+                    + AJOUTER SUPPLÉMENT : ${suppNames}
+                  </div>
+                ` : ''}
+
+                <!-- NOTES DE CUISSON -->
+                ${item.notes ? `
+                  <div style="margin-left: 48px; font-size: 10.5px; font-weight: bold; margin-top: 2px;">
+                    * NOTE / CUISSON : ${item.notes}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
@@ -875,6 +927,7 @@ export class PrinterService {
 
   // Imprimer le Bon de Cuisine (Pizzaiolo) uniquement
   public async printKitchenTicket(data: ReceiptPrintData, triggerBrowserPrint = true): Promise<void> {
+    this.archiveReceipt(data);
     const config = this.getConfig();
 
     if (typeof window !== 'undefined') {
@@ -909,7 +962,7 @@ export class PrinterService {
 
   // Imprimer les deux tickets (Reçu Client + Bon Cuisine Pizzaiolo)
   public async printBothTickets(data: ReceiptPrintData, triggerBrowserPrint = false): Promise<void> {
-    this.lastReceiptData = data;
+    this.archiveReceipt(data);
     const config = this.getConfig();
 
     if (typeof window !== 'undefined') {

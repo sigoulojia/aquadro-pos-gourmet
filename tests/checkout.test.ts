@@ -5,10 +5,11 @@ import { productService } from '../src/services/product.service';
 import { customerService } from '../src/services/customer.service';
 import { db } from '../src/db/sqlite';
 import { SEED_STORE } from '../src/db/seed';
+import { seedTestFixtures } from './fixtures';
 
 describe('CheckoutService & Financial Integrity', () => {
   beforeEach(async () => {
-    await db.initialize();
+    await seedTestFixtures();
   });
 
   it('completes atomic checkout, calculates totals, decrements stock, and generates idempotency key', async () => {

@@ -175,8 +175,16 @@ export class NotificationService {
 
     try {
       // 3. Alertes Stock Produits / Boissons / Desserts
+      // En Pizzeria : Les pizzas sont préparées sur commande selon leurs ingrédients (gérées en section 2).
+      // Seuls les produits de revente directe (canettes, bouteilles, desserts) avec un seuil > 0 génèrent des alertes de réserve.
       const products = await db.select<any>(
-        'SELECT * FROM products WHERE is_active = 1 AND min_stock_alert > 0 AND current_stock <= min_stock_alert ORDER BY current_stock ASC'
+        `SELECT * FROM products 
+         WHERE is_active = 1 
+           AND min_stock_alert > 0 
+           AND category_id != 'cat-pizza' 
+           AND (category_id IS NULL OR category_id NOT LIKE '%pizza%')
+           AND current_stock <= min_stock_alert 
+         ORDER BY current_stock ASC`
       );
       for (const prod of products) {
         const stock = Number(prod.current_stock || 0);

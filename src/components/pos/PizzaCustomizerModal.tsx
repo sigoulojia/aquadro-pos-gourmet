@@ -45,12 +45,17 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
   const [notes, setNotes] = useState<string>("");
 
   useEffect(() => {
-    if (isOpen) {
+    const loadSupps = () => {
       supplementService.getSupplements().then(setSupplements).catch(() => {});
+    };
+    if (isOpen) {
+      loadSupps();
       setSelectedSupplements([]);
       setQuantity(1);
       setNotes("");
     }
+    window.addEventListener("supplements_updated", loadSupps);
+    return () => window.removeEventListener("supplements_updated", loadSupps);
   }, [isOpen, product]);
 
   if (!isOpen || !product) return null;

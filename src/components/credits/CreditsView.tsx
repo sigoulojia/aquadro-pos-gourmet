@@ -1,262 +1,407 @@
+// Aquadro POS Algérie — Module de Suivi des Règlements & Paiements Encaissés
+// Affiche en temps réel l'ensemble des paiements validés depuis la base de données SQLite autoritaire
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../../db/sqlite';
-import { customerService } from '../../services/customer.service';
-import { useAuth } from '../../hooks/useAuth';
 import { CurrencyUtil } from '../../core/currency/currency';
 import { useToast } from '../common/Toast';
 import {
   CreditCard,
   Search,
-  CheckCircle,
-  Clock,
+  RefreshCw,
+  Wallet,
+  Receipt,
   User,
-  FileText,
-  DollarSign
+  ArrowDownLeft,
+  Smartphone
 } from 'lucide-react';
 
-interface CreditSaleInfo {
-  saleId: string;
-  receiptNumber: string;
-  date: string;
-  customerId: string;
-  customerName: string;
-  totalAmount: number;
-  paidAmount: number;
-  remainingAmount: number;
+export interface PersistedPaymentRow {
+  id: string;
+  sale_id: string;
+  receipt_number: string;
+  payment_method: string;
+  amount: number;
+  tendered_amount: number;
+  change_given: number;
+  tpe_auth_reference?: string;
+  created_at: string;
+  cashier_name?: string;
+  customer_name?: string;
+  sale_status?: string;
 }
 
-export const CreditsView: React.FC = () => {
-  const { user } = useAuth();
+export const PaymentsView: React.FC = () => {
   const { showToast } = useToast();
-  
-  const [credits, setCredits] = useState<CreditSaleInfo[]>([]);
-  const [filteredCredits, setFilteredCredits] = useState<CreditSaleInfo[]>([]);
+  const [payments, setPayments] = useState<PersistedPaymentRow[]>([]);
+  const [filteredPayments, setFilteredPayments] = useState<PersistedPaymentRow[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const [selectedCredit, setSelectedCredit] = useState<CreditSaleInfo | null>(null);
-  const [payAmount, setPayAmount] = useState<string>('');
+  const [selectedMethod, setSelectedMethod] = useState<string>('ALL');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadCredits();
+    loadPayments();
+
+    const handleUpdate = () => {
+      loadPayments();
+    };
+
+    window.addEventListener('sale_completed', handleUpdate);
+    window.addEventListener('sales_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('sale_completed', handleUpdate);
+      window.removeEventListener('sales_updated', handleUpdate);
+    };
   }, []);
 
-  useEffect(() => {
-    if (!searchTerm) {
-      setFilteredCredits(credits);
-    } else {
-      const lower = searchTerm.toLowerCase();
-      setFilteredCredits(
-        credits.filter(c => 
-          c.receiptNumber.toLowerCase().includes(lower) || 
-          c.customerName.toLowerCase().includes(lower)
-        )
-      );
-    }
-  }, [searchTerm, credits]);
-
-  const loadCredits = async () => {
-    // 1. Get all payments that are CREDIT
-    const allPayments = await db.select<any>('SELECT * FROM payments WHERE payment_method = "CREDIT"');
-    if (allPayments.length === 0) {
-      setCredits([]);
-      return;
-    }
-    
-    // 2. Get associated sales
-    const saleIds = [...new Set(allPayments.map(p => p.sale_id))];
-    const placeholders = saleIds.map(() => '?').join(',');
-    const sales = await db.select<any>(
-      `SELECT * FROM sales WHERE status = "COMPLETED" AND id IN (${placeholders})`,
-      saleIds
-    );
-
-    // 3. Get all customer payments (to check how much was paid back for each receipt)
-    const custPayments = await db.select<any>('SELECT * FROM customer_payments');
-
-    const creditsInfo: CreditSaleInfo[] = [];
-
-    for (const sale of sales) {
-      if (!sale.customer_id) continue;
-      
-      const saleCreditPayments = allPayments.filter(p => p.sale_id === sale.id);
-      const totalCreditForSale = saleCreditPayments.reduce((sum, p) => sum + p.amount, 0);
-      
-      const salePaymentsMade = custPayments.filter(cp => cp.reference === sale.receipt_number);
-      const totalPaidBack = salePaymentsMade.reduce((sum, cp) => sum + cp.amount, 0);
-      
-      const remaining = totalCreditForSale - totalPaidBack;
-
-      if (remaining > 0.01) { // Floating point precision check
-        creditsInfo.push({
-          saleId: sale.id,
-          receiptNumber: sale.receipt_number,
-          date: sale.created_at,
-          customerId: sale.customer_id,
-          customerName: sale.customer_name || 'Inconnu',
-          totalAmount: totalCreditForSale,
-          paidAmount: totalPaidBack,
-          remainingAmount: remaining
-        });
-      }
-    }
-
-    creditsInfo.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    setCredits(creditsInfo);
-  };
-
-  const handlePay = async () => {
-    if (!selectedCredit || !user) return;
-    const amount = parseFloat(payAmount);
-    
-    if (isNaN(amount) || amount <= 0) {
-      showToast('Veuillez entrer un montant valide', 'error');
-      return;
-    }
-    
-    if (amount > selectedCredit.remainingAmount) {
-      showToast('Le montant saisi est supérieur au reste à payer', 'error');
-      return;
-    }
-
+  const loadPayments = async () => {
+    setLoading(true);
     try {
-      await customerService.recordCreditPayment({
-        customerId: selectedCredit.customerId,
-        amount: amount,
-        paymentMethod: 'CASH', // Usually cash when they come back to pay
-        cashierId: user.id,
-        reference: selectedCredit.receiptNumber // IMPORTANT: This links the payment to the bon
+      const allPayments = await db.select<any>('SELECT * FROM payments ORDER BY created_at DESC');
+      const allSales = await db.select<any>('SELECT * FROM sales');
+      const salesMap = new Map<string, any>(allSales.map(s => [s.id, s]));
+
+      const rows: PersistedPaymentRow[] = (allPayments || []).map(p => {
+        const s = salesMap.get(p.sale_id);
+        return {
+          id: p.id,
+          sale_id: p.sale_id,
+          receipt_number: s?.receipt_number || p.sale_id,
+          payment_method: p.payment_method,
+          amount: p.amount,
+          tendered_amount: p.tendered_amount !== undefined ? p.tendered_amount : p.amount,
+          change_given: p.change_given || 0,
+          tpe_auth_reference: p.tpe_auth_reference,
+          created_at: p.created_at,
+          cashier_name: s?.cashier_name || 'Caissier',
+          customer_name: s?.customer_name,
+          sale_status: s?.status || 'COMPLETED'
+        };
       });
 
-      showToast('Paiement enregistré avec succès. Le crédit a été mis à jour.', 'success');
-      setSelectedCredit(null);
-      setPayAmount('');
-      loadCredits();
-    } catch (error: any) {
-      showToast(error.message || 'Erreur lors du paiement', 'error');
+      setPayments(rows);
+    } catch (err: any) {
+      console.error('Erreur chargement paiements:', err);
+      showToast('Impossible de charger les paiements depuis la base de données.', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const openPaymentModal = (credit: CreditSaleInfo) => {
-    setSelectedCredit(credit);
-    setPayAmount(credit.remainingAmount.toString());
+  useEffect(() => {
+    let result = [...payments];
+
+    if (selectedMethod !== 'ALL') {
+      result = result.filter(p => {
+        if (selectedMethod === 'CASH') return p.payment_method === 'CASH';
+        if (selectedMethod === 'CARD') return ['CARD', 'CIB', 'EDAHABIA'].includes(p.payment_method);
+        if (selectedMethod === 'BARIDIMOB') return p.payment_method === 'BARIDIMOB';
+        return p.payment_method === selectedMethod;
+      });
+    }
+
+    if (searchTerm.trim()) {
+      const lower = searchTerm.toLowerCase().trim();
+      result = result.filter(p =>
+        (p.receipt_number && p.receipt_number.toLowerCase().includes(lower)) ||
+        (p.cashier_name && p.cashier_name.toLowerCase().includes(lower)) ||
+        (p.customer_name && p.customer_name.toLowerCase().includes(lower)) ||
+        (p.payment_method && p.payment_method.toLowerCase().includes(lower))
+      );
+    }
+
+    setFilteredPayments(result);
+  }, [searchTerm, selectedMethod, payments]);
+
+  // Calcul des statistiques récapitulatives
+  const totalEncaisse = filteredPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const totalCash = payments
+    .filter(p => p.payment_method === 'CASH')
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const totalCard = payments
+    .filter(p => ['CARD', 'CIB', 'EDAHABIA'].includes(p.payment_method))
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const totalBaridimob = payments
+    .filter(p => p.payment_method === 'BARIDIMOB')
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  const getMethodBadge = (method: string) => {
+    switch (method.toUpperCase()) {
+      case 'CASH':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <Wallet className="w-3 h-3 mr-1" />
+            Espèces (Cash)
+          </span>
+        );
+      case 'CIB':
+      case 'EDAHABIA':
+      case 'CARD':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <CreditCard className="w-3 h-3 mr-1" />
+            Carte / CIB / Edahabia
+          </span>
+        );
+      case 'BARIDIMOB':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+            <Smartphone className="w-3 h-3 mr-1" />
+            BaridiMob
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-stone-100 text-stone-700 border border-stone-200">
+            {method}
+          </span>
+        );
+    }
   };
 
   return (
-    <div className="flex-1 bg-gray-100 p-4 flex flex-col overflow-hidden text-xs select-none">
-      <div className="flex items-center justify-between pb-3 border-b border-gray-200 mb-4">
+    <div className="flex-1 bg-[#FAF8F5] p-4 flex flex-col overflow-hidden text-xs select-none">
+      {/* En-tête du module */}
+      <div className="flex items-center justify-between pb-3 border-b border-[#E9DCCB] mb-4">
         <div>
-          <h2 className="text-base font-bold text-gray-900 flex items-center">
-            <CreditCard className="w-5 h-5 mr-2 text-amber-600" />
-            Gestion des Crédits (Facilités)
+          <h2 className="text-base font-bold text-stone-900 flex items-center">
+            <CreditCard className="w-5 h-5 mr-2 text-[#E87524]" />
+            Historique des Règlements & Paiements
           </h2>
-          <span className="text-[11px] text-gray-500">
-            Recherchez un "Bon de Crédit" par son numéro pour enregistrer son paiement. Les bons payés disparaîtront de cette liste.
+          <span className="text-[11px] text-stone-500">
+            Tous les règlements encaissés à la caisse enregistrés de manière permanente dans la base SQLite ({payments.length} paiements).
           </span>
         </div>
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-2.5 top-2 text-gray-400" />
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadPayments}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-lg text-xs font-semibold text-stone-700 hover:bg-[#FFF8EF] transition"
+            title="Rafraîchir"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#E87524]' : ''}`} />
+            <span>Actualiser</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Cartes KPI Synthèse Financière */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="bg-white p-3 rounded-xl border border-[#E9DCCB] shadow-2xs">
+          <span className="text-[11px] font-medium text-stone-500 block">Total Règlements</span>
+          <span className="text-base font-bold font-mono text-stone-900 block mt-0.5">
+            {CurrencyUtil.formatDZD(totalEncaisse)}
+          </span>
+          <span className="text-[10px] text-stone-400 mt-1 block">
+            {filteredPayments.length} transaction(s)
+          </span>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-[#E9DCCB] shadow-2xs">
+          <span className="text-[11px] font-medium text-emerald-700 block flex items-center gap-1">
+            <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+            Encaissé en Espèces
+          </span>
+          <span className="text-base font-bold font-mono text-emerald-800 block mt-0.5">
+            {CurrencyUtil.formatDZD(totalCash)}
+          </span>
+          <span className="text-[10px] text-emerald-600/80 mt-1 block">
+            Tiroir-caisse
+          </span>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-[#E9DCCB] shadow-2xs">
+          <span className="text-[11px] font-medium text-blue-700 block flex items-center gap-1">
+            <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+            Encaissé Carte / CIB
+          </span>
+          <span className="text-base font-bold font-mono text-blue-800 block mt-0.5">
+            {CurrencyUtil.formatDZD(totalCard)}
+          </span>
+          <span className="text-[10px] text-blue-600/80 mt-1 block">
+            TPE Bancaire
+          </span>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-[#E9DCCB] shadow-2xs">
+          <span className="text-[11px] font-medium text-purple-700 block flex items-center gap-1">
+            <Smartphone className="w-3.5 h-3.5 text-purple-600" />
+            Encaissé BaridiMob
+          </span>
+          <span className="text-base font-bold font-mono text-purple-800 block mt-0.5">
+            {CurrencyUtil.formatDZD(totalBaridimob)}
+          </span>
+          <span className="text-[10px] text-purple-600/80 mt-1 block">
+            Virements QR Code
+          </span>
+        </div>
+      </div>
+
+      {/* Barre de Filtres et Recherche */}
+      <div className="bg-white p-3 rounded-t-xl border border-[#E9DCCB] border-b-0 flex flex-wrap items-center justify-between gap-3">
+        {/* Onglets Filtre par Mode de Paiement */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setSelectedMethod('ALL')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              selectedMethod === 'ALL'
+                ? 'bg-stone-800 text-white shadow-2xs'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Tous ({payments.length})
+          </button>
+          <button
+            onClick={() => setSelectedMethod('CASH')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              selectedMethod === 'CASH'
+                ? 'bg-emerald-700 text-white shadow-2xs'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Espèces
+          </button>
+          <button
+            onClick={() => setSelectedMethod('CARD')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              selectedMethod === 'CARD'
+                ? 'bg-blue-700 text-white shadow-2xs'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Carte / CIB
+          </button>
+          <button
+            onClick={() => setSelectedMethod('BARIDIMOB')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              selectedMethod === 'BARIDIMOB'
+                ? 'bg-purple-700 text-white shadow-2xs'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            BaridiMob
+          </button>
+        </div>
+
+        {/* Recherche par N° Ticket ou Caissier */}
+        <div className="relative w-72">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
           <input
             type="text"
-            placeholder="Recherche Bon ou Client..."
+            placeholder="Rechercher par N° ticket, caissier..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="pl-8 pr-3 py-1.5 rounded border border-gray-300 text-xs focus:outline-none focus:border-amber-500 w-64"
+            className="w-full pl-8 pr-3 py-1.5 bg-stone-50 border border-[#E9DCCB] rounded-lg text-xs text-stone-800 focus:outline-none focus:border-[#E87524]"
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
-        {filteredCredits.length === 0 ? (
-          <div className="col-span-full py-10 text-center text-gray-500 text-sm bg-white rounded border border-gray-200">
-            Aucun crédit en attente trouvé. Tous les bons sont payés.
-          </div>
-        ) : (
-          filteredCredits.map(credit => (
-            <div key={credit.receiptNumber} className="bg-white rounded border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="bg-amber-50 border-b border-amber-100 p-3 flex justify-between items-center">
-                <div className="font-mono font-bold text-amber-800 text-sm flex items-center">
-                  <FileText className="w-4 h-4 mr-1.5" />
-                  {credit.receiptNumber}
-                </div>
-                <div className="text-[10px] text-amber-600 flex items-center">
-                  <Clock className="w-3 h-3 mr-1" />
-                  {new Date(credit.date).toLocaleDateString()}
-                </div>
-              </div>
-              
-              <div className="p-4 flex-1 flex flex-col">
-                <div className="flex items-center text-sm font-semibold text-gray-800 mb-4">
-                  <User className="w-4 h-4 mr-2 text-gray-500" />
-                  {credit.customerName}
-                </div>
-                
-                <div className="space-y-2 mb-4 flex-1">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Total du Bon:</span>
-                    <span>{CurrencyUtil.formatDZD(credit.totalAmount)}</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-600">
-                    <span>Déjà payé:</span>
-                    <span>{CurrencyUtil.formatDZD(credit.paidAmount)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-red-600 text-sm pt-2 border-t border-gray-100">
-                    <span>Reste à Payer:</span>
-                    <span>{CurrencyUtil.formatDZD(credit.remainingAmount)}</span>
-                  </div>
-                </div>
+      {/* Tableau des Règlements Encaissés */}
+      <div className="flex-1 bg-white border border-[#E9DCCB] rounded-b-xl overflow-hidden flex flex-col shadow-2xs">
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-[#FAF8F5] border-b border-[#E9DCCB] text-stone-600 text-[11px] sticky top-0 font-semibold z-10">
+              <tr>
+                <th className="py-2.5 px-3">Date & Heure</th>
+                <th className="py-2.5 px-3">N° Ticket / Réf</th>
+                <th className="py-2.5 px-3">Mode de Paiement</th>
+                <th className="py-2.5 px-3 text-right">Montant Encaissé</th>
+                <th className="py-2.5 px-3 text-right">Versé par Client</th>
+                <th className="py-2.5 px-3 text-right">Monnaie Rendue</th>
+                <th className="py-2.5 px-3">Caissier</th>
+                <th className="py-2.5 px-3 text-center">Statut Vente</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {filteredPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-stone-400">
+                    <Receipt className="w-8 h-8 mx-auto mb-2 text-stone-300" />
+                    <p className="text-xs font-medium">Aucun paiement trouvé.</p>
+                    <p className="text-[10px] text-stone-400 mt-0.5">
+                      Les paiements validés lors des passages en caisse apparaîtront immédiatement ici.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredPayments.map(p => (
+                  <tr key={p.id} className="hover:bg-[#FFFDFB] transition-colors">
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500 whitespace-nowrap">
+                      {new Date(p.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    </td>
+                    <td className="py-2.5 px-3 font-mono font-bold text-stone-900 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <Receipt className="w-3.5 h-3.5 text-[#E87524]" />
+                        <span>{p.receipt_number}</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">
+                      {getMethodBadge(p.payment_method)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-stone-900 whitespace-nowrap">
+                      {CurrencyUtil.formatDZD(p.amount)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-stone-600 whitespace-nowrap">
+                      {CurrencyUtil.formatDZD(p.tendered_amount)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                      {p.change_given > 0 ? (
+                        <span className="text-amber-700 font-semibold flex items-center justify-end gap-0.5">
+                          <ArrowDownLeft className="w-3 h-3 text-amber-600" />
+                          {CurrencyUtil.formatDZD(p.change_given)}
+                        </span>
+                      ) : (
+                        <span className="text-stone-400">0,00 DZD</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-stone-700 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        <User className="w-3 h-3 text-stone-400" />
+                        <span>{p.cashier_name || 'Caissier'}</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                          p.sale_status === 'COMPLETED'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : p.sale_status === 'REFUNDED'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {p.sale_status === 'COMPLETED'
+                          ? 'PAYÉ'
+                          : p.sale_status === 'REFUNDED'
+                          ? 'REMBOURSÉ'
+                          : p.sale_status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-                <button 
-                  onClick={() => openPaymentModal(credit)}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 rounded flex items-center justify-center transition-colors"
-                >
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Payer ce Bon
-                </button>
-              </div>
+        {/* Pied de tableau avec total */}
+        {filteredPayments.length > 0 && (
+          <div className="p-3 bg-[#FAF8F5] border-t border-[#E9DCCB] flex items-center justify-between text-xs">
+            <span className="font-medium text-stone-600">
+              Affichage de {filteredPayments.length} paiement(s)
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-stone-700">Total Encaissé :</span>
+              <span className="font-mono font-bold text-sm text-[#E87524]">
+                {CurrencyUtil.formatDZD(totalEncaisse)}
+              </span>
             </div>
-          ))
+          </div>
         )}
       </div>
-
-      {/* Modal Paiement */}
-      {selectedCredit && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-800">Règlement du Crédit</h3>
-              <button onClick={() => setSelectedCredit(null)} className="text-gray-500 hover:text-red-500 text-xl font-bold">&times;</button>
-            </div>
-            
-            <div className="p-4">
-              <div className="mb-4 bg-amber-50 p-3 rounded text-amber-900 text-center">
-                <div className="text-[10px] uppercase mb-1">Reste à payer</div>
-                <div className="font-bold text-xl">{CurrencyUtil.formatDZD(selectedCredit.remainingAmount)}</div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">
-                  Montant payé par le client (DZD)
-                </label>
-                <input
-                  type="number"
-                  autoFocus
-                  value={payAmount}
-                  onChange={e => setPayAmount(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded text-sm text-center font-bold focus:border-amber-500 focus:outline-none"
-                />
-              </div>
-
-              <button
-                onClick={handlePay}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded font-bold flex items-center justify-center"
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Valider le Paiement
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
+export const CreditsView = PaymentsView;

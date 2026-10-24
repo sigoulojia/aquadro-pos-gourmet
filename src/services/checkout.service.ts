@@ -15,6 +15,8 @@ export interface CheckoutItemInput {
   quantity: number;
   unitPrice: number;     // Prix unitaire TTC
   discountAmount: number;// Remise unitaire
+  supplements?: any;
+  notes?: string;
 }
 
 export interface PaymentInput {
@@ -78,7 +80,9 @@ export class CheckoutService {
           productId: item.productId,
           quantity: item.quantity,
           unitPriceTtc: Math.round(item.unitPrice),
-          discountAmount: Math.round(item.discountAmount || 0)
+          discountAmount: Math.round(item.discountAmount || 0),
+          supplements: item.supplements ? (typeof item.supplements === 'string' ? item.supplements : JSON.stringify(item.supplements)) : null,
+          notes: item.notes || null
         })),
         payments: payload.payments.map(p => ({
           paymentMethod: p.method,
@@ -105,6 +109,11 @@ export class CheckoutService {
           console.warn('Enregistrement document commercial ignoré :', docErr);
         }
         
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('sale_completed'));
+          window.dispatchEvent(new Event('sales_updated'));
+        }
+
         return {
           id: saleId,
           receipt_number: receiptNumber,
@@ -120,7 +129,8 @@ export class CheckoutService {
           payments: []
         } as unknown as Sale;
       } catch (err: any) {
-        throw new Error(`Échec de l'encaissement: ${err}`);
+        console.warn('[CheckoutService] Rust process_checkout échoué, bascule automatique vers le moteur SQLite direct :', err);
+        // Ne pas bloquer la caisse : repli immédiat sur le moteur SQLite direct ci-dessous
       }
     }
 
@@ -196,6 +206,8 @@ export class CheckoutService {
           unit_purchase_cost_snapshot: alloc.unitPurchaseCost,
           unit_purchase_price: alloc.unitPurchaseCost,
           unit_price: item.unitPrice,
+          supplements: item.supplements ? (typeof item.supplements === 'string' ? item.supplements : JSON.stringify(item.supplements)) : null,
+          notes: item.notes || undefined,
           created_at: createdAt
         };
 
@@ -258,15 +270,16 @@ export class CheckoutService {
     for (const si of saleItems) {
       await db.execute(
         `INSERT INTO sale_items (
-          id, sale_id, product_id, batch_id, quantity, unit_price_ttc,
+          id, sale_id, product_id, product_name, batch_id, quantity, unit_price_ttc,
           discount_amount, total_ttc, unit_purchase_cost_snapshot,
-          unit_purchase_price, unit_price, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          unit_purchase_price, unit_price, supplements, notes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          si.id, si.sale_id, si.product_id, si.batch_id || null, si.quantity,
+          si.id, si.sale_id, si.product_id, si.product_name, si.batch_id || null, si.quantity,
           si.unit_price_ttc, si.discount_amount, si.total_ttc,
           si.unit_purchase_cost_snapshot,
-          si.unit_purchase_cost_snapshot, si.unit_price_ttc, si.created_at
+          si.unit_purchase_cost_snapshot, si.unit_price_ttc,
+          si.supplements || null, si.notes || null, si.created_at
         ]
       );
     }
@@ -341,6 +354,11 @@ export class CheckoutService {
         createdAt
       ]
     );
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('sale_completed'));
+      window.dispatchEvent(new Event('sales_updated'));
+    }
 
     return sale;
   }

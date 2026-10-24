@@ -110,22 +110,28 @@ export class ProductService {
 
   // Création d'un produit avec vérification d'unicité
   public async createProduct(input: CreateProductInput): Promise<Product> {
+    const codeSuffix = Date.now().toString().slice(-6);
+    const sku = (input.sku && typeof input.sku === 'string' && input.sku.trim()) || `PIZ-${codeSuffix}-${Math.floor(Math.random() * 900 + 100)}`;
+    const barcode = (input.barcode && typeof input.barcode === 'string' && input.barcode.trim()) || `613${codeSuffix}${Math.floor(Math.random() * 90 + 10)}`;
+    const name_fr = (input.name_fr && typeof input.name_fr === 'string' && input.name_fr.trim()) || 'Produit';
+    const name_ar = (input.name_ar && typeof input.name_ar === 'string' && input.name_ar.trim()) || name_fr;
+
     // Vérification de doublon sur le code-barres
     const existingBarcode = await db.select<Product>(
       'SELECT id FROM products WHERE barcode = ?',
-      [input.barcode.trim()]
+      [barcode]
     );
     if (existingBarcode.length > 0) {
-      throw new Error(`Un produit existe déjà avec le code-barres : ${input.barcode}`);
+      throw new Error(`Un produit existe déjà avec le code-barres : ${barcode}`);
     }
 
     // Vérification de doublon sur le SKU
     const existingSku = await db.select<Product>(
       'SELECT id FROM products WHERE sku = ?',
-      [input.sku.trim()]
+      [sku]
     );
     if (existingSku.length > 0) {
-      throw new Error(`Un produit existe déjà avec la référence SKU : ${input.sku}`);
+      throw new Error(`Un produit existe déjà avec la référence SKU : ${sku}`);
     }
 
     const productId = `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -134,23 +140,23 @@ export class ProductService {
 
     const product: Product = {
       id: productId,
-      sku: input.sku.trim(),
-      barcode: input.barcode.trim(),
+      sku: sku,
+      barcode: barcode,
       additional_barcodes: input.additional_barcodes,
-      name_fr: input.name_fr.trim(),
-      name_ar: input.name_ar.trim() || input.name_fr.trim(),
+      name_fr: name_fr,
+      name_ar: name_ar,
       category_id: input.category_id,
       brand_id: input.brand_id,
       variant: input.variant,
       size_weight: input.size_weight,
       unit_of_measure: input.unit_of_measure || 'UNIT',
       box_conversion_ratio: input.box_conversion_ratio || 1.0,
-      purchase_cost: input.purchase_cost,
-      selling_price_ttc: input.selling_price_ttc,
-      min_selling_price_ttc: input.min_selling_price_ttc ?? input.purchase_cost,
+      purchase_cost: Number(input.purchase_cost) || 0,
+      selling_price_ttc: Number(input.selling_price_ttc) || 0,
+      min_selling_price_ttc: input.min_selling_price_ttc ?? (Number(input.purchase_cost) || 0),
       tva_rate: input.tva_rate ?? 0.0,
       current_stock: stock,
-      min_stock_alert: input.min_stock_alert ?? 5,
+      min_stock_alert: (input.category_id === 'cat-pizza' || (input.category_id && input.category_id.includes('pizza'))) ? 0 : (input.min_stock_alert ?? 0),
       image_url: input.image_url || undefined,
       is_active: 1,
       created_at: now,

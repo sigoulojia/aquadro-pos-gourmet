@@ -107,14 +107,12 @@ export const PurchasesView: React.FC = () => {
   };
 
   const handleReceiveStock = async (purchaseId: string, orderNumber: string) => {
-    if (confirm(`Confirmez-vous la réception complète et l'intégration en stock du bon ${orderNumber} ?`)) {
-      try {
-        await purchaseService.receivePurchase(purchaseId);
-        showToast(`Stock intégré et lots créés pour ${orderNumber} !`, 'success');
-        await loadData();
-      } catch (err: any) {
-        showToast(`Échec réception : ${err.message}`, 'error');
-      }
+    try {
+      await purchaseService.receivePurchase(purchaseId);
+      showToast(`Stock intégré et lots créés pour ${orderNumber} !`, 'success');
+      await loadData();
+    } catch (err: any) {
+      showToast(`Échec réception : ${err.message}`, 'error');
     }
   };
 

@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { inventoryService } from '../src/services/inventory.service';
 import { productService } from '../src/services/product.service';
 import { db } from '../src/db/sqlite';
+import { seedTestFixtures } from './fixtures';
 
 describe('Inventory & Traceable Stock Movements', () => {
   beforeEach(async () => {
-    await db.initialize();
+    await seedTestFixtures();
   });
 
   it('records traceable SALE decrement and updates current stock', async () => {

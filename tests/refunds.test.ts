@@ -5,10 +5,11 @@ import { productService } from '../src/services/product.service';
 import { CartService } from '../src/services/cart.service';
 import { db } from '../src/db/sqlite';
 import { SEED_STORE } from '../src/db/seed';
+import { seedTestFixtures } from './fixtures';
 
 describe('Sales & Refund Management', () => {
   beforeEach(async () => {
-    await db.initialize();
+    await seedTestFixtures();
   });
 
   it('processes item return, calculates refund, restocks shelf, and records audit trail', async () => {

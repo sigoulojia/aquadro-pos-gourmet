@@ -320,13 +320,35 @@ export const StoreNeedsView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Fromage Mozzarella, Boîtes 33cm, Coca 33cl, Farine..."
+                  placeholder="ex: Fromage Mozzarella, Boîtes 33cm, Serviettes, Coca 33cl..."
                   value={itemName}
                   onChange={e => setItemName(e.target.value)}
                   className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs focus:ring-1 focus:ring-[#E87524] outline-none"
                   autoFocus
                   required
                 />
+                {/* Raccourcis rapides d'articles courants / مستهلكات وتغليف */}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {[
+                    { label: "🍕 علب بيتزا", val: "Boîtes à Pizza" },
+                    { label: "🧻 ورق مناديل", val: "Serviettes en papier" },
+                    { label: "📦 أكياس تغليف", val: "Sacs emballage kraft" },
+                    { label: "🧾 رول ورق caisse", val: "Rouleaux papier caisse 80mm" },
+                    { label: "🧹 مواد تنظيف", val: "Produits de nettoyage & javel" },
+                    { label: "🧀 جبن موزاريلا", val: "Mozzarella râpée" },
+                    { label: "🌾 فرينة بيتزا", val: "Farine pizza T55" },
+                    { label: "🥫 صلصة طماطم", val: "Sauce tomate pizza" }
+                  ].map((sug, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setItemName(sug.val)}
+                      className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-[#FFF3EB] hover:text-[#E87524] text-[10px] text-stone-600 border border-stone-200 transition-colors cursor-pointer"
+                    >
+                      {sug.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>

@@ -172,21 +172,22 @@ export class DatabaseService {
         let tauriDbInstance: any = null;
         let loadError: any = null;
 
-        // 1. Tenter le chargement via le chemin relatif standard Tauri
+        // 1. Tenter d'abord la base SQLite autoritaire AppData (partagée avec le backend Rust)
         try {
-          tauriDbInstance = await Database.load('sqlite:pizzeria_pos.db');
-          console.log('[DatabaseService] Connecté à SQLite via identifiant standard: sqlite:pizzeria_pos.db');
+          const appData = await appDataDir();
+          const dbPath = await join(appData, 'pizzeria_pos.db');
+          tauriDbInstance = await Database.load(`sqlite:${dbPath}`);
+          console.log(`[DatabaseService] Connecté avec succès à la base SQLite autoritaire: sqlite:${dbPath}`);
         } catch (e1) {
           loadError = e1;
+          console.warn('[DatabaseService] Tentative chemin absolu AppData:', e1);
         }
 
-        // 2. Si échec, tenter via le chemin absolu AppData
+        // 2. Si échec, tentative via le nom standard
         if (!tauriDbInstance) {
           try {
-            const appData = await appDataDir();
-            const dbPath = await join(appData, 'pizzeria_pos.db');
-            tauriDbInstance = await Database.load(`sqlite:${dbPath}`);
-            console.log(`[DatabaseService] Connecté à SQLite via chemin absolu: sqlite:${dbPath}`);
+            tauriDbInstance = await Database.load('sqlite:pizzeria_pos.db');
+            console.log('[DatabaseService] Connecté à SQLite via identifiant standard: sqlite:pizzeria_pos.db');
           } catch (e2) {
             loadError = e2;
           }
@@ -220,7 +221,46 @@ export class DatabaseService {
   private async ensureEssentialStructure(): Promise<void> {
     if (!this.tauriDb) return;
     try {
-      // 0. Assurer la présence de la colonne image_url dans products
+      // 0a. Catégories indispensables
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS categories (
+            id TEXT PRIMARY KEY,
+            name_fr TEXT NOT NULL,
+            name_ar TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+      `);
+
+      // 0b. Table Produits
+      await this.tauriDb.execute(`
+        CREATE TABLE IF NOT EXISTS products (
+            id TEXT PRIMARY KEY,
+            store_id TEXT,
+            category_id TEXT,
+            brand_id TEXT,
+            sku TEXT UNIQUE NOT NULL,
+            barcode TEXT UNIQUE NOT NULL,
+            additional_barcodes TEXT,
+            name_fr TEXT NOT NULL,
+            name_ar TEXT NOT NULL,
+            variant TEXT,
+            size_weight TEXT,
+            unit_of_measure TEXT DEFAULT 'UNIT',
+            box_conversion_ratio REAL DEFAULT 1.0,
+            purchase_cost INTEGER NOT NULL DEFAULT 0,
+            selling_price_ttc INTEGER NOT NULL DEFAULT 0,
+            min_selling_price_ttc INTEGER NOT NULL DEFAULT 0,
+            tva_rate REAL DEFAULT 0.0,
+            current_stock REAL NOT NULL DEFAULT 0.0,
+            min_stock_alert REAL NOT NULL DEFAULT 5.0,
+            image_url TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+      `);
+
+      // 0c. Assurer la présence de la colonne image_url dans products
       try {
         await this.tauriDb.execute('ALTER TABLE products ADD COLUMN image_url TEXT');
       } catch {}
@@ -267,6 +307,28 @@ export class DatabaseService {
         )
       `);
 
+      // Assurer la présence des colonnes dans pizza_supplements
+      for (const colDef of [
+        'ALTER TABLE pizza_supplements ADD COLUMN purchase_cost INTEGER NOT NULL DEFAULT 0',
+        'ALTER TABLE pizza_supplements ADD COLUMN current_stock REAL NOT NULL DEFAULT 50.0',
+        'ALTER TABLE pizza_supplements ADD COLUMN min_stock_alert REAL NOT NULL DEFAULT 5.0'
+      ]) {
+        try {
+          await this.tauriDb.execute(colDef);
+        } catch {}
+      }
+
+      // Assurer la persistance du nom, des suppléments et notes sur chaque ligne de vente
+      for (const colDef of [
+        'ALTER TABLE sale_items ADD COLUMN product_name TEXT',
+        'ALTER TABLE sale_items ADD COLUMN supplements TEXT',
+        'ALTER TABLE sale_items ADD COLUMN notes TEXT'
+      ]) {
+        try {
+          await this.tauriDb.execute(colDef);
+        } catch {}
+      }
+
       // 3. Besoins du magasin (Store Needs)
       await this.tauriDb.execute(`
         CREATE TABLE IF NOT EXISTS store_needs (
@@ -312,12 +374,11 @@ export class DatabaseService {
   public async execute(query: string, params: any[] = []): Promise<QueryResult> {
     await this.ensureInitialized();
 
-    if (this.isTauri && this.tauriDb) {
-      try {
-        return await this.tauriDb.execute(query, params);
-      } catch (err) {
-        console.warn('[DatabaseService] Erreur execute SQLite native, bascule de sécurité :', err);
+    if (this.isTauri) {
+      if (!this.tauriDb) {
+        throw new Error('[DatabaseService] Base de données native SQLite non initialisée');
       }
+      return await this.tauriDb.execute(query, params);
     }
 
     const trimmed = query.trim().toUpperCase();
@@ -361,9 +422,9 @@ export class DatabaseService {
         const rows = memoryDb.getTable(table);
         let updatedCount = 0;
 
-        const assignments = setClause.split(',').map(a => a.trim());
+        const assignments = setClause.match(/(?:[^,(]|\([^)]*\))+/g)?.map(a => a.trim()) || [setClause.trim()];
         let paramIdx = 0;
-        const setAssignments: Array<{ col: string; val: any }> = [];
+        const setAssignments: Array<{ col: string; val?: any; func?: (oldVal: any) => any }> = [];
 
         for (const assign of assignments) {
           const parts = assign.split('=');
@@ -371,6 +432,12 @@ export class DatabaseService {
           const rhs = parts.slice(1).join('=').trim();
           if (rhs === '?') {
             setAssignments.push({ col, val: params[paramIdx++] });
+          } else if (/MAX\s*\(\s*0\s*,\s*([a-zA-Z0-9_]+)\s*-\s*\?\s*\)/i.test(rhs)) {
+            const decr = Number(params[paramIdx++]) || 0;
+            setAssignments.push({ col, func: (oldVal: any) => Math.max(0, (Number(oldVal) || 0) - decr) });
+          } else if (/MAX\s*\(\s*0\s*,\s*([a-zA-Z0-9_]+)\s*\+\s*\?\s*\)/i.test(rhs)) {
+            const incr = Number(params[paramIdx++]) || 0;
+            setAssignments.push({ col, func: (oldVal: any) => Math.max(0, (Number(oldVal) || 0) + incr) });
           } else {
             const literalVal = rhs.replace(/^['"]|['"]$/g, '');
             const num = Number(literalVal);
@@ -394,8 +461,12 @@ export class DatabaseService {
           }
 
           if (matches) {
-            for (const { col, val } of setAssignments) {
-              row[col] = val;
+            for (const item of setAssignments) {
+              if (item.func) {
+                row[item.col] = item.func(row[item.col]);
+              } else {
+                row[item.col] = item.val;
+              }
             }
             updatedCount++;
           }
@@ -422,8 +493,10 @@ export class DatabaseService {
           return { rowsAffected: initialLen };
         }
 
-        const targetId = params[0];
-        const filtered = rows.filter(r => r.id !== targetId);
+        const whereColMatch = whereClause.match(/([a-zA-Z0-9_]+)\s*=/);
+        const colName = whereColMatch ? whereColMatch[1].toLowerCase() : 'id';
+        const targetVal = params[0];
+        const filtered = rows.filter(r => r[colName] !== targetVal);
         const tableRef = memoryDb.getTable(table);
         tableRef.length = 0;
         tableRef.push(...filtered);
@@ -439,12 +512,11 @@ export class DatabaseService {
   public async select<T = any>(query: string, params: any[] = []): Promise<T[]> {
     await this.ensureInitialized();
 
-    if (this.isTauri && this.tauriDb) {
-      try {
-        return await this.tauriDb.select(query, params);
-      } catch (err) {
-        console.warn('[DatabaseService] Erreur select SQLite native, bascule de sécurité :', err);
+    if (this.isTauri) {
+      if (!this.tauriDb) {
+        throw new Error('[DatabaseService] Base de données native SQLite non initialisée');
       }
+      return await this.tauriDb.select(query, params);
     }
 
     const trimmed = query.trim().toUpperCase();
@@ -540,18 +612,28 @@ export class DatabaseService {
       if (!this.tauriDb) {
         throw new Error('Base de données native non initialisée.');
       }
+      // Ordre correct : d'abord les tables avec FK, puis les tables parentes
       const allTables = [
-        'inventory_movements', 'refund_items', 'refunds', 'payments', 'sale_items',
-        'sales', 'purchase_items', 'purchases', 'expenses', 'cash_sessions',
-        'customer_payments', 'supplier_payments', 'commercial_documents',
-        'audit_logs', 'sync_operations', 'product_batches', 'products',
-        'categories', 'brands', 'suppliers', 'customers'
+        'sync_operations', 'audit_logs', 'commercial_documents',
+        'supplier_payments', 'customer_payments',
+        'inventory_movements', 'refund_items', 'refunds',
+        'payments', 'sale_items', 'sales',
+        'purchase_items', 'purchases', 'expenses', 'cash_sessions',
+        'recipe_items', 'product_batches', 'products',
+        'pizza_supplements', 'ingredients',
+        'categories', 'brands', 'suppliers', 'customers', 'store_needs'
       ];
       for (const t of allTables) {
-        await this.tauriDb.execute(`DELETE FROM ${t}`);
+        try {
+          await this.tauriDb.execute(`DELETE FROM ${t}`);
+        } catch (err) {
+          console.warn(`[resetAll] Impossible de vider la table ${t}:`, err);
+        }
       }
       if (typeof window !== 'undefined') {
         localStorage.removeItem('pizzeria_setup_completed');
+        localStorage.removeItem('aquadro_setup_completed');
+        localStorage.removeItem('pizzeria_defaults_cleaned_v1_0_2');
       }
     } else {
       memoryDb.resetAll();

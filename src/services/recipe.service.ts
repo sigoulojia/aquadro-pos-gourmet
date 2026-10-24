@@ -125,9 +125,59 @@ export class RecipeService {
     return newStock;
   }
 
+  public async recordPurchase(
+    id: string,
+    quantityPurchased: number,
+    unitCost: number,
+    supplierName?: string
+  ): Promise<Ingredient> {
+    if (quantityPurchased <= 0) throw new Error('La quantité achetée doit être supérieure à zéro');
+    const existing = await this.getIngredientById(id);
+    if (!existing) throw new Error('Ingrédient introuvable');
+
+    const newStock = existing.current_stock + quantityPurchased;
+    const finalCost = unitCost > 0 ? unitCost : existing.cost_per_unit;
+    const now = new Date().toISOString();
+
+    await db.execute(
+      'UPDATE ingredients SET current_stock = ?, cost_per_unit = ?, updated_at = ? WHERE id = ?',
+      [newStock, finalCost, now, id]
+    );
+
+    try {
+      await db.execute(
+        `INSERT INTO inventory_movements (
+          id, product_id, movement_type, quantity_change, previous_stock, new_stock, reason, unit_cost_snapshot, user_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          id,
+          'PURCHASE',
+          quantityPurchased,
+          existing.current_stock,
+          newStock,
+          `Achat Ingrédient${supplierName ? ' - ' + supplierName : ''}`,
+          finalCost,
+          'user-001',
+          now
+        ]
+      );
+    } catch {
+      // Ignorer si contrainte de clé étrangère products
+    }
+
+    return {
+      ...existing,
+      current_stock: newStock,
+      cost_per_unit: finalCost,
+      updated_at: now
+    };
+  }
+
   public async deleteIngredient(id: string): Promise<void> {
     // Supprimer également les liaisons de recettes
     await db.execute('DELETE FROM recipe_items WHERE ingredient_id = ?', [id]);
+    await db.execute('UPDATE ingredients SET is_active = 0 WHERE id = ?', [id]);
     await db.execute('DELETE FROM ingredients WHERE id = ?', [id]);
   }
 
@@ -176,9 +226,16 @@ export class RecipeService {
 
     // 2. Insérer les nouveaux ingrédients
     const now = new Date().toISOString();
-    for (const entry of entries) {
-      if (entry.quantity_required <= 0) continue;
-      const itemId = `rcp-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
+    for (let idx = 0; idx < entries.length; idx++) {
+      const entry = entries[idx];
+      const rawQty = entry.quantity_required as any;
+      const parsedQty = typeof rawQty === 'string'
+        ? parseFloat(rawQty.replace(',', '.'))
+        : Number(rawQty);
+
+      if (isNaN(parsedQty) || parsedQty <= 0) continue;
+
+      const itemId = `rcp-${Date.now().toString(36)}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
       await db.execute(
         `INSERT INTO recipe_items (id, product_id, ingredient_id, quantity_required, unit_display, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -186,12 +243,68 @@ export class RecipeService {
           itemId,
           productId,
           entry.ingredient_id,
-          Number(entry.quantity_required),
-          entry.unit_display || null,
+          parsedQty,
+          entry.unit_display || `${parsedQty}`,
           now
         ]
       );
     }
+  }
+
+  public async applyDefaultPizzaRecipe(productId: string): Promise<RecipeItemDetail[]> {
+    const ingredients = await this.getIngredients();
+    if (ingredients.length === 0) return [];
+
+    const flour = ingredients.find(i =>
+      i.name_fr.toLowerCase().includes('farin') || (i.name_ar && i.name_ar.includes('فرين'))
+    );
+    const sauce = ingredients.find(i =>
+      i.name_fr.toLowerCase().includes('sauc') || i.name_fr.toLowerCase().includes('tomat') || (i.name_ar && i.name_ar.includes('طماطم'))
+    );
+    const cheese = ingredients.find(i =>
+      i.name_fr.toLowerCase().includes('mozz') || i.name_fr.toLowerCase().includes('fromag') || (i.name_ar && i.name_ar.includes('جبن'))
+    );
+
+    const entries: RecipeEntryInput[] = [];
+    if (flour) {
+      entries.push({
+        ingredient_id: flour.id,
+        quantity_required: flour.unit.toLowerCase() === 'g' ? 250 : 0.25,
+        unit_display: flour.unit.toLowerCase() === 'g' ? '250 g' : '0.25 kg'
+      });
+    }
+    if (sauce) {
+      entries.push({
+        ingredient_id: sauce.id,
+        quantity_required: sauce.unit.toLowerCase() === 'g' || sauce.unit.toLowerCase() === 'ml' ? 100 : 0.1,
+        unit_display: sauce.unit.toLowerCase() === 'g' ? '100 g' : sauce.unit.toLowerCase() === 'ml' ? '100 ml' : '0.1 kg'
+      });
+    }
+    if (cheese) {
+      entries.push({
+        ingredient_id: cheese.id,
+        quantity_required: cheese.unit.toLowerCase() === 'g' ? 120 : (cheese.unit.toLowerCase() === 'pièce' ? 1 : 0.12),
+        unit_display: cheese.unit.toLowerCase() === 'g' ? '120 g' : cheese.unit.toLowerCase() === 'pièce' ? '1 pc' : '0.12 kg'
+      });
+    }
+
+    // Si aucun ingrédient classique n'a été trouvé par nom, lier les 3 premiers ingrédients disponibles
+    if (entries.length === 0) {
+      for (const ing of ingredients.slice(0, 3)) {
+        const qty = ing.unit.toLowerCase() === 'kg' ? 0.2 : (ing.unit.toLowerCase() === 'g' ? 150 : 1);
+        entries.push({
+          ingredient_id: ing.id,
+          quantity_required: qty,
+          unit_display: `${qty} ${ing.unit}`
+        });
+      }
+    }
+
+    if (entries.length > 0) {
+      await this.saveRecipe(productId, entries);
+    }
+
+    return await this.getRecipeForProduct(productId);
   }
 
   // --- Capacité de Production (Rendement & Facteur Limitant) ---

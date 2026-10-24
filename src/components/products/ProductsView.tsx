@@ -36,6 +36,7 @@ export const ProductsView: React.FC = () => {
   const [availabilityModalProduct, setAvailabilityModalProduct] = useState<Product | null>(null);
   const [showAvailabilityModal, setShowAvailabilityModal] = useState<boolean>(false);
   const [priceInput, setPriceInput] = useState<string>("700");
+  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
   // Formulaire Pizzeria avec image
   const [formData, setFormData] = useState({
@@ -142,6 +143,8 @@ export const ProductsView: React.FC = () => {
     setShowAddModal(true);
   };
 
+
+
   const handleOpenEditModal = (p: Product) => {
     setEditingProduct(p);
     const initialPrice = p.selling_price_ttc || 700;
@@ -238,6 +241,7 @@ export const ProductsView: React.FC = () => {
       } else {
         // Création simple
         const codeSuffix = Date.now().toString().slice(-6);
+        const isPizza = formData.category_id === 'cat-pizza' || formData.category_id.includes('pizza');
         const input: CreateProductInput = {
           name_fr: formData.name_fr,
           name_ar: formData.name_ar,
@@ -248,12 +252,19 @@ export const ProductsView: React.FC = () => {
           purchase_cost: Math.round(finalPrice * 0.4),
           selling_price_ttc: finalPrice,
           image_url: formData.image_url || undefined,
-          current_stock: 100,
-          min_stock_alert: 5,
+          current_stock: isPizza ? 100 : 24,
+          min_stock_alert: isPizza ? 0 : 5,
           unit_of_measure: "UNIT"
         };
-        await productService.createProduct(input);
-        showToast("Nouvelle pizza / article ajouté au menu !", "success");
+        const createdProduct = await productService.createProduct(input);
+        if (isPizza && createdProduct?.id) {
+          try {
+            await recipeService.applyDefaultPizzaRecipe(createdProduct.id);
+          } catch (rErr) {
+            console.warn('Auto recipe link on pizza create:', rErr);
+          }
+        }
+        showToast("Nouvelle pizza / article ajouté au menu avec مقادير جاهزة !", "success");
       }
       setShowAddModal(false);
       loadProducts();
@@ -262,15 +273,19 @@ export const ProductsView: React.FC = () => {
     }
   };
 
-  const handleDeleteProduct = async (p: Product) => {
-    if (window.confirm(`Supprimer "${p.name_fr}" de la carte ?`)) {
-      try {
-        await productService.archiveProduct(p.id);
-        showToast("Article retiré de la carte", "info");
-        loadProducts();
-      } catch (err: any) {
-        showToast(`Erreur : ${err?.message || err}`, "error");
-      }
+  const handleDeleteProduct = (p: Product) => {
+    setDeletingProduct(p);
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!deletingProduct) return;
+    try {
+      await productService.archiveProduct(deletingProduct.id);
+      showToast(`تم حذف "${deletingProduct.name_fr}" من القائمة بنجاح`, "info");
+      setDeletingProduct(null);
+      loadProducts();
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, "error");
     }
   };
 
@@ -310,6 +325,7 @@ export const ProductsView: React.FC = () => {
             <Plus className="w-3.5 h-3.5 text-amber-600" />
             <span>+ بيتزا 4 فصول (4 Saisons)</span>
           </button>
+
 
           <button
             onClick={() => setShowSupplementsModal(true)}
@@ -820,6 +836,45 @@ export const ProductsView: React.FC = () => {
           }}
           onToggleActive={handleToggleActiveFromModal}
         />
+      )}
+
+      {/* Modal Confirmation de Suppression de Produit */}
+      {deletingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-sm w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-stone-900 text-sm">تأكيد حذف الطبق</h3>
+                <p className="text-xs text-stone-500">Suppression du menu</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed">
+              هل أنت متأكد من رغبتك في حذف <strong className="text-rose-600 font-bold">"{deletingProduct.name_fr}"</strong> من قائمة الأطباق؟
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setDeletingProduct(null)}
+                className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-semibold cursor-pointer"
+              >
+                إلغاء (Annuler)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteProduct}
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>حذف من القائمة</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

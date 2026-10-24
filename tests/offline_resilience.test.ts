@@ -6,10 +6,11 @@ import { syncService } from '../src/services/sync.service';
 import { db } from '../src/db/sqlite';
 import { SEED_STORE } from '../src/db/seed';
 import { SyncOperation } from '../src/types/database';
+import { seedTestFixtures } from './fixtures';
 
 describe('Offline Resilience & Persistent Outbox Queue', () => {
   beforeEach(async () => {
-    await db.initialize();
+    await seedTestFixtures();
   });
 
   it('completes sales entirely offline and enqueues idempotent operations into outbox ledger', async () => {

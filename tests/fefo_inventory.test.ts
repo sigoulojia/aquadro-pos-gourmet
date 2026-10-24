@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { inventoryService } from '../src/services/inventory.service';
 import { productService } from '../src/services/product.service';
 import { db } from '../src/db/sqlite';
+import { seedTestFixtures } from './fixtures';
 
 describe('FEFO (First Expired, First Out) Inventory & Batch Management', () => {
   beforeEach(async () => {
-    await db.initialize();
+    await seedTestFixtures();
   });
 
   it('allocates stock prioritizing the earliest expiring batch (FEFO)', async () => {

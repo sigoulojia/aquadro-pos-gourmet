@@ -153,15 +153,13 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
   };
 
   const handleClearAll = async () => {
-    if (window.confirm("Voulez-vous vraiment vider TOUS les suppléments du stock ?")) {
-      try {
-        await supplementService.clearAllSupplements();
-        setSupplements([]);
-        showToast("Liste des suppléments entièrement vidée", "info");
-        await loadList();
-      } catch (err: any) {
-        showToast(`Erreur : ${err?.message || err}`, "error");
-      }
+    try {
+      await supplementService.clearAllSupplements();
+      setSupplements([]);
+      showToast("Liste des suppléments entièrement vidée", "info");
+      await loadList();
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, "error");
     }
   };
 

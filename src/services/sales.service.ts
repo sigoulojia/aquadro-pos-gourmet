@@ -42,10 +42,28 @@ export class SalesService {
     );
     const allItems = await db.select<SaleItem>('SELECT * FROM sale_items');
     const allPayments = await db.select<Payment>('SELECT * FROM payments');
+    const allProducts = await db.select<Product>('SELECT * FROM products');
+    const productMap = new Map(allProducts.map(p => [p.id, p]));
 
     return sales.map(s => ({
       ...s,
-      items: allItems.filter(i => i.sale_id === s.id),
+      items: allItems
+        .filter(i => i.sale_id === s.id)
+        .map(i => {
+          const prod = productMap.get(i.product_id);
+          let parsedSupplements = (i as any).supplements;
+          if (typeof parsedSupplements === 'string' && parsedSupplements.trim().startsWith('[')) {
+            try {
+              parsedSupplements = JSON.parse(parsedSupplements);
+            } catch {}
+          }
+          return {
+            ...i,
+            product_name: (i as any).product_name || prod?.name_fr || (prod as any)?.name || 'Article',
+            supplements: parsedSupplements,
+            notes: (i as any).notes
+          };
+        }),
       payments: allPayments.filter(p => p.sale_id === s.id)
     }));
   }
@@ -56,10 +74,25 @@ export class SalesService {
 
     const sale = sales[0];
     const rawItems = await db.select<SaleItem>('SELECT * FROM sale_items WHERE sale_id = ?', [saleId]);
-    sale.items = rawItems.map(i => ({
-      ...i,
-      unit_price: (i as any).unit_price || i.unit_price_ttc
-    }));
+    const allProducts = await db.select<Product>('SELECT * FROM products');
+    const productMap = new Map(allProducts.map(p => [p.id, p]));
+
+    sale.items = rawItems.map(i => {
+      const prod = productMap.get(i.product_id);
+      let parsedSupplements = (i as any).supplements;
+      if (typeof parsedSupplements === 'string' && parsedSupplements.trim().startsWith('[')) {
+        try {
+          parsedSupplements = JSON.parse(parsedSupplements);
+        } catch {}
+      }
+      return {
+        ...i,
+        unit_price: (i as any).unit_price || i.unit_price_ttc,
+        product_name: (i as any).product_name || prod?.name_fr || (prod as any)?.name || 'Article',
+        supplements: parsedSupplements,
+        notes: (i as any).notes
+      };
+    });
     sale.payments = await db.select<Payment>('SELECT * FROM payments WHERE sale_id = ?', [saleId]);
     return sale;
   }

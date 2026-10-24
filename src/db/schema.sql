@@ -213,12 +213,15 @@ CREATE TABLE IF NOT EXISTS sale_items (
     id TEXT PRIMARY KEY,
     sale_id TEXT NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
     product_id TEXT NOT NULL REFERENCES products(id),
+    product_name TEXT,
     batch_id TEXT REFERENCES product_batches(id),
     quantity REAL NOT NULL,
     unit_price_ttc INTEGER NOT NULL,
     discount_amount INTEGER NOT NULL DEFAULT 0,
     total_ttc INTEGER NOT NULL,
     unit_purchase_cost_snapshot INTEGER NOT NULL,
+    supplements TEXT,
+    notes TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);

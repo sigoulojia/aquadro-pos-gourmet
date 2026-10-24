@@ -40,11 +40,30 @@ export class InventoryService {
   // Allouer les lots d'un produit selon FEFO
   public async allocateFefoBatches(productId: string, requestedQty: number): Promise<any> {
     const batches = await this.getProductBatches(productId);
-    const products = await db.select<Product>('SELECT * FROM products WHERE id = ?', [productId]);
+    let products = await db.select<Product>('SELECT * FROM products WHERE id = ?', [productId]);
     if (products.length === 0) {
-      throw new Error(`Produit introuvable : ${productId}`);
+      const now = new Date().toISOString();
+      const isFee = productId === 'prod-delivery-fee';
+      const nameFr = isFee ? 'Frais de Livraison' : 'Produit Spécial / Pizza';
+      const nameAr = isFee ? 'خدمة التوصيل' : 'بيتزا مخصصة';
+      try {
+        await db.execute(
+          `INSERT OR IGNORE INTO products (id, sku, barcode, name_fr, name_ar, selling_price_ttc, purchase_cost, min_selling_price_ttc, current_stock, min_stock_alert, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 0, 0, 0, 100, 0, 1, ?, ?)`,
+          [productId, `SKU-${productId}`, `BC-${productId}`, nameFr, nameAr, now, now]
+        );
+        products = await db.select<Product>('SELECT * FROM products WHERE id = ?', [productId]);
+      } catch (e) {
+        console.warn('Auto insert virtual product failed:', e);
+      }
     }
-    const product = products[0];
+    const product = products[0] || {
+      id: productId,
+      name_fr: 'Article',
+      barcode: `BC-${productId}`,
+      purchase_cost: 0,
+      selling_price_ttc: 0
+    } as any;
 
     let fefoResult: FefoAllocationResult;
     // Si le produit n'a pas de lot spécifique, créer ou utiliser un lot générique

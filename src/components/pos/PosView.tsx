@@ -335,10 +335,8 @@ export const PosView: React.FC = () => {
   // Annulation commande
   const handleCancelOrder = () => {
     if (cart.length === 0) return;
-    if (window.confirm("Voulez-vous vraiment annuler la commande en cours ?")) {
-      setCart([]);
-      showToast("Commande annulée", "info");
-    }
+    setCart([]);
+    showToast("تم إلغاء وتفريغ السلة بنجاح", "info");
   };
 
   // Calculs totaux
@@ -388,13 +386,24 @@ export const PosView: React.FC = () => {
         cashierId,
         cashierName,
         sessionId: activeSession?.id,
-        items: cart.map(item => ({
-          productId: item.productId,
-          name: item.name,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discountAmount: 0
-        })),
+        items: [
+          ...cart.map(item => ({
+            productId: item.productId,
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            discountAmount: 0,
+            supplements: item.supplements,
+            notes: item.notes
+          })),
+          ...(activeDeliveryFee > 0 ? [{
+            productId: 'prod-delivery-fee',
+            name: 'Frais de Livraison',
+            quantity: 1,
+            unitPrice: activeDeliveryFee,
+            discountAmount: 0
+          }] : [])
+        ],
         payments: [
           {
             method: paymentMethod,
@@ -472,15 +481,55 @@ export const PosView: React.FC = () => {
         rcNumber: currentStore?.rc_number || "",
         nifNumber: currentStore?.nif_number || "",
         aiNumber: currentStore?.art_imposition || "",
-        items: cart.map(i => ({
-          name: i.name,
-          variant: i.variant,
-          quantity: i.quantity,
-          unitPrice: i.unitPrice,
-          total: i.quantity * i.unitPrice,
-          supplements: i.supplements,
-          multiParts: i.multiParts ? { type: '2_PARTS', parts: i.multiParts } : undefined,
-          notes: i.notes
+        items: await Promise.all(cart.map(async i => {
+          let baseIngredients: string[] = [];
+          if (ingredientStatusMap[i.productId]?.recipeItems?.length) {
+            baseIngredients = ingredientStatusMap[i.productId].recipeItems
+              .map(r => r.ingredient_name_fr)
+              .filter(Boolean);
+          } else if (i.productId) {
+            try {
+              const details = await recipeService.getRecipeForProduct(i.productId);
+              baseIngredients = details.map(d => d.ingredient_name_fr).filter(Boolean);
+            } catch (e) {}
+          }
+
+          let partsWithIngredients: Array<{ name: string; price: number; ingredients?: string[] }> | undefined = undefined;
+          if (i.multiParts && i.multiParts.length > 0) {
+            partsWithIngredients = await Promise.all(i.multiParts.map(async p => {
+              let partIngredients: string[] = [];
+              if (p.id && ingredientStatusMap[p.id]?.recipeItems?.length) {
+                partIngredients = ingredientStatusMap[p.id].recipeItems
+                  .map(r => r.ingredient_name_fr)
+                  .filter(Boolean);
+              } else if (p.id) {
+                try {
+                  const details = await recipeService.getRecipeForProduct(p.id);
+                  partIngredients = details.map(d => d.ingredient_name_fr).filter(Boolean);
+                } catch (e) {}
+              }
+              return {
+                name: p.name,
+                price: p.price,
+                ingredients: partIngredients
+              };
+            }));
+          }
+
+          return {
+            name: i.name,
+            variant: i.variant,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            total: i.quantity * i.unitPrice,
+            ingredients: baseIngredients,
+            supplements: i.supplements,
+            multiParts: partsWithIngredients ? {
+              type: (partsWithIngredients.length === 4 ? '4_PARTS' : '2_PARTS') as '2_PARTS' | '4_PARTS',
+              parts: partsWithIngredients
+            } : undefined,
+            notes: i.notes
+          };
         })),
         totalTTC: totalAmount,
         paymentMethod: paymentMethod === "CASH" ? "CASH" : "CARD",
@@ -490,9 +539,19 @@ export const PosView: React.FC = () => {
         currency: "DZD"
       };
 
+      printerService.archiveReceipt(receiptData);
       setLastReceipt(receiptData);
       setShowPayModal(false);
       setCart([]);
+      
+      // Recharger immédiatement l'état des portions restantes pour mettre à jour les cartes
+      try {
+        const updatedStatus = await recipeService.getAllProductsIngredientStatus();
+        setIngredientStatusMap(updatedStatus);
+      } catch (reloadErr) {
+        console.warn("Could not reload ingredient status", reloadErr);
+      }
+
       // Impression directe et automatique sans aucune boîte de dialogue ni modal intrusif
       try {
         await printerService.printBothTickets(receiptData, false);
@@ -710,8 +769,29 @@ export const PosView: React.FC = () => {
                       </span>
                     )}
 
-                    {/* Badge Ingrédients Manquants */}
-                    {isOutOfIngredients && (
+                    {/* Badge Disponibilité & Nombre de Pizzas Réalisables selon Ingrédients */}
+                    {isPizza && ingStatus?.hasRecipe && (
+                      <span className={`absolute -top-2 left-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs border ${
+                        ingStatus.maxPortions > 10
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                          : ingStatus.maxPortions > 0
+                          ? "bg-amber-50 text-amber-800 border-amber-300"
+                          : "bg-rose-50 text-rose-700 border-rose-300"
+                      }`}>
+                        {ingStatus.maxPortions > 0 ? (
+                          <>
+                            <span>🍕</span>
+                            <span>{ingStatus.maxPortions} متوفرة</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="w-3 h-3 text-rose-600 animate-pulse" />
+                            <span>نفاد المقادير (0)</span>
+                          </>
+                        )}
+                      </span>
+                    )}
+                    {isOutOfIngredients && !ingStatus?.hasRecipe && (
                       <span className="absolute -top-2 left-2 bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
                         <AlertTriangle className="w-3 h-3 text-amber-600 animate-pulse" />
                         <span>نقص مقادير</span>
@@ -772,7 +852,11 @@ export const PosView: React.FC = () => {
 
                     {/* Ligne inférieure simple */}
                     <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-stone-600 font-semibold">
-                      <span>{isOutOfIngredients ? "طلب المقدار" : isPizza ? "Choisir" : "Ajouter"}</span>
+                      <span className="truncate max-w-[120px]">
+                        {isPizza && ingStatus?.hasRecipe
+                          ? (ingStatus.maxPortions > 0 ? `${ingStatus.maxPortions} متوفرة` : "نفاد المقادير")
+                          : (isPizza ? "Choisir" : "Ajouter")}
+                      </span>
                       <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
                         isOutOfIngredients
                           ? "bg-amber-200 text-amber-900 group-hover:bg-amber-300"

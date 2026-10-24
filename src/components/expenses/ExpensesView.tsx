@@ -85,16 +85,22 @@ export const ExpensesView: React.FC = () => {
 
   const getCategoryLabel = (cat: ExpenseCategory) => {
     switch (cat) {
-      case 'RENT': return 'Loyer Magasin';
-      case 'ELECTRICITY': return 'Électricité (Sonelgaz)';
-      case 'WATER': return 'Eau (Seaal)';
-      case 'INTERNET': return 'Internet / Téléphone (Algérie Télécom)';
-      case 'PACKAGING': return 'Sacs & Emballages';
-      case 'TRANSPORT': return 'Transport & Livraison';
-      case 'MAINTENANCE': return 'Entretien & Réparations';
-      case 'CLEANING': return 'Nettoyage & Hygiène';
-      case 'SUPPLIES': return 'Fournitures de Caisse';
-      default: return 'Autre Dépense';
+      case 'RENT': return '🏠 Loyer Magasin';
+      case 'ELECTRICITY': return '⚡ Électricité (Sonelgaz)';
+      case 'WATER': return '💧 Eau (Seaal)';
+      case 'INTERNET': return '📡 Internet / Téléphone';
+      case 'PACKAGING': return '📦 Sacs & Emballages';
+      case 'PIZZA_BOXES': return '🍕 Boîtes à Pizza';
+      case 'NAPKINS': return '🧻 Serviettes & Papier';
+      case 'TRANSPORT': return '🚗 Transport & Livraison';
+      case 'MAINTENANCE': return '🔧 Entretien & Réparations';
+      case 'CLEANING': return '🧹 Nettoyage & Hygiène';
+      case 'SUPPLIES': return '🛒 Fournitures de Caisse';
+      case 'INGREDIENTS_PURCHASE': return '🥗 Achat Ingrédients';
+      case 'SUPPLEMENTS_PURCHASE': return '🧀 Achat Suppléments/Extras';
+      case 'SALARY': return '👷 Salaires du Personnel';
+      case 'CHEF_SALARY': return '👨‍🍳 Salaire Cuisinier/Chefs';
+      default: return '📋 Autre Dépense';
     }
   };
 
@@ -200,15 +206,30 @@ export const ExpensesView: React.FC = () => {
                     onChange={e => setFormData({ ...formData, category: e.target.value as any })}
                     className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
                   >
-                    <option value="ELECTRICITY">Électricité (Sonelgaz)</option>
-                    <option value="WATER">Eau (Seaal)</option>
-                    <option value="INTERNET">Internet / Téléphone</option>
-                    <option value="RENT">Loyer Local</option>
-                    <option value="PACKAGING">Sacs & Emballage</option>
-                    <option value="TRANSPORT">Frais de Transport</option>
-                    <option value="MAINTENANCE">Maintenance & Réparations</option>
-                    <option value="SUPPLIES">Fournitures Diverses</option>
-                    <option value="OTHER">Autre Dépense</option>
+                    <optgroup label="🍕 Pizzeria">
+                      <option value="PIZZA_BOXES">🍕 Boîtes à Pizza</option>
+                      <option value="NAPKINS">🧻 Serviettes & Papier</option>
+                      <option value="INGREDIENTS_PURCHASE">🥗 Achat Ingrédients</option>
+                      <option value="SUPPLEMENTS_PURCHASE">🧀 Achat Suppléments/Extras</option>
+                      <option value="PACKAGING">📦 Sacs & Emballages</option>
+                    </optgroup>
+                    <optgroup label="👷 Personnel">
+                      <option value="CHEF_SALARY">👨‍🍳 Salaire Cuisinier/Chefs</option>
+                      <option value="SALARY">👷 Salaires du Personnel</option>
+                    </optgroup>
+                    <optgroup label="🏢 Charges Fixes">
+                      <option value="ELECTRICITY">⚡ Électricité (Sonelgaz)</option>
+                      <option value="WATER">💧 Eau (Seaal)</option>
+                      <option value="INTERNET">📡 Internet / Téléphone</option>
+                      <option value="RENT">🏠 Loyer Local</option>
+                    </optgroup>
+                    <optgroup label="🔧 Exploitation">
+                      <option value="TRANSPORT">🚗 Frais de Transport</option>
+                      <option value="MAINTENANCE">🔧 Maintenance & Réparations</option>
+                      <option value="CLEANING">🧹 Nettoyage & Hygiène</option>
+                      <option value="SUPPLIES">🛒 Fournitures Diverses</option>
+                      <option value="OTHER">📋 Autre Dépense</option>
+                    </optgroup>
                   </select>
                 </div>
                 <div>

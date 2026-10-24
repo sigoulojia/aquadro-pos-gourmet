@@ -130,7 +130,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ currentView, onNavigate }) =
     { id: "products", label: "Pizzas & Boissons", icon: <Pizza className="w-5 h-5" />, shortcut: "F3", cashierAllowed: false },
     { id: "inventory", label: "Ingrédients & Recettes", icon: <CookingPot className="w-5 h-5" />, shortcut: "F4", cashierAllowed: false },
     { id: "customers", label: t("nav.customers", "Clients & Fidélité"), icon: <Users className="w-5 h-5" />, cashierAllowed: false },
-    { id: "credits", label: "Gestion des Crédits", icon: <CreditCard className="w-5 h-5" />, shortcut: "F7", cashierAllowed: false },
+    { id: "credits", label: "Règlements & Paiements", icon: <CreditCard className="w-5 h-5" />, shortcut: "F7", cashierAllowed: false },
     { id: "caisse", label: t("nav.caisse", "Session de Caisse"), icon: <Vault className="w-5 h-5" />, shortcut: "F8", cashierAllowed: false },
     { id: "expenses", label: t("nav.expenses", "Dépenses & Charges"), icon: <Wallet className="w-5 h-5" />, shortcut: "F9", cashierAllowed: false },
     { id: "journal", label: "Journal d Activité", icon: <History className="w-5 h-5" />, shortcut: "F10", cashierAllowed: false },
@@ -256,7 +256,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ currentView, onNavigate }) =
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] text-stone-400 font-mono">
           <span>Aquadro POS</span>
-          <span className="font-semibold text-stone-500">v1.0.2</span>
+          <span className="font-semibold text-stone-500">v4.0.0</span>
         </div>
       </div>
     </aside>

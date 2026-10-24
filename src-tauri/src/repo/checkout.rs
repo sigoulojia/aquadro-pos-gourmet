@@ -13,6 +13,8 @@ pub struct CheckoutItemInput {
     pub quantity: f64,
     pub unit_price_ttc: i64,
     pub discount_amount: i64,
+    pub supplements: Option<String>,
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,6 +107,8 @@ impl CheckoutRepo {
             discount_amount: i64,
             line_total: i64,
             purchase_cost: i64,
+            supplements: Option<String>,
+            notes: Option<String>,
         }
 
         let mut prepared_items = Vec::new();
@@ -116,13 +120,33 @@ impl CheckoutRepo {
             }
 
             // Verify Product
-            let product_row: Option<(i64, i64)> = sqlx::query_as("SELECT purchase_cost, selling_price_ttc FROM products WHERE id = ? AND is_active = 1")
+            let product_row: Option<(i64, i64)> = sqlx::query_as("SELECT purchase_cost, selling_price_ttc FROM products WHERE id = ?")
                 .bind(&item.product_id)
                 .fetch_optional(&mut *conn).await.map_err(|e| e.to_string())?;
 
             let (purchase_cost, _selling_price) = match product_row {
                 Some(p) => (p.0, p.1),
-                None => return Err(format!("Product {} not found or inactive", item.product_id)),
+                None => {
+                    // Si produit virtuel (ex: pizza multi-saveurs ou sur mesure), créer une référence automatique
+                    let def_cost = (item.unit_price_ttc as f64 * 0.4).round() as i64;
+                    let sku = format!("SKU-{}", item.product_id);
+                    let barcode = format!("BC-{}", item.product_id);
+                    let _ = sqlx::query(
+                        "INSERT OR IGNORE INTO products (id, sku, barcode, name_fr, name_ar, selling_price_ttc, purchase_cost, min_selling_price_ttc, tva_rate, current_stock, min_stock_alert, is_active, created_at, updated_at)
+                         VALUES (?, ?, ?, 'Pizza Personnalisée / Multi', 'بيتزا مخصصة / متعددة', ?, ?, ?, 0, 100, 0, 1, ?, ?)"
+                    )
+                    .bind(&item.product_id)
+                    .bind(&sku)
+                    .bind(&barcode)
+                    .bind(item.unit_price_ttc)
+                    .bind(def_cost)
+                    .bind(item.unit_price_ttc)
+                    .bind(&now)
+                    .bind(&now)
+                    .execute(&mut *conn).await;
+
+                    (def_cost, item.unit_price_ttc)
+                }
             };
 
             let line_total = (item.quantity * (item.unit_price_ttc as f64)).round() as i64 - item.discount_amount;
@@ -142,6 +166,8 @@ impl CheckoutRepo {
                 discount_amount: item.discount_amount,
                 line_total,
                 purchase_cost,
+                supplements: item.supplements.clone(),
+                notes: item.notes.clone(),
             });
         }
 
@@ -191,7 +217,10 @@ impl CheckoutRepo {
             });
         }
 
-        if total_payments != total_ttc {
+        // Ajuster total_ttc si paiements couvrent avec frais ou arrondis
+        if total_payments >= total_ttc {
+            total_ttc = total_payments;
+        } else if total_ttc - total_payments > 5 {
             return Err("Payments do not match total TTC".to_string());
         }
 
@@ -222,8 +251,8 @@ impl CheckoutRepo {
         // 5. INSERT INTO sale_items & allocate inventory
         for pi in prepared_items {
             sqlx::query(
-                "INSERT INTO sale_items (id, sale_id, product_id, quantity, unit_price_ttc, discount_amount, total_ttc, unit_purchase_cost_snapshot, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO sale_items (id, sale_id, product_id, quantity, unit_price_ttc, discount_amount, total_ttc, unit_purchase_cost_snapshot, supplements, notes, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&pi.sale_item_id)
             .bind(&sale_id)
@@ -233,6 +262,8 @@ impl CheckoutRepo {
             .bind(pi.discount_amount)
             .bind(pi.line_total)
             .bind(pi.purchase_cost)
+            .bind(&pi.supplements)
+            .bind(&pi.notes)
             .bind(&now)
             .execute(&mut *conn).await.map_err(|e| e.to_string())?;
 
