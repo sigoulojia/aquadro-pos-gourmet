@@ -3,6 +3,7 @@
 
 import { CurrencyUtil } from '../core/currency/currency';
 import { ZReportSummary } from './caisse.service';
+import { drawerLogService } from './drawerLog.service';
 
 export interface ReceiptPrintData {
   storeName?: string;
@@ -404,11 +405,17 @@ export class PrinterService {
           </div>
           ${data.items.map(item => {
             const suppNames = item.supplements && item.supplements.length > 0
-              ? item.supplements.map(s => typeof s === 'string' ? s : `${s.name_fr} (+${CurrencyUtil.formatDZD(s.price)})`).join(', ')
+              ? item.supplements.map(s => {
+                  const q = (s as any).quantity || 1;
+                  const qStr = q > 1 ? `${q}x ` : '';
+                  const name = typeof s === 'string' ? s : s.name_fr;
+                  const priceStr = typeof s === 'string' ? '' : ` (+${CurrencyUtil.formatDZD(s.price * q)})`;
+                  return `${qStr}${name}${priceStr}`;
+                }).join(', ')
               : '';
             const unitPriceStr = item.quantity > 1 ? `(${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})` : '';
             return `
-              <div style="margin-bottom: 6px; font-size: 10.5px; word-break: break-word;">
+              <div style="margin-bottom: 5px; font-size: 10px; word-break: break-word;">
                 <div style="display: flex; justify-content: space-between; align-items: baseline;">
                   <div style="font-weight: bold; padding-right: 6px;">
                     ${item.quantity}x ${item.name}${item.variant ? ` (${item.variant})` : ''}
@@ -417,14 +424,14 @@ export class PrinterService {
                     ${CurrencyUtil.formatDZD(item.total)}
                   </div>
                 </div>
-                ${unitPriceStr ? `<div style="font-size: 9.5px; color: #333; margin-left: 18px;">${unitPriceStr}</div>` : ''}
+                ${unitPriceStr ? `<div style="font-size: 9px; color: #444; margin-left: 14px;">${unitPriceStr}</div>` : ''}
                 ${item.multiParts && item.multiParts.parts ? `
-                  <div style="font-size: 9.5px; color: #333; margin-left: 18px; margin-top: 1px;">
-                    ${item.multiParts.parts.map((p, idx) => `<div>• Partie ${idx + 1} : ${p.name}</div>`).join('')}
+                  <div style="font-size: 9px; color: #444; margin-left: 14px; margin-top: 1px;">
+                    ${item.multiParts.parts.map((p, idx) => `<div>• Moitié ${idx + 1} : ${p.name}</div>`).join('')}
                   </div>
                 ` : ''}
-                ${suppNames ? `<div style="font-size: 9.5px; color: #222; margin-left: 18px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
-                ${item.notes ? `<div style="font-size: 9.5px; font-style: italic; color: #444; margin-left: 18px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
+                ${suppNames ? `<div style="font-size: 9px; color: #222; margin-left: 14px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
+                ${item.notes ? `<div style="font-size: 9px; font-style: italic; color: #444; margin-left: 14px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
               </div>
             `;
           }).join('')}
@@ -455,13 +462,13 @@ export class PrinterService {
         ` : ''}
 
         <!-- TOTAL A PAYER -->
-        <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 6px 0; margin-bottom: 8px; display: flex; justify-content: space-between; font-size: 15px; font-weight: 900;">
+        <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin-bottom: 6px; display: flex; justify-content: space-between; font-size: 14px; font-weight: 900;">
           <span>TOTAL À PAYER :</span>
           <span>${CurrencyUtil.formatDZD(totalTTC)}</span>
         </div>
 
         <!-- PAIEMENT -->
-        <div style="font-size: 10px; line-height: 1.4; margin-bottom: 10px;">
+        <div style="font-size: 9.5px; line-height: 1.35; margin-bottom: 6px;">
           <div style="display: flex; justify-content: space-between;">
             <span>Mode de règlement :</span>
             <strong>${paymentLabel}</strong>
@@ -480,10 +487,10 @@ export class PrinterService {
           ` : ''}
         </div>
 
-        <!-- PIED DE TICKET AMICAL -->
-        <div style="text-align: center; border-top: 1px dashed #000; padding-top: 8px; font-size: 11px;">
+        <!-- PIED DE TICKET SOBRE -->
+        <div style="text-align: center; border-top: 1px dashed #000; padding-top: 5px; font-size: 10px;">
           <div style="font-weight: bold;">Merci pour votre visite !</div>
-          <div style="font-size: 10px; color: #444; margin-top: 2px;">À bientôt chez AQUADRO</div>
+          <div style="font-size: 7.5px; color: #888; margin-top: 3px; letter-spacing: 0.5px; text-transform: uppercase;">Aquadro POS</div>
         </div>
       </div>
     `;
@@ -643,7 +650,11 @@ export class PrinterService {
   }
 
   // Envoyer la commande d'éjection du tiroir-caisse RJ11
-  public async kickCashDrawer(): Promise<boolean> {
+  public async kickCashDrawer(reason: string = 'Ouverture manuelle', openedBy?: string, role?: string): Promise<boolean> {
+    try {
+      await drawerLogService.logOpening(reason, openedBy, role);
+    } catch (e) {}
+
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -832,24 +843,23 @@ export class PrinterService {
 
     out.push(separator);
 
-    // Articles opérationnels pour le Chef (Noms, Ingrédients de base et Suppléments à ajouter)
+    // Articles opérationnels pour le Chef (Noms, Moitiés et Suppléments à ajouter)
     for (const item of data.items) {
       out.push(`[ ${item.quantity}x ]  ${(item.name || '').toUpperCase()}${item.variant ? ` (${item.variant})` : ''}`);
 
-      if (item.ingredients && item.ingredients.length > 0) {
-        out.push(`    • Ingrédients : ${item.ingredients.join(', ')}`);
-      }
-
       if (item.multiParts && item.multiParts.parts) {
         item.multiParts.parts.forEach((p, idx) => {
-          const partIng = p.ingredients && p.ingredients.length > 0 ? ` (${p.ingredients.join(', ')})` : '';
-          out.push(`    • Partie ${idx + 1} : ${p.name}${partIng}`);
+          out.push(`    • Moitié ${idx + 1} : ${p.name}`);
         });
       }
 
       if (item.supplements && item.supplements.length > 0) {
         const supps = item.supplements
-          .map(s => (typeof s === 'string' ? s : s.name_fr))
+          .map(s => {
+            const q = (s as any).quantity || 1;
+            const qStr = q > 1 ? `${q}x ` : '';
+            return `${qStr}${typeof s === 'string' ? s : s.name_fr}`;
+          })
           .join(', ');
         out.push(`    + AJOUTER SUPPLÉMENT : ${supps}`);
       }
@@ -864,22 +874,22 @@ export class PrinterService {
     return out.join('\n');
   }
 
-  // Rendu HTML du Bon de Cuisine pour le Chef (Pizzaiolo)
+  // Rendu HTML du Bon de Cuisine pour le Chef (Pizzaiolo) — Simple et condensé sans liste d'ingrédients
   public generateKitchenTicketHtml(data: ReceiptPrintData): string {
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
     return `
-      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.35; width: 100%; box-sizing: border-box; font-size: 11px;">
+      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.3; width: 100%; box-sizing: border-box; font-size: 11px;">
         <!-- EN-TETE BON DE CUISINE -->
-        <div style="text-align: center; border: 1.5px solid #000; padding: 6px 4px; margin-bottom: 8px; border-radius: 4px;">
-          <div style="font-size: 11px; font-weight: 800; letter-spacing: 1px;">BON DE CUISINE • PIZZAIOLO</div>
-          <div style="font-size: 26px; font-weight: 900; line-height: 1.1; margin: 2px 0;">COMMANDE N° ${orderNumClean}</div>
-          <div style="font-size: 13px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${orderTypeLabel}</div>
+        <div style="text-align: center; border: 1.5px solid #000; padding: 5px 3px; margin-bottom: 6px; border-radius: 4px;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1px;">BON DE CUISINE • PIZZAIOLO</div>
+          <div style="font-size: 24px; font-weight: 900; line-height: 1.1; margin: 2px 0;">COMMANDE N° ${orderNumClean}</div>
+          <div style="font-size: 12px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${orderTypeLabel}</div>
         </div>
 
         <!-- DETAILS DATE & SERVEUR -->
-        <div style="font-size: 10px; margin-bottom: 8px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
+        <div style="font-size: 9.5px; margin-bottom: 6px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
           <div style="display: flex; justify-content: space-between;">
             <span>Heure : <strong>${data.dateTime}</strong></span>
             ${data.cashierName ? `<span>Serveur : <strong>${data.cashierName}</strong></span>` : ''}
@@ -892,38 +902,31 @@ export class PrinterService {
         </div>
 
         <!-- LISTE DES ARTICLES POUR LE CHEF -->
-        <div style="margin-bottom: 8px;">
+        <div style="margin-bottom: 6px;">
           ${data.items.map(item => {
             const suppNames = item.supplements && item.supplements.length > 0
-              ? item.supplements.map(s => typeof s === 'string' ? s : s.name_fr).join(', ')
-              : '';
-            const ingredientsStr = item.ingredients && item.ingredients.length > 0
-              ? item.ingredients.join(', ')
+              ? item.supplements.map(s => {
+                  const q = (s as any).quantity || 1;
+                  const qStr = q > 1 ? `${q}x ` : '';
+                  return `${qStr}${typeof s === 'string' ? s : s.name_fr}`;
+                }).join(', ')
               : '';
             return `
-              <div style="border-bottom: 1.5px solid #000; padding: 7px 0; word-break: break-word;">
+              <div style="border-bottom: 1.5px solid #000; padding: 5px 0; word-break: break-word;">
                 <!-- NOM ET QUANTITE -->
                 <div style="display: flex; align-items: baseline; gap: 8px;">
-                  <span style="font-size: 17px; font-weight: 900; min-width: 40px;">${item.quantity}x</span>
-                  <span style="font-size: 14px; font-weight: 900; text-transform: uppercase;">
+                  <span style="font-size: 16px; font-weight: 900; min-width: 36px;">${item.quantity}x</span>
+                  <span style="font-size: 13.5px; font-weight: 900; text-transform: uppercase;">
                     ${(item.name || '').toUpperCase()}${item.variant ? ` <span style="font-size: 11px; font-weight: normal;">(${item.variant})</span>` : ''}
                   </span>
                 </div>
 
-                <!-- INGREDIENTS DE BASE DE LA RECETTE -->
-                ${ingredientsStr ? `
-                  <div style="margin-left: 48px; font-size: 10px; color: #111; margin-top: 2px;">
-                    • Ingrédients : <strong>${ingredientsStr}</strong>
-                  </div>
-                ` : ''}
-
-                <!-- SI MULTI-PARTS (MOITIE-MOITIE / 4 SAISONS) -->
+                <!-- SI MOITIE-MOITIE -->
                 ${item.multiParts && item.multiParts.parts ? `
-                  <div style="margin-left: 48px; font-size: 10px; color: #111; margin-top: 2px;">
+                  <div style="margin-left: 44px; font-size: 10px; color: #111; margin-top: 2px;">
                     ${item.multiParts.parts.map((p, idx) => `
                       <div style="margin-top: 1px;">
-                        • Partie ${idx + 1} : <strong>${p.name}</strong>
-                        ${p.ingredients && p.ingredients.length > 0 ? `<span style="color: #333;"> (${p.ingredients.join(', ')})</span>` : ''}
+                        • Moitié ${idx + 1} : <strong>${p.name}</strong>
                       </div>
                     `).join('')}
                   </div>
@@ -931,15 +934,15 @@ export class PrinterService {
 
                 <!-- SUPPLEMENTS QUE LE CHEF DOIT AJOUTER -->
                 ${suppNames ? `
-                  <div style="margin-left: 48px; font-size: 11px; font-weight: 900; color: #000; margin-top: 3px; border: 1px dashed #000; padding: 2px 5px; display: inline-block;">
-                    + AJOUTER SUPPLÉMENT : ${suppNames}
+                  <div style="margin-left: 44px; font-size: 10.5px; font-weight: 900; color: #000; margin-top: 2px; border: 1px dashed #000; padding: 1px 4px; display: inline-block;">
+                    + AJOUTER : ${suppNames}
                   </div>
                 ` : ''}
 
                 <!-- NOTES DE CUISSON -->
                 ${item.notes ? `
-                  <div style="margin-left: 48px; font-size: 10.5px; font-weight: bold; margin-top: 2px;">
-                    * NOTE / CUISSON : ${item.notes}
+                  <div style="margin-left: 44px; font-size: 9.5px; font-weight: bold; margin-top: 2px;">
+                    * NOTE : ${item.notes}
                   </div>
                 ` : ''}
               </div>

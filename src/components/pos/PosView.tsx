@@ -192,13 +192,8 @@ export const PosView: React.FC = () => {
   const handleProductCardClick = (product: Product) => {
     const lowerName = (product.name_fr || "").toLowerCase();
     const arName = product.name_ar || "";
-    if (lowerName.includes("moitié") || lowerName.includes("moitie") || arName.includes("نصفين")) {
+    if (lowerName.includes("moitié") || lowerName.includes("moitie") || arName.includes("نصفين") || lowerName.includes("saison") || arName.includes("فصلين")) {
       setMultiPartInitialMode("2_PARTS");
-      setShowMultiPartModal(true);
-      return;
-    }
-    if (lowerName.includes("4 saisons") || lowerName.includes("quatre saisons") || arName.includes("فصول")) {
-      setMultiPartInitialMode("4_PARTS");
       setShowMultiPartModal(true);
       return;
     }
@@ -288,7 +283,7 @@ export const PosView: React.FC = () => {
     notes: string;
     totalUnitPrice: number;
     multiParts: {
-      type: "2_PARTS" | "4_PARTS";
+      type: "2_PARTS";
       parts: Array<{ name: string; price: number; id: string }>;
     };
   }) => {
@@ -415,14 +410,14 @@ export const PosView: React.FC = () => {
         notes: orderTypeLabel
       });
 
-      // Déduction automatique du stock des suppléments vendus
+      // Déduction automatique du stock des suppléments vendus (en tenant compte des portions 2x, 3x)
       const supplementsToDeduct: Array<{ supplementId: string; quantity: number }> = [];
       for (const item of cart) {
         if (item.supplements && item.supplements.length > 0) {
           for (const s of item.supplements) {
             supplementsToDeduct.push({
               supplementId: s.id,
-              quantity: item.quantity
+              quantity: ((s as any).quantity || 1) * item.quantity
             });
           }
         }
@@ -525,7 +520,7 @@ export const PosView: React.FC = () => {
             ingredients: baseIngredients,
             supplements: i.supplements,
             multiParts: partsWithIngredients ? {
-              type: (partsWithIngredients.length === 4 ? '4_PARTS' : '2_PARTS') as '2_PARTS' | '4_PARTS',
+              type: '2_PARTS' as '2_PARTS',
               parts: partsWithIngredients
             } : undefined,
             notes: i.notes
@@ -550,6 +545,15 @@ export const PosView: React.FC = () => {
         setIngredientStatusMap(updatedStatus);
       } catch (reloadErr) {
         console.warn("Could not reload ingredient status", reloadErr);
+      }
+
+      // Ouverture automatique du tiroir-caisse pour les règlements en espèces
+      if (paymentMethod === "CASH") {
+        try {
+          await printerService.kickCashDrawer(`Encaissement Espèces Commande #${validReceiptNum}`, user?.name || "Caissier", user?.role);
+        } catch (drawerErr) {
+          console.warn("Impulsion tiroir-caisse:", drawerErr);
+        }
       }
 
       // Impression directe et automatique sans aucune boîte de dialogue ni modal intrusif
@@ -606,34 +610,23 @@ export const PosView: React.FC = () => {
                 setShowMultiPartModal(true);
               }}
               className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-700 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
-              title="Pizza 2 goûts (prix le plus élevé automatique)"
+              title="Pizza 2 goûts (Moitié - Moitié)"
             >
               <Layers className="w-3.5 h-3.5 text-[#E87524]" />
               <span>Moitié - Moitié</span>
             </button>
 
-            {/* Bouton Pizza 4 Saisons */}
-            <button
-              onClick={() => {
-                setMultiPartInitialMode("4_PARTS");
-                setShowMultiPartModal(true);
-              }}
-              className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-700 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
-              title="Pizza 4 quartiers (prix le plus élevé automatique)"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>4 Saisons</span>
-            </button>
-
-            {/* Bouton Gérer les Suppléments & Stock */}
-            <button
-              onClick={() => setShowSupplementsManager(true)}
-              className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-600 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
-              title="Gérer les suppléments, coûts et stock"
-            >
-              <Settings2 className="w-3.5 h-3.5" />
-              <span>Suppléments (Stock)</span>
-            </button>
+            {/* Bouton Gérer les Suppléments & Stock (Réservé au Propriétaire / Admin - Interdit au caissier) */}
+            {user?.role !== 'cashier' && (
+              <button
+                onClick={() => setShowSupplementsManager(true)}
+                className="px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 bg-stone-50 hover:bg-orange-50 text-stone-600 hover:text-[#E87524] border border-stone-200 transition-all cursor-pointer whitespace-nowrap"
+                title="Gérer les suppléments, coûts et stock"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                <span>Suppléments (Stock)</span>
+              </button>
+            )}
           </div>
 
           {/* Recherche rapide */}
@@ -705,41 +698,6 @@ export const PosView: React.FC = () => {
                       </div>
                     </div>
                   </div>
-
-                  {/* Carte Pizza 4 Saisons */}
-                  <div
-                    onClick={() => {
-                      setMultiPartInitialMode("4_PARTS");
-                      setShowMultiPartModal(true);
-                    }}
-                    className="bg-linear-to-br from-white to-[#FFF9F2] rounded-xl border-2 border-dashed border-amber-400 p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm hover:border-amber-500 active:scale-[0.99]"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-300 text-amber-600 flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                          <Sparkles className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <span className="bg-amber-50 text-amber-700 font-black text-[11px] px-2 py-0.5 rounded border border-amber-200 font-mono">
-                          حسب الأذواق
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-[#292522] text-xs leading-tight group-hover:text-amber-600 transition-colors">
-                        بيتزا 4 فصول (4 Saisons)
-                      </h3>
-                      <p className="text-[10px] text-stone-600 font-arabic line-clamp-1 mt-0.5" dir="rtl">
-                        4 أرباع بأربعة أذواق مختلفة من اختيارك
-                      </p>
-                      <span className="inline-block mt-1 text-[10px] font-bold text-amber-700 bg-amber-100/70 px-1.5 py-0.5 rounded">
-                        4 أرباع • 4 Saveurs
-                      </span>
-                    </div>
-                    <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-amber-700 font-bold">
-                      <span>تركيب 4 فصول</span>
-                      <div className="w-5 h-5 rounded-md bg-amber-500 text-white flex items-center justify-center">
-                        <Plus className="w-3 h-3" />
-                      </div>
-                    </div>
-                  </div>
                 </>
               )}
               {filteredProducts.map(product => {
@@ -780,7 +738,7 @@ export const PosView: React.FC = () => {
                       }`}>
                         {ingStatus.maxPortions > 0 ? (
                           <>
-                            <span>🍕</span>
+                            <Pizza className="w-3 h-3 text-emerald-600 shrink-0 inline" />
                             <span>{ingStatus.maxPortions} متوفرة</span>
                           </>
                         ) : (
@@ -1062,7 +1020,11 @@ export const PosView: React.FC = () => {
                 {item.supplements && item.supplements.length > 0 && (
                   <div className="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1 flex-wrap">
                     <span className="font-bold">+ Extras :</span>
-                    <span>{item.supplements.map(s => s.name_fr || (s as any).name).join(", ")}</span>
+                    <span>
+                      {item.supplements
+                        .map(s => `${(s as any).quantity > 1 ? `${(s as any).quantity}x ` : ''}${s.name_fr || (s as any).name}`)
+                        .join(", ")}
+                    </span>
                   </div>
                 )}
 
@@ -1258,12 +1220,11 @@ export const PosView: React.FC = () => {
         />
       )}
 
-      {/* Modal Pizza Multi-Saveurs (Moitié-Moitié & 4 Saisons) */}
+      {/* Modal Pizza Moitié-Moitié (2 Saisons) */}
       {showMultiPartModal && (
         <MultiPartPizzaModal
           isOpen={true}
           availablePizzas={products}
-          initialMode={multiPartInitialMode}
           onClose={() => setShowMultiPartModal(false)}
           onAddToCart={handleAddMultiPartPizza}
         />

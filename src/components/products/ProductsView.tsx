@@ -115,31 +115,18 @@ export const ProductsView: React.FC = () => {
     setShowAddModal(true);
   };
 
-  const handleQuickAddMultiPartPizza = (mode: '2_PARTS' | '4_PARTS') => {
+  const handleQuickAddMultiPartPizza = () => {
     setEditingProduct(null);
-    if (mode === '2_PARTS') {
-      setPriceInput("800");
-      setFormData({
-        name_fr: "Pizza Moitié - Moitié",
-        name_ar: "بيتزا نصفين",
-        category_id: "cat-pizza",
-        variant: "2 saveurs au choix",
-        selling_price_ttc: 800,
-        image_url: "",
-        is_active: 1
-      });
-    } else {
-      setPriceInput("900");
-      setFormData({
-        name_fr: "Pizza 4 Saisons",
-        name_ar: "بيتزا 4 فصول",
-        category_id: "cat-pizza",
-        variant: "4 saveurs au choix",
-        selling_price_ttc: 900,
-        image_url: "",
-        is_active: 1
-      });
-    }
+    setPriceInput("800");
+    setFormData({
+      name_fr: "Pizza Moitié - Moitié",
+      name_ar: "بيتزا نصفين",
+      category_id: "cat-pizza",
+      variant: "2 saveurs au choix",
+      selling_price_ttc: 800,
+      image_url: "",
+      is_active: 1
+    });
     setShowAddModal(true);
   };
 
@@ -308,22 +295,12 @@ export const ProductsView: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Raccourci Ajout Pizza Moitié-Moitié */}
           <button
-            onClick={() => handleQuickAddMultiPartPizza('2_PARTS')}
+            onClick={handleQuickAddMultiPartPizza}
             className="px-3.5 py-2.5 rounded-xl bg-[#FFF8EF] hover:bg-[#FFF3EB] border border-[#E87524]/40 text-[#E87524] font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
             title="Ajouter une pizza Moitié-Moitié à la carte"
           >
             <Plus className="w-3.5 h-3.5 text-[#E87524]" />
             <span>+ بيتزا نصفين (Moitié)</span>
-          </button>
-
-          {/* Raccourci Ajout Pizza 4 Saisons */}
-          <button
-            onClick={() => handleQuickAddMultiPartPizza('4_PARTS')}
-            className="px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100/70 border border-amber-300 text-amber-800 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
-            title="Ajouter une pizza 4 Saisons à la carte"
-          >
-            <Plus className="w-3.5 h-3.5 text-amber-600" />
-            <span>+ بيتزا 4 فصول (4 Saisons)</span>
           </button>
 
 

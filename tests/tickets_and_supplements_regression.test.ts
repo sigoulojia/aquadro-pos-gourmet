@@ -188,9 +188,9 @@ describe('Aquadro POS — Supplement Workflow & Simplified Printed Tickets', () 
     expect(html).toContain('2 000');
     expect(html).toContain('100'); // Monnaie rendue
 
-    // Message de politesse
+    // Message de politesse & branding sobre Aquadro POS
     expect(html).toContain('Merci pour votre visite !');
-    expect(html).toContain('À bientôt');
+    expect(html).toContain('Aquadro POS');
 
     // Style épuré : fond blanc, pas de bande noire d'encre excessive
     expect(html).not.toContain('background: #222');
@@ -221,11 +221,10 @@ describe('Aquadro POS — Supplement Workflow & Simplified Printed Tickets', () 
     expect(html).toContain('2x');
     expect(html).toContain('PIZZA REINE');
 
-    // MENTIONS EXPLICITES DES INGREDIENTS DE LA RECETTE ET DES SUPPLEMENTS A AJOUTER
-    expect(html).toContain('• Ingrédients :');
-    expect(html).toContain('Sauce Tomate, Mozzarella, Jambon, Champignons');
-    expect(html).toContain('+ AJOUTER SUPPLÉMENT : Fromage de Chèvre, Champignons');
-    expect(html).toContain('* NOTE / CUISSON : Bien cuite');
+    // Raccourcissement du bon de cuisine : Pas d'ingrédients de base, suppléments mis en avant
+    expect(html).not.toContain('• Ingrédients :');
+    expect(html).toContain('+ AJOUTER : Fromage de Chèvre, Champignons');
+    expect(html).toContain('* NOTE : Bien cuite');
     expect(html).toContain('COCA COLA 33CL');
 
     // INTERDICTIONS STRICTES DANS LE BON CUISINE :
@@ -241,7 +240,7 @@ describe('Aquadro POS — Supplement Workflow & Simplified Printed Tickets', () 
     expect(html).not.toContain('background: #222');
   });
 
-  it('J. Kitchen Ticket Text (ESC/POS) shows operational items with base recipe and supplements clearly', () => {
+  it('J. Kitchen Ticket Text (ESC/POS) shows operational items with clean supplements and notes', () => {
     const text = printerService.generateKitchenTicketText(mockReceiptData);
 
     expect(text).toContain('BON DE CUISINE');
@@ -249,7 +248,7 @@ describe('Aquadro POS — Supplement Workflow & Simplified Printed Tickets', () 
     expect(text).toContain('SUR PLACE');
     expect(text).not.toContain('Table');
     expect(text).toContain('[ 2x ]  PIZZA REINE');
-    expect(text).toContain('• Ingrédients : Sauce Tomate, Mozzarella, Jambon, Champignons');
+    expect(text).not.toContain('• Ingrédients :');
     expect(text).toContain('+ AJOUTER SUPPLÉMENT : Fromage de Chèvre, Champignons');
     expect(text).toContain('* NOTE / CUISSON : Bien cuite');
 
@@ -377,16 +376,14 @@ describe('Aquadro POS — Supplement Workflow & Simplified Printed Tickets', () 
 
     const kitchenHtml = printerService.generateKitchenTicketHtml(multiPartOrder);
     expect(kitchenHtml).toContain('PIZZA MOITIÉ-MOITIÉ');
-    expect(kitchenHtml).toContain('Partie 1 : <strong>Margherita</strong>');
-    expect(kitchenHtml).toContain('Sauce Tomate, Mozzarella');
-    expect(kitchenHtml).toContain('Partie 2 : <strong>4 Fromages</strong>');
-    expect(kitchenHtml).toContain('Gouda, Gorgonzola');
-    expect(kitchenHtml).toContain('+ AJOUTER SUPPLÉMENT : Extra Mozzarella');
-    expect(kitchenHtml).toContain('* NOTE / CUISSON : Pâte bien cuite');
+    expect(kitchenHtml).toContain('• Moitié 1 : <strong>Margherita</strong>');
+    expect(kitchenHtml).toContain('• Moitié 2 : <strong>4 Fromages</strong>');
+    expect(kitchenHtml).toContain('+ AJOUTER : Extra Mozzarella');
+    expect(kitchenHtml).toContain('* NOTE : Pâte bien cuite');
 
     const kitchenText = printerService.generateKitchenTicketText(multiPartOrder);
-    expect(kitchenText).toContain('• Partie 1 : Margherita (Sauce Tomate, Mozzarella)');
-    expect(kitchenText).toContain('• Partie 2 : 4 Fromages (Sauce Tomate, Mozzarella, Gouda, Gorgonzola)');
+    expect(kitchenText).toContain('• Moitié 1 : Margherita');
+    expect(kitchenText).toContain('• Moitié 2 : 4 Fromages');
     expect(kitchenText).toContain('+ AJOUTER SUPPLÉMENT : Extra Mozzarella');
   });
 

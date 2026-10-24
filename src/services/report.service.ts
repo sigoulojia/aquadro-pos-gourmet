@@ -82,7 +82,7 @@ export interface FinancialMetrics {
   };
   cashSessionSummary: CashSessionSummary;
 
-  // 6. Top Produits Pizzeria
+  // 6. Top Produits Pizzeria & Courbe des Ventes
   topProducts: {
     id: string;
     name: string;
@@ -90,6 +90,11 @@ export interface FinancialMetrics {
     quantity: number;
     revenue: number;
     unitPrice: number;
+  }[];
+  salesTimeline: {
+    timeLabel: string;
+    orderCount: number;
+    revenue: number;
   }[];
 
   // 7. Stocks & Dettes
@@ -427,10 +432,73 @@ export class ReportService {
       discrepancy
     };
 
-    // ── 5. Top 10 Produits Pizzeria ──────────────────────────────────────────
+    // ── 5. Produits Pizzeria (Triés par quantité pour classement & recherche) ─
     const topProducts = Array.from(productSalesMap.values())
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 10);
+      .sort((a, b) => b.quantity - a.quantity);
+
+    // ── 5.1 Chronologie et Courbe des Ventes Pizzeria ─────────────────────────
+    const salesTimeline: { timeLabel: string; orderCount: number; revenue: number }[] = [];
+    if (period === 'ALL') {
+      const dateMap = new Map<string, { orderCount: number; revenue: number }>();
+      for (const s of completedSales) {
+        const d = (s.created_at || '').slice(0, 10);
+        if (!d) continue;
+        const cur = dateMap.get(d) || { orderCount: 0, revenue: 0 };
+        cur.orderCount += 1;
+        cur.revenue = CurrencyUtil.add(cur.revenue, s.total_ttc || 0);
+        dateMap.set(d, cur);
+      }
+      const sortedDates = Array.from(dateMap.keys()).sort();
+      for (const d of sortedDates) {
+        const item = dateMap.get(d)!;
+        salesTimeline.push({
+          timeLabel: d.slice(5),
+          orderCount: item.orderCount,
+          revenue: item.revenue
+        });
+      }
+    } else if (period === 'MONTH') {
+      const dayMap = new Map<number, { orderCount: number; revenue: number }>();
+      for (const s of completedSales) {
+        const dt = new Date(s.created_at);
+        const day = dt.getDate();
+        const cur = dayMap.get(day) || { orderCount: 0, revenue: 0 };
+        cur.orderCount += 1;
+        cur.revenue = CurrencyUtil.add(cur.revenue, s.total_ttc || 0);
+        dayMap.set(day, cur);
+      }
+      for (let day = 1; day <= 31; day++) {
+        if (dayMap.has(day)) {
+          const item = dayMap.get(day)!;
+          salesTimeline.push({
+            timeLabel: `J-${day < 10 ? '0' + day : day}`,
+            orderCount: item.orderCount,
+            revenue: item.revenue
+          });
+        }
+      }
+    } else {
+      const hourMap = new Map<number, { orderCount: number; revenue: number }>();
+      for (const s of completedSales) {
+        const dt = new Date(s.created_at);
+        const h = dt.getHours();
+        const cur = hourMap.get(h) || { orderCount: 0, revenue: 0 };
+        cur.orderCount += 1;
+        cur.revenue = CurrencyUtil.add(cur.revenue, s.total_ttc || 0);
+        hourMap.set(h, cur);
+      }
+      const activeHours = Array.from(hourMap.keys()).sort((a, b) => a - b);
+      const minH = activeHours.length > 0 ? Math.min(11, activeHours[0]) : 11;
+      const maxH = activeHours.length > 0 ? Math.max(23, activeHours[activeHours.length - 1]) : 23;
+      for (let h = minH; h <= maxH; h++) {
+        const cur = hourMap.get(h) || { orderCount: 0, revenue: 0 };
+        salesTimeline.push({
+          timeLabel: `${h}h`,
+          orderCount: cur.orderCount,
+          revenue: cur.revenue
+        });
+      }
+    }
 
     // ── 6. Actif Stock Réel Pizzeria & Alertes ────────────────────────────────
     const allIngredients = await db.select<Ingredient>(
@@ -527,6 +595,7 @@ export class ReportService {
       },
       cashSessionSummary,
       topProducts,
+      salesTimeline,
       ingredientsStockValue: Math.round(ingredientsStockValue),
       supplementsStockValue: Math.round(supplementsStockValue),
       drinksStockValue: Math.round(drinksStockValue),

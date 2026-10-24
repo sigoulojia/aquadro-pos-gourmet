@@ -330,14 +330,14 @@ export const StoreNeedsView: React.FC = () => {
                 {/* Raccourcis rapides d'articles courants / مستهلكات وتغليف */}
                 <div className="flex flex-wrap gap-1 mt-2">
                   {[
-                    { label: "🍕 علب بيتزا", val: "Boîtes à Pizza" },
-                    { label: "🧻 ورق مناديل", val: "Serviettes en papier" },
-                    { label: "📦 أكياس تغليف", val: "Sacs emballage kraft" },
-                    { label: "🧾 رول ورق caisse", val: "Rouleaux papier caisse 80mm" },
-                    { label: "🧹 مواد تنظيف", val: "Produits de nettoyage & javel" },
-                    { label: "🧀 جبن موزاريلا", val: "Mozzarella râpée" },
-                    { label: "🌾 فرينة بيتزا", val: "Farine pizza T55" },
-                    { label: "🥫 صلصة طماطم", val: "Sauce tomate pizza" }
+                    { label: "علب بيتزا", val: "Boîtes à Pizza" },
+                    { label: "ورق مناديل", val: "Serviettes en papier" },
+                    { label: "أكياس تغليف", val: "Sacs emballage kraft" },
+                    { label: "رول ورق caisse", val: "Rouleaux papier caisse 80mm" },
+                    { label: "مواد تنظيف", val: "Produits de nettoyage & javel" },
+                    { label: "جبن موزاريلا", val: "Mozzarella râpée" },
+                    { label: "فرينة بيتزا", val: "Farine pizza T55" },
+                    { label: "صلصة طماطم", val: "Sauce tomate pizza" }
                   ].map((sug, idx) => (
                     <button
                       key={idx}

@@ -1,4 +1,4 @@
-// Aquadro POS Algérie — Modal Pizza Multi-Saveurs (Moitié-Moitié & 4 Saisons)
+// Aquadro POS Algérie — Modal Pizza Moitié-Moitié (2 Saisons / 2 Choix)
 // RÈGLE COMMERCIALE EXIGÉE : Le prix de base est automatiquement fixé sur le prix de la pizza la plus chère sélectionnée.
 
 import React, { useState, useEffect } from "react";
@@ -12,15 +12,13 @@ import {
   Check,
   Pizza,
   Sparkles,
-  ShoppingBag,
-  SlidersHorizontal
+  ShoppingBag
 } from "lucide-react";
 
 interface MultiPartPizzaModalProps {
   isOpen: boolean;
   onClose: () => void;
   availablePizzas: Product[];
-  initialMode?: "2_PARTS" | "4_PARTS";
   onAddToCart: (item: {
     compositeProduct: Product;
     quantity: number;
@@ -28,7 +26,7 @@ interface MultiPartPizzaModalProps {
     notes: string;
     totalUnitPrice: number;
     multiParts: {
-      type: "2_PARTS" | "4_PARTS";
+      type: "2_PARTS";
       parts: Array<{ name: string; price: number; id: string }>;
     };
   }) => void;
@@ -38,14 +36,10 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
   isOpen,
   onClose,
   availablePizzas,
-  initialMode = "2_PARTS",
   onAddToCart
 }) => {
-  const [mode, setMode] = useState<"2_PARTS" | "4_PARTS">(initialMode);
   const [part1, setPart1] = useState<string>("");
   const [part2, setPart2] = useState<string>("");
-  const [part3, setPart3] = useState<string>("");
-  const [part4, setPart4] = useState<string>("");
 
   const [supplements, setSupplements] = useState<PizzaSupplement[]>([]);
   const [selectedSupplements, setSelectedSupplements] = useState<PizzaSupplement[]>([]);
@@ -57,7 +51,6 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setMode(initialMode);
       supplementService.getSupplements().then(setSupplements).catch(() => {});
       setSelectedSupplements([]);
       setQuantity(1);
@@ -66,16 +59,12 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
       if (pizzaList.length >= 2) {
         setPart1(pizzaList[0].id);
         setPart2(pizzaList[1].id);
-        setPart3(pizzaList[0].id);
-        setPart4(pizzaList[1].id);
       } else if (pizzaList.length === 1) {
         setPart1(pizzaList[0].id);
         setPart2(pizzaList[0].id);
-        setPart3(pizzaList[0].id);
-        setPart4(pizzaList[0].id);
       }
     }
-  }, [isOpen, initialMode, availablePizzas]);
+  }, [isOpen, availablePizzas]);
 
   if (!isOpen) return null;
 
@@ -83,59 +72,66 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
 
   const selectedP1 = getPizzaById(part1);
   const selectedP2 = getPizzaById(part2);
-  const selectedP3 = getPizzaById(part3);
-  const selectedP4 = getPizzaById(part4);
 
-  // RÈGLE CLIENT : Calcul automatique du prix le plus élevé parmi les parties choisies
-  let highestBasePrice = 0;
-  if (mode === "2_PARTS") {
-    highestBasePrice = Math.max(
-      selectedP1?.selling_price_ttc || 0,
-      selectedP2?.selling_price_ttc || 0
-    );
-  } else {
-    highestBasePrice = Math.max(
-      selectedP1?.selling_price_ttc || 0,
-      selectedP2?.selling_price_ttc || 0,
-      selectedP3?.selling_price_ttc || 0,
-      selectedP4?.selling_price_ttc || 0
-    );
-  }
+  // RÈGLE : Calcul automatique du prix le plus élevé entre les 2 moitiés
+  const highestBasePrice = Math.max(
+    selectedP1?.selling_price_ttc || 0,
+    selectedP2?.selling_price_ttc || 0
+  );
 
-  const supplementsTotal = selectedSupplements.reduce((sum, s) => sum + s.price, 0);
+  const supplementsTotal = selectedSupplements.reduce(
+    (sum, s) => sum + s.price * (s.quantity || 1),
+    0
+  );
   const unitPrice = highestBasePrice + supplementsTotal;
   const totalPrice = unitPrice * quantity;
+
+  const handleAddPortion = (supp: PizzaSupplement, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSupplements(prev => {
+      const existing = prev.find(s => s.id === supp.id);
+      if (existing) {
+        return prev.map(s => (s.id === supp.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s));
+      } else {
+        return [...prev, { ...supp, quantity: 1 }];
+      }
+    });
+  };
+
+  const handleRemovePortion = (supp: PizzaSupplement, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSupplements(prev => {
+      const existing = prev.find(s => s.id === supp.id);
+      if (!existing) return prev;
+      const currentQty = existing.quantity || 1;
+      if (currentQty <= 1) {
+        return prev.filter(s => s.id !== supp.id);
+      } else {
+        return prev.map(s => (s.id === supp.id ? { ...s, quantity: currentQty - 1 } : s));
+      }
+    });
+  };
 
   const toggleSupplement = (supp: PizzaSupplement) => {
     setSelectedSupplements(prev => {
       const exists = prev.some(s => s.id === supp.id);
       if (exists) return prev.filter(s => s.id !== supp.id);
-      return [...prev, supp];
+      return [...prev, { ...supp, quantity: 1 }];
     });
   };
 
   const handleConfirm = () => {
-    const partsArray = mode === "2_PARTS"
-      ? [
-          { id: selectedP1?.id || "", name: selectedP1?.name_fr || "Partie 1", price: selectedP1?.selling_price_ttc || 0 },
-          { id: selectedP2?.id || "", name: selectedP2?.name_fr || "Partie 2", price: selectedP2?.selling_price_ttc || 0 }
-        ]
-      : [
-          { id: selectedP1?.id || "", name: selectedP1?.name_fr || "1/4", price: selectedP1?.selling_price_ttc || 0 },
-          { id: selectedP2?.id || "", name: selectedP2?.name_fr || "2/4", price: selectedP2?.selling_price_ttc || 0 },
-          { id: selectedP3?.id || "", name: selectedP3?.name_fr || "3/4", price: selectedP3?.selling_price_ttc || 0 },
-          { id: selectedP4?.id || "", name: selectedP4?.name_fr || "4/4", price: selectedP4?.selling_price_ttc || 0 }
-        ];
+    const partsArray = [
+      { id: selectedP1?.id || "", name: selectedP1?.name_fr || "Moitié 1", price: selectedP1?.selling_price_ttc || 0 },
+      { id: selectedP2?.id || "", name: selectedP2?.name_fr || "Moitié 2", price: selectedP2?.selling_price_ttc || 0 }
+    ];
 
-    const variantName = mode === "2_PARTS"
-      ? `1/2 ${selectedP1?.name_fr || ""} + 1/2 ${selectedP2?.name_fr || ""}`
-      : `4 Saisons (${selectedP1?.name_fr || ""}, ${selectedP2?.name_fr || ""}, ${selectedP3?.name_fr || ""}, ${selectedP4?.name_fr || ""})`;
+    const variantName = `1/2 ${selectedP1?.name_fr || ""} + 1/2 ${selectedP2?.name_fr || ""}`;
 
-    // Produit virtuel ou référence produit principal pour compatibilité base
     const baseProductRef = selectedP1 || availablePizzas[0] || {
       id: "prod-multi-pizza",
-      name_fr: mode === "2_PARTS" ? "Pizza Moitié-Moitié" : "Pizza 4 Saisons",
-      name_ar: mode === "2_PARTS" ? "بيتزا نصف-نصف" : "بيتزا 4 فصول",
+      name_fr: "Pizza Moitié-Moitié",
+      name_ar: "بيتزا نصف-نصف (فصلين)",
       sku: "PIZ-MULTI",
       barcode: "PIZ-MULTI",
       selling_price_ttc: unitPrice,
@@ -153,8 +149,8 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
 
     const compositeProduct: Product = {
       ...baseProductRef,
-      name_fr: mode === "2_PARTS" ? "Pizza Moitié-Moitié" : "Pizza 4 Saisons",
-      name_ar: mode === "2_PARTS" ? "بيتزا نصف-نصف (فصلين)" : "بيتزا 4 فصول",
+      name_fr: "Pizza Moitié-Moitié",
+      name_ar: "بيتزا نصف-نصف (فصلين)",
       variant: variantName,
       selling_price_ttc: unitPrice
     };
@@ -166,7 +162,7 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
       notes: notes.trim(),
       totalUnitPrice: unitPrice,
       multiParts: {
-        type: mode,
+        type: "2_PARTS",
         parts: partsArray
       }
     });
@@ -176,72 +172,44 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 select-none animate-in fade-in duration-150">
-      <div className="bg-white border border-[#E9DCCB] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* En-tête avec choix 2 Saisons ou 4 Saisons */}
+      <div className="bg-white border border-[#E9DCCB] rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[92vh]">
+        {/* En-tête Pizza 2 Saisons / Moitié - Moitié */}
         <div className="p-4 sm:p-5 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#E87524] to-[#FFC928] text-white flex items-center justify-center shadow-xs shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-[#E87524] text-white flex items-center justify-center shadow-xs shrink-0">
               <Pizza className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold bg-[#FFF3EB] text-[#E87524] px-2 py-0.5 rounded-md border border-[#E87524]/20 uppercase">
-                  Multi-Saveurs
+                  2 Saisons (Moitié - Moitié)
                 </span>
                 <span className="text-xs font-mono font-bold text-stone-600">
-                  Règle : Prix max automatique
+                  Règle : Prix le plus élevé retenu
                 </span>
               </div>
               <h2 className="text-base sm:text-lg font-black text-[#292522] leading-tight mt-0.5">
-                {mode === "2_PARTS" ? "Pizza Moitié - Moitié (2 Choix)" : "Pizza 4 Saisons (4 Choix)"}
+                Pizza Moitié - Moitié (بيتزا نصفين)
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
-            {/* Toggle 2 Saisons / 4 Saisons */}
-            <div className="flex items-center bg-white p-1 rounded-xl border border-[#E9DCCB]">
-              <button
-                type="button"
-                onClick={() => setMode("2_PARTS")}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  mode === "2_PARTS"
-                    ? "bg-[#E87524] text-white shadow-xs"
-                    : "text-stone-600 hover:text-[#292522]"
-                }`}
-              >
-                2 Saisons (1/2)
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("4_PARTS")}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  mode === "4_PARTS"
-                    ? "bg-[#E87524] text-white shadow-xs"
-                    : "text-stone-600 hover:text-[#292522]"
-                }`}
-              >
-                4 Saisons (1/4)
-              </button>
-            </div>
-
-            <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-white border border-[#E9DCCB] hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-[#292522] transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-white border border-[#E9DCCB] hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-[#292522] transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Corps : Choix des pizzas par quartier */}
+        {/* Corps : Choix des 2 moitiés */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* Bannière d'explication du prix */}
           <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
             <div>
               <p className="font-bold">Calcul automatique de la pizza :</p>
               <p className="text-[11px] text-amber-700 mt-0.5">
-                Le système applique automatiquement le prix de la référence la plus chère parmi vos choix.
+                Le système applique automatiquement le prix de la moitié la plus chère.
               </p>
             </div>
             <div className="text-right">
@@ -252,94 +220,70 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
             </div>
           </div>
 
-          {/* Sélecteurs des parties */}
-          {mode === "2_PARTS" ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Moitié 1 */}
-              <div className="p-3.5 rounded-2xl bg-[#FFF8EF] border border-[#E9DCCB]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-[#E87524] uppercase">Première Moitié (1/2)</span>
-                  <span className="text-xs font-mono font-bold text-stone-600">
-                    {CurrencyUtil.formatDZD(selectedP1?.selling_price_ttc || 0)}
-                  </span>
-                </div>
-                <select
-                  value={part1}
-                  onChange={e => setPart1(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-white border border-[#E9DCCB] text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] outline-none"
-                >
-                  {pizzaList.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name_fr} ({CurrencyUtil.formatDZD(p.selling_price_ttc)})
-                    </option>
-                  ))}
-                </select>
+          {/* Sélecteurs des 2 moitiés */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Moitié 1 */}
+            <div className="p-3.5 rounded-2xl bg-[#FFF8EF] border border-[#E9DCCB]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#E87524] uppercase">Première Moitié (1/2)</span>
+                <span className="text-xs font-mono font-bold text-stone-600">
+                  {CurrencyUtil.formatDZD(selectedP1?.selling_price_ttc || 0)}
+                </span>
               </div>
+              <select
+                value={part1}
+                onChange={e => setPart1(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-white border border-[#E9DCCB] text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] outline-none"
+              >
+                {pizzaList.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name_fr} ({CurrencyUtil.formatDZD(p.selling_price_ttc)})
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              {/* Moitié 2 */}
-              <div className="p-3.5 rounded-2xl bg-[#FFF8EF] border border-[#E9DCCB]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-[#E87524] uppercase">Deuxième Moitié (1/2)</span>
-                  <span className="text-xs font-mono font-bold text-stone-600">
-                    {CurrencyUtil.formatDZD(selectedP2?.selling_price_ttc || 0)}
-                  </span>
-                </div>
-                <select
-                  value={part2}
-                  onChange={e => setPart2(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-white border border-[#E9DCCB] text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] outline-none"
-                >
-                  {pizzaList.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name_fr} ({CurrencyUtil.formatDZD(p.selling_price_ttc)})
-                    </option>
-                  ))}
-                </select>
+            {/* Moitié 2 */}
+            <div className="p-3.5 rounded-2xl bg-[#FFF8EF] border border-[#E9DCCB]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#E87524] uppercase">Deuxième Moitié (1/2)</span>
+                <span className="text-xs font-mono font-bold text-stone-600">
+                  {CurrencyUtil.formatDZD(selectedP2?.selling_price_ttc || 0)}
+                </span>
               </div>
+              <select
+                value={part2}
+                onChange={e => setPart2(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-white border border-[#E9DCCB] text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] outline-none"
+              >
+                {pizzaList.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name_fr} ({CurrencyUtil.formatDZD(p.selling_price_ttc)})
+                  </option>
+                ))}
+              </select>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { label: "1er Quartier (1/4)", val: part1, setVal: setPart1, p: selectedP1 },
-                { label: "2e Quartier (2/4)", val: part2, setVal: setPart2, p: selectedP2 },
-                { label: "3e Quartier (3/4)", val: part3, setVal: setPart3, p: selectedP3 },
-                { label: "4e Quartier (4/4)", val: part4, setVal: setPart4, p: selectedP4 }
-              ].map((q, idx) => (
-                <div key={idx} className="p-3 rounded-2xl bg-[#FFF8EF] border border-[#E9DCCB]">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-[#E87524]">{q.label}</span>
-                    <span className="text-xs font-mono font-bold text-stone-600">
-                      {CurrencyUtil.formatDZD(q.p?.selling_price_ttc || 0)}
-                    </span>
-                  </div>
-                  <select
-                    value={q.val}
-                    onChange={e => q.setVal(e.target.value)}
-                    className="w-full p-2 rounded-xl bg-white border border-[#E9DCCB] text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] outline-none"
-                  >
-                    {pizzaList.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name_fr} ({CurrencyUtil.formatDZD(p.selling_price_ttc)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          )}
+          </div>
 
           {/* Section Suppléments / Extras */}
           <div className="pt-2 border-t border-[#E9DCCB]/60">
-            <div className="flex items-center space-x-1.5 mb-2.5">
-              <Sparkles className="w-4 h-4 text-[#E87524]" />
-              <h3 className="font-extrabold text-sm text-[#292522]">
-                Ajouter des Suppléments à la Pizza
-              </h3>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center space-x-1.5">
+                <Sparkles className="w-4 h-4 text-[#E87524]" />
+                <h3 className="font-extrabold text-sm text-[#292522]">
+                  Ajouter des Suppléments à la Pizza
+                </h3>
+              </div>
+              <span className="text-[11px] text-stone-400 font-medium">
+                Possibilité d'ajouter plusieurs portions (2x, 3x...)
+              </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
               {supplements.map(supp => {
-                const isSelected = selectedSupplements.some(s => s.id === supp.id);
+                const selectedItem = selectedSupplements.find(s => s.id === supp.id);
+                const isSelected = !!selectedItem;
+                const suppQty = selectedItem?.quantity || 1;
                 return (
                   <div
                     key={supp.id}
@@ -362,9 +306,34 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
                         {supp.name_fr}
                       </span>
                     </div>
-                    <span className="text-xs font-black text-[#E87524] font-mono shrink-0">
-                      +{CurrencyUtil.formatDZD(supp.price)}
-                    </span>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isSelected ? (
+                        <div className="flex items-center space-x-1 bg-white border border-[#E87524] rounded-xl p-0.5 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemovePortion(supp, e)}
+                            className="w-5 h-5 rounded-lg bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-[#E87524] font-black active:scale-90 transition-transform cursor-pointer"
+                          >
+                            <Minus className="w-2.5 h-2.5 stroke-[3]" />
+                          </button>
+                          <span className="w-4 text-center font-black text-xs text-[#E87524] font-mono">
+                            {suppQty}x
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleAddPortion(supp, e)}
+                            className="w-5 h-5 rounded-lg bg-[#E87524] hover:bg-[#D46317] flex items-center justify-center text-white font-black active:scale-90 transition-transform cursor-pointer"
+                          >
+                            <Plus className="w-2.5 h-2.5 stroke-[3]" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-black text-[#E87524] font-mono">
+                          +{CurrencyUtil.formatDZD(supp.price)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -378,7 +347,7 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="Ex: Pâte bien dorée, séparer les moitiés avec papier..."
+              placeholder="Ex: Pâte bien dorée, cuisson spéciale..."
               value={notes}
               onChange={e => setNotes(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524] transition-all"
@@ -412,7 +381,7 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
           >
             <div className="flex items-center space-x-2">
               <ShoppingBag className="w-4 h-4" />
-              <span>Ajouter la Pizza Multi-Saveurs</span>
+              <span>Ajouter Pizza Moitié-Moitié</span>
             </div>
             <div className="bg-black/20 px-3 py-1 rounded-xl font-mono font-black text-sm">
               {CurrencyUtil.formatDZD(totalPrice)}

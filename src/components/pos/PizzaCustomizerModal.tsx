@@ -60,10 +60,36 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
 
   if (!isOpen || !product) return null;
 
-  // Calcul du prix unitaire avec suppléments
-  const supplementsTotal = selectedSupplements.reduce((sum, s) => sum + s.price, 0);
+  // Calcul du prix unitaire avec suppléments (prenant en compte les quantités multiples : 2x, 3x...)
+  const supplementsTotal = selectedSupplements.reduce((sum, s) => sum + (s.price * (s.quantity || 1)), 0);
   const unitPrice = product.selling_price_ttc + supplementsTotal;
   const totalPrice = unitPrice * quantity;
+
+  const handleAddPortion = (supp: PizzaSupplement, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSupplements(prev => {
+      const existing = prev.find(s => s.id === supp.id);
+      if (existing) {
+        return prev.map(s => s.id === supp.id ? { ...s, quantity: (s.quantity || 1) + 1 } : s);
+      } else {
+        return [...prev, { ...supp, quantity: 1 }];
+      }
+    });
+  };
+
+  const handleRemovePortion = (supp: PizzaSupplement, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedSupplements(prev => {
+      const existing = prev.find(s => s.id === supp.id);
+      if (!existing) return prev;
+      const currentQty = existing.quantity || 1;
+      if (currentQty <= 1) {
+        return prev.filter(s => s.id !== supp.id);
+      } else {
+        return prev.map(s => s.id === supp.id ? { ...s, quantity: currentQty - 1 } : s);
+      }
+    });
+  };
 
   const toggleSupplement = (supp: PizzaSupplement) => {
     setSelectedSupplements(prev => {
@@ -71,7 +97,7 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
       if (exists) {
         return prev.filter(s => s.id !== supp.id);
       } else {
-        return [...prev, supp];
+        return [...prev, { ...supp, quantity: 1 }];
       }
     });
   };
@@ -138,25 +164,20 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
                 Suppléments & Ingrédients Extra
               </h3>
             </div>
-            {onOpenSupplementsManager && (
-              <button
-                type="button"
-                onClick={onOpenSupplementsManager}
-                className="text-xs text-[#E87524] hover:underline font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <Sliders className="w-3.5 h-3.5" />
-                <span>Gérer les suppléments</span>
-              </button>
-            )}
+            <span className="text-[11px] text-stone-400 font-medium">
+              Possibilité d'ajouter plusieurs portions (2x, 3x...)
+            </span>
           </div>
 
           {/* Grille des suppléments */}
           {supplements.length === 0 ? (
             <p className="text-xs text-stone-400 italic">Aucun supplément configuré.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
               {supplements.map(supp => {
-                const isSelected = selectedSupplements.some(s => s.id === supp.id);
+                const selectedItem = selectedSupplements.find(s => s.id === supp.id);
+                const isSelected = !!selectedItem;
+                const suppQty = selectedItem?.quantity || 1;
                 return (
                   <div
                     key={supp.id}
@@ -186,15 +207,40 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
                             {supp.name_ar}
                           </p>
                         )}
+                        <span className="text-[10px] text-stone-400 font-mono">
+                          +{CurrencyUtil.formatDZD(supp.price)} / portion
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xs font-black text-[#E87524] block font-mono">
-                        +{CurrencyUtil.formatDZD(supp.price)}
-                      </span>
-                      <span className={`text-[10px] font-medium block ${supp.current_stock <= 0 ? "text-red-600 font-bold" : supp.current_stock <= (supp.min_stock_alert || 5) ? "text-amber-600" : "text-stone-400"}`}>
-                        {supp.current_stock <= 0 ? "Rupture" : `Stock: ${supp.current_stock}`}
-                      </span>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isSelected ? (
+                        <div className="flex items-center space-x-1 bg-white border border-[#E87524] rounded-xl p-0.5 shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={(e) => handleRemovePortion(supp, e)}
+                            className="w-6 h-6 rounded-lg bg-orange-50 hover:bg-orange-100 flex items-center justify-center text-[#E87524] font-black active:scale-90 transition-transform cursor-pointer"
+                            title="Diminuer portion"
+                          >
+                            <Minus className="w-3 h-3 stroke-[3]" />
+                          </button>
+                          <span className="w-5 text-center font-black text-xs text-[#E87524] font-mono">
+                            {suppQty}x
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleAddPortion(supp, e)}
+                            className="w-6 h-6 rounded-lg bg-[#E87524] hover:bg-[#D46317] flex items-center justify-center text-white font-black active:scale-90 transition-transform cursor-pointer"
+                            title="Ajouter portion supplémentaire"
+                          >
+                            <Plus className="w-3 h-3 stroke-[3]" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-black text-[#E87524] font-mono">
+                          +{CurrencyUtil.formatDZD(supp.price)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

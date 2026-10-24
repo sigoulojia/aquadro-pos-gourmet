@@ -45,13 +45,20 @@ import {
 
 import { updateService, UpdateState } from '../../services/update.service';
 import { PeriodicReportsSection } from './PeriodicReportsSection';
+import { drawerLogService, DrawerLogEntry } from '../../services/drawerLog.service';
+import { useAuth } from '../../hooks/useAuth';
 
 type TabKey = 'store' | 'fiscal' | 'hardware' | 'backup' | 'reports' | 'sync' | 'updates';
 
 export const SettingsView: React.FC = () => {
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabKey>('store');
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+
+  // Contrôle & Audit du Tiroir-Caisse
+  const [allowManualDrawer, setAllowManualDrawer] = useState<boolean>(() => drawerLogService.isManualDrawerAllowed());
+  const [drawerLogs, setDrawerLogs] = useState<DrawerLogEntry[]>([]);
 
   useEffect(() => {
     const unsub = updateService.subscribe((state) => {
@@ -124,8 +131,45 @@ export const SettingsView: React.FC = () => {
     }
     if (activeTab === 'hardware') {
       loadPrinters();
+      loadDrawerLogs();
     }
   }, [activeTab]);
+
+  const loadDrawerLogs = async () => {
+    try {
+      const logs = await drawerLogService.getRecentLogs(35);
+      setDrawerLogs(logs);
+    } catch (e) {
+      console.warn('Erreur chargement logs tiroir:', e);
+    }
+  };
+
+  const handleToggleManualDrawer = (checked: boolean) => {
+    setAllowManualDrawer(checked);
+    drawerLogService.setManualDrawerAllowed(checked);
+    showToast(
+      checked
+        ? "Bouton d'ouverture manuelle du tiroir activé (Réservé à l'Administration)"
+        : "Bouton d'ouverture manuelle masqué pour tous les utilisateurs",
+      'info'
+    );
+  };
+
+  const handleSelectPrinter = (name: string) => {
+    setSelectedPrinter(name);
+    printerService.setSelectedPrinterName(name || null);
+    showToast(name ? `Imprimante sélectionnée : ${name}` : 'Imprimante par défaut du système activée', 'info');
+  };
+
+  const handleTestDrawer = async () => {
+    try {
+      await printerService.kickCashDrawer('Test Matériel (Paramètres)', user?.name || 'Admin', user?.role);
+      showToast('Signal impulsion RJ11 envoyé au tiroir-caisse avec succès', 'success');
+      await loadDrawerLogs();
+    } catch (err: any) {
+      showToast(`Erreur tiroir-caisse : ${err.message}`, 'error');
+    }
+  };
 
   const loadBackupDetails = async () => {
     try {
@@ -224,21 +268,6 @@ export const SettingsView: React.FC = () => {
       console.warn('Could not load hardware printers:', e);
     } finally {
       setIsLoadingPrinters(false);
-    }
-  };
-
-  const handleSelectPrinter = (name: string) => {
-    setSelectedPrinter(name);
-    printerService.setSelectedPrinterName(name || null);
-    showToast(name ? `Imprimante sélectionnée : ${name}` : 'Imprimante par défaut du système activée', 'info');
-  };
-
-  const handleTestDrawer = async () => {
-    try {
-      await printerService.kickCashDrawer();
-      showToast('Signal impulsion RJ11 envoyé au tiroir-caisse avec succès', 'success');
-    } catch (err: any) {
-      showToast(`Erreur tiroir-caisse : ${err.message}`, 'error');
     }
   };
 
@@ -863,6 +892,111 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
+            {/* CONTRÔLE D'ACCÈS & AUDIT DU TIROIR-CAISSE (RJ11) */}
+            <div className="pt-4 border-t border-[#E9DCCB] space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-[#E87524]" />
+                    <span>Contrôle & Sécurité du Tiroir-Caisse (RJ11)</span>
+                  </h3>
+                  <p className="text-[11px] text-gray-500">
+                    Gestion des autorisations d'ouverture et suivi chronologique certifié des impulsions RJ11
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={loadDrawerLogs}
+                  className="px-2.5 py-1 bg-[#FFF8EF] hover:bg-gray-200 text-gray-700 font-bold rounded border border-[#E9DCCB] text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Actualiser l'historique</span>
+                </button>
+              </div>
+
+              {/* Option d'activation/désactivation du bouton manuel pour l'Admin */}
+              <div className="p-3 border border-[#E9DCCB] rounded bg-white flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-gray-800 text-xs">
+                    Afficher le Bouton d'Ouverture Manuelle dans la Barre Supérieure
+                  </div>
+                  <div className="text-[11px] text-gray-500 max-w-xl">
+                    Le caissier n'a <strong>JAMAIS</strong> accès à ce bouton manuel. Le tiroir s'ouvre pour lui exclusivement lors de la validation d'une vente en <strong>espèces</strong>. En désactivant cette case, le bouton manuel sera également masqué pour l'administrateur.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={allowManualDrawer}
+                  onChange={e => handleToggleManualDrawer(e.target.checked)}
+                  className="w-4 h-4 text-[#E87524] rounded cursor-pointer"
+                />
+              </div>
+
+              {/* Table d'Audit & Horodatage des Ouvertures */}
+              <div className="border border-[#E9DCCB] rounded-lg overflow-hidden bg-white">
+                <div className="px-3 py-2 bg-gray-50 border-b border-[#E9DCCB] flex items-center justify-between">
+                  <span className="font-bold text-gray-800 text-xs">
+                    Historique des Ouvertures du Tiroir-Caisse (Audit & Horodatage)
+                  </span>
+                  <span className="text-[10px] text-gray-500 font-mono">
+                    Derniers événements ({drawerLogs.length})
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-60 overflow-y-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-gray-100/70 text-[10px] text-gray-500 uppercase font-bold border-b border-[#E9DCCB] sticky top-0">
+                        <th className="p-2">Date & Heure d'Ouverture</th>
+                        <th className="p-2">Utilisateur</th>
+                        <th className="p-2">Rôle</th>
+                        <th className="p-2">Motif / Déclencheur</th>
+                        <th className="p-2 text-right">Impulsion RJ11</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drawerLogs.length > 0 ? (
+                        drawerLogs.map((log) => (
+                          <tr key={log.id} className="border-b border-gray-100 hover:bg-gray-50/60 font-mono text-[11px]">
+                            <td className="p-2 text-gray-800 whitespace-nowrap">
+                              {new Date(log.opened_at).toLocaleDateString('fr-FR', {
+                                day: '2-digit', month: '2-digit', year: 'numeric'
+                              })} à {new Date(log.opened_at).toLocaleTimeString('fr-FR', {
+                                hour: '2-digit', minute: '2-digit', second: '2-digit'
+                              })}
+                            </td>
+                            <td className="p-2 font-bold text-gray-900 font-sans">{log.user_name}</td>
+                            <td className="p-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                log.role === 'owner' || log.role === 'admin'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {log.role === 'owner' ? 'Propriétaire' : log.role === 'admin' ? 'Admin' : log.role === 'cashier' ? 'Caissier' : log.role}
+                              </span>
+                            </td>
+                            <td className="p-2 text-gray-800 font-sans">{log.reason}</td>
+                            <td className="p-2 text-right whitespace-nowrap">
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                Signal Envoyé
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-4 text-center text-gray-400 italic">
+                            Aucun événement d'ouverture de tiroir pour le moment. Chaque ouverture (encaissement espèces, test ou manuel) est enregistrée ici avec date et heure précises.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
             <div className="pt-4 border-t border-[#E9DCCB]">
               <h3 className="font-bold text-gray-900 text-sm mb-1">Coupures de Billets en Caisse (Dinars Algériens)</h3>
               <p className="text-[11px] text-gray-500 mb-2">
@@ -1065,6 +1199,23 @@ export const SettingsView: React.FC = () => {
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Vider les Transactions Seulement (Garder le catalogue)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!window.confirm("Êtes-vous sûr de vouloir supprimer tous les produits, suppléments, dépenses et transactions de test pour démarrer à zéro tout en conservant vos paramètres magasin et mot de passe ?")) {
+                      return;
+                    }
+                    const { db } = await import('../../db/sqlite');
+                    await db.resetTestCatalogAndSales();
+                    showToast("تم تنظيف كافة المنتجات والمعاملات والإضافات التجريبية بنجاح. جاري التحديث...", "success");
+                    setTimeout(() => window.location.reload(), 1000);
+                  }}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded shadow-sm flex items-center space-x-2 transition-colors w-full cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Démarrage Propre : Vider Produits, Suppléments & Ventes de Test (تنظيف شامل للبدء)</span>
                 </button>
 
                 <button

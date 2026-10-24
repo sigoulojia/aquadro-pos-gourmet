@@ -24,7 +24,11 @@ import {
   CheckCircle2,
   Coffee,
   Pizza,
-  Sparkles
+  Sparkles,
+  Search,
+  X,
+  ArrowUpDown,
+  Activity
 } from 'lucide-react';
 
 export const ReportsView: React.FC = () => {
@@ -34,6 +38,12 @@ export const ReportsView: React.FC = () => {
   const [periodMode, setPeriodMode] = useState<'ALL' | 'TODAY' | 'MONTH' | 'CUSTOM'>('ALL');
   const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Barre de recherche et filtres Top Produits
+  const [productSearch, setProductSearch] = useState<string>('');
+  const [productCategoryFilter, setProductCategoryFilter] = useState<'ALL' | 'pizza' | 'drink' | 'supplement'>('ALL');
+  const [productSortBy, setProductSortBy] = useState<'qty' | 'revenue'>('qty');
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
 
   useEffect(() => {
     loadReports();
@@ -340,7 +350,7 @@ export const ReportsView: React.FC = () => {
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Pizza className="w-4 h-4 text-[#E87524]" />
-              <span className="font-bold text-gray-900 text-xs">🍕 Répartition des Ventes Pizzeria</span>
+              <span className="font-bold text-gray-900 text-xs">Répartition des Ventes Pizzeria</span>
             </div>
             <span className="text-[11px] text-gray-500">Pizzas / Boissons / Extras</span>
           </div>
@@ -415,7 +425,7 @@ export const ReportsView: React.FC = () => {
         <div className="p-3 border-b border-orange-200 bg-orange-50 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Layers className="w-4 h-4 text-orange-500" />
-            <span className="font-bold text-orange-900 text-xs">🍕 Actif Stocks Réel Pizzeria (Matières Premières Cuisine & Boissons)</span>
+            <span className="font-bold text-orange-900 text-xs">Actif Stocks Réel Pizzeria (Matières Premières Cuisine & Boissons)</span>
           </div>
           {metrics && metrics.lowStockAlerts && metrics.lowStockAlerts.length > 0 && (
             <span className="text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 px-2 py-0.5 rounded flex items-center gap-1">
@@ -427,7 +437,7 @@ export const ReportsView: React.FC = () => {
 
         <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-3 rounded border border-orange-100 bg-orange-50/40 space-y-1">
-            <span className="text-orange-700 text-[11px] font-semibold block">🥗 Stock Ingrédients Cuisine</span>
+            <span className="text-orange-700 text-[11px] font-semibold block">Stock Ingrédients Cuisine</span>
             <span className="text-lg font-black text-orange-800 font-mono block">
               {metrics ? CurrencyUtil.formatDZD(metrics.ingredientsStockValue) : '—'}
             </span>
@@ -435,7 +445,7 @@ export const ReportsView: React.FC = () => {
           </div>
 
           <div className="p-3 rounded border border-amber-100 bg-amber-50/40 space-y-1">
-            <span className="text-amber-700 text-[11px] font-semibold block">🧀 Stock Suppléments & Extras</span>
+            <span className="text-amber-700 text-[11px] font-semibold block">Stock Suppléments & Extras</span>
             <span className="text-lg font-black text-amber-800 font-mono block">
               {metrics ? CurrencyUtil.formatDZD(metrics.supplementsStockValue) : '—'}
             </span>
@@ -443,12 +453,186 @@ export const ReportsView: React.FC = () => {
           </div>
 
           <div className="p-3 rounded border border-emerald-200 bg-emerald-50/40 space-y-1">
-            <span className="text-emerald-700 text-[11px] font-semibold block">📦 Total Capital Investi en Stock</span>
+            <span className="text-emerald-700 text-[11px] font-semibold block">Total Capital Investi en Stock</span>
             <span className="text-lg font-black text-emerald-800 font-mono block">
               {metrics ? CurrencyUtil.formatDZD(metrics.totalStockValue) : '—'}
             </span>
             <span className="text-[10px] text-emerald-600">Valeur totale des stocks valorisée au coût d'achat</span>
           </div>
+        </div>
+      </div>
+
+      {/* 2.5 Courbe Dynamique des Ventes (منحنى بياني للمبيعات ونسق الطلبات) */}
+      <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-xs">
+        <div className="p-3 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center space-x-2">
+            <Activity className="w-4 h-4 text-[#E87524]" />
+            <div>
+              <span className="font-bold text-gray-900 text-xs">
+                Courbe d'Évolution des Ventes & Affluence (منحنى المبيعات)
+              </span>
+              <span className="text-[10px] text-gray-500 block">
+                {periodMode === 'TODAY'
+                  ? "Suivi horaire de la journée (Heures de pointe & rush)"
+                  : periodMode === 'MONTH'
+                  ? "Suivi quotidien du mois en cours (Jour par jour)"
+                  : "Historique global des ventes par date"}
+              </span>
+            </div>
+          </div>
+
+          {/* Indicateurs clés sur la courbe */}
+          <div className="flex items-center flex-wrap gap-2 text-xs">
+            {metrics?.salesTimeline && metrics.salesTimeline.length > 0 && (() => {
+              const best = metrics.salesTimeline.reduce((max, cur) => cur.revenue > max.revenue ? cur : max, metrics.salesTimeline[0]);
+              return (
+                <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-900 font-mono text-[11px] font-bold">
+                  Pic : {best.timeLabel} ({CurrencyUtil.formatDZD(best.revenue)})
+                </span>
+              );
+            })()}
+            <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-[11px] font-bold">
+              Total Commandes : {metrics?.salesTimeline?.reduce((sum, t) => sum + t.orderCount, 0) || 0}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {metrics?.salesTimeline && metrics.salesTimeline.length > 0 ? (() => {
+            const timeline = metrics.salesTimeline;
+            const maxRev = Math.max(...timeline.map(t => t.revenue), 100);
+            const svgW = 800;
+            const svgH = 200;
+            const pLeft = 55;
+            const pRight = 25;
+            const pTop = 20;
+            const pBottom = 30;
+            const pW = svgW - pLeft - pRight;
+            const pH = svgH - pTop - pBottom;
+
+            const pts = timeline.map((pt, i) => {
+              const x = timeline.length <= 1 ? pLeft + pW / 2 : pLeft + (i / (timeline.length - 1)) * pW;
+              const y = pTop + pH - (pt.revenue / maxRev) * pH;
+              return { x, y, pt, i };
+            });
+
+            const lineD = pts.length === 1
+              ? `M ${pLeft},${pts[0].y} L ${pLeft + pW},${pts[0].y}`
+              : `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')}`;
+
+            const areaD = pts.length <= 1
+              ? ''
+              : `M ${pts[0].x},${pTop + pH} L ${pts.map(p => `${p.x},${p.y}`).join(' L ')} L ${pts[pts.length - 1].x},${pTop + pH} Z`;
+
+            const activePt = hoveredPointIndex !== null ? pts[hoveredPointIndex] : null;
+
+            return (
+              <div className="space-y-2">
+                {activePt && (
+                  <div className="flex items-center justify-between bg-orange-50/70 border border-orange-200 rounded px-3 py-1 text-xs">
+                    <span className="font-bold text-gray-800">
+                      Période / Tranche : <span className="text-[#E87524]">{activePt.pt.timeLabel}</span>
+                    </span>
+                    <span className="font-mono font-bold text-gray-900">
+                      Chiffre d'Affaires : {CurrencyUtil.formatDZD(activePt.pt.revenue)}
+                    </span>
+                    <span className="text-gray-600 font-mono">
+                      {activePt.pt.orderCount} commande(s)
+                    </span>
+                  </div>
+                )}
+
+                <div className="w-full overflow-x-auto">
+                  <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-44 select-none">
+                    <defs>
+                      <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#E87524" stopOpacity="0.35" />
+                        <stop offset="100%" stopColor="#E87524" stopOpacity="0.02" />
+                      </linearGradient>
+                    </defs>
+
+                    {/* Lignes de repère horizontales */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                      const yPos = pTop + pH * (1 - ratio);
+                      const valDzd = Math.round(maxRev * ratio);
+                      return (
+                        <g key={idx}>
+                          <line
+                            x1={pLeft}
+                            y1={yPos}
+                            x2={svgW - pRight}
+                            y2={yPos}
+                            stroke="#E5E7EB"
+                            strokeDasharray="3 3"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x={pLeft - 8}
+                            y={yPos + 3}
+                            textAnchor="end"
+                            fontSize="9"
+                            fill="#9CA3AF"
+                            fontFamily="monospace"
+                          >
+                            {valDzd >= 1000 ? `${Math.round(valDzd / 1000)}k` : valDzd}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Surface dégradée sous la courbe */}
+                    {areaD && <path d={areaD} fill="url(#salesGrad)" />}
+
+                    {/* Ligne principale de la courbe */}
+                    {lineD && (
+                      <path
+                        d={lineD}
+                        fill="none"
+                        stroke="#E87524"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    )}
+
+                    {/* Points et étiquettes X */}
+                    {pts.map((p, idx) => {
+                      const isHovered = hoveredPointIndex === idx;
+                      return (
+                        <g key={idx} className="cursor-pointer" onMouseEnter={() => setHoveredPointIndex(idx)} onMouseLeave={() => setHoveredPointIndex(null)}>
+                          <circle
+                            cx={p.x}
+                            cy={p.y}
+                            r={isHovered ? 6 : 3.5}
+                            fill={isHovered ? '#D46317' : '#E87524'}
+                            stroke="#FFFFFF"
+                            strokeWidth="2"
+                            className="transition-all"
+                          />
+                          {/* Label axe X */}
+                          <text
+                            x={p.x}
+                            y={svgH - 10}
+                            textAnchor="middle"
+                            fontSize="9"
+                            fill={isHovered ? '#D46317' : '#6B7280'}
+                            fontWeight={isHovered ? 'bold' : 'normal'}
+                            fontFamily="monospace"
+                          >
+                            {p.pt.timeLabel}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            );
+          })() : (
+            <div className="text-center py-6 text-xs text-gray-400 italic">
+              Aucune vente enregistrée sur la période sélectionnée pour générer la courbe des ventes.
+            </div>
+          )}
         </div>
       </div>
 
@@ -458,7 +642,7 @@ export const ReportsView: React.FC = () => {
           <div className="flex items-center space-x-2">
             <PieChart className="w-4 h-4 text-orange-600" />
             <span className="font-bold text-gray-900 text-xs">
-              📊 تفصيل مصاريف ومستهلكات المحل (علب البيتزا، المناديل، التغليف، الفواتير، الأجور)
+              تفصيل مصاريف ومستهلكات المحل (علب البيتزا، المناديل، التغليف، الفواتير، الأجور)
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -479,22 +663,22 @@ export const ReportsView: React.FC = () => {
               {Object.entries(metrics.expensesByCategory).map(([cat, amount]) => {
                 const getLabel = (c: string) => {
                   switch (c) {
-                    case 'PIZZA_BOXES': return { label: '🍕 علب البيتزا', sub: 'Boîtes à Pizza' };
-                    case 'NAPKINS': return { label: '🧻 ورق مناديل', sub: 'Serviettes & Papier' };
-                    case 'PACKAGING': return { label: '📦 أكياس وتغليف', sub: 'Sacs & Emballages' };
-                    case 'INGREDIENTS_PURCHASE': return { label: '🥗 شراء مكونات (مخزون)', sub: 'Achat Ingrédients Stock' };
-                    case 'SUPPLEMENTS_PURCHASE': return { label: '🧀 شراء إضافات (مخزون)', sub: 'Achat Suppléments Stock' };
-                    case 'RENT': return { label: '🏠 إيجار المحل', sub: 'Loyer Magasin' };
-                    case 'ELECTRICITY': return { label: '⚡ كهرباء وغاز', sub: 'Sonelgaz' };
-                    case 'WATER': return { label: '💧 ماء', sub: 'Seaal' };
-                    case 'INTERNET': return { label: '📡 إنترنت وهاتف', sub: 'Algérie Télécom' };
-                    case 'SALARY': return { label: '👷 رواتب العمال', sub: 'Salaires Personnel' };
-                    case 'CHEF_SALARY': return { label: '👨‍🍳 راتب الطباخين', sub: 'Salaires Chefs Pizzaiolo' };
-                    case 'CLEANING': return { label: '🧹 مواد تنظيف', sub: 'Nettoyage & Hygiène' };
-                    case 'SUPPLIES': return { label: '🛒 لوازم كاشير', sub: 'Fournitures Caisse' };
-                    case 'TRANSPORT': return { label: '🚗 نقل وتوصيل', sub: 'Transport & Livraison' };
-                    case 'MAINTENANCE': return { label: '🔧 صيانة وتصليح', sub: 'Maintenance Four/Matériel' };
-                    default: return { label: '📋 مصاريف أخرى', sub: 'Autres Charges' };
+                    case 'PIZZA_BOXES': return { label: 'علب البيتزا', sub: 'Boîtes à Pizza' };
+                    case 'NAPKINS': return { label: 'ورق مناديل', sub: 'Serviettes & Papier' };
+                    case 'PACKAGING': return { label: 'أكياس وتغليف', sub: 'Sacs & Emballages' };
+                    case 'INGREDIENTS_PURCHASE': return { label: 'شراء مكونات (مخزون)', sub: 'Achat Ingrédients Stock' };
+                    case 'SUPPLEMENTS_PURCHASE': return { label: 'شراء إضافات (مخزون)', sub: 'Achat Suppléments Stock' };
+                    case 'RENT': return { label: 'إيجار المحل', sub: 'Loyer Magasin' };
+                    case 'ELECTRICITY': return { label: 'كهرباء وغاز', sub: 'Sonelgaz' };
+                    case 'WATER': return { label: 'ماء', sub: 'Seaal' };
+                    case 'INTERNET': return { label: 'إنترنت وهاتف', sub: 'Algérie Télécom' };
+                    case 'SALARY': return { label: 'رواتب العمال', sub: 'Salaires Personnel' };
+                    case 'CHEF_SALARY': return { label: 'راتب الطباخين', sub: 'Salaires Chefs Pizzaiolo' };
+                    case 'CLEANING': return { label: 'مواد تنظيف', sub: 'Nettoyage & Hygiène' };
+                    case 'SUPPLIES': return { label: 'لوازم كاشير', sub: 'Fournitures Caisse' };
+                    case 'TRANSPORT': return { label: 'نقل وتوصيل', sub: 'Transport & Livraison' };
+                    case 'MAINTENANCE': return { label: 'صيانة وتصليح', sub: 'Maintenance Four/Matériel' };
+                    default: return { label: 'مصاريف أخرى', sub: 'Autres Charges' };
                   }
                 };
                 const info = getLabel(cat);
@@ -521,62 +705,139 @@ export const ReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Top Produits & Approvisionnements / Dettes */}
+      {/* 3. Top Produits avec Barre de Recherche & Approvisionnements / Dettes */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pb-10">
-        {/* Top Produits Vendus */}
-        <div className="bg-white rounded border border-gray-200 overflow-hidden">
-          <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="w-4 h-4 text-gray-500" />
-              <span className="font-bold text-gray-900 text-xs">Pizzas & Boissons les Plus Demandées (Top 10)</span>
+        {/* Top Produits Vendus avec Barre de Recherche */}
+        <div className="bg-white rounded border border-gray-200 overflow-hidden flex flex-col">
+          <div className="p-3 border-b border-gray-200 bg-gray-50 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4 text-[#E87524]" />
+                <span className="font-bold text-gray-900 text-xs">
+                  Classement des Ventes (Pizzas, Boissons & Suppléments)
+                </span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <button
+                  type="button"
+                  onClick={() => setProductSortBy(productSortBy === 'qty' ? 'revenue' : 'qty')}
+                  className="px-2 py-0.5 rounded border border-gray-200 bg-white hover:bg-gray-100 text-[10px] font-bold text-gray-700 flex items-center gap-1"
+                  title="Changer le critère de tri"
+                >
+                  <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                  <span>Tri : {productSortBy === 'qty' ? 'Par Quantité' : 'Par Chiffre (CA)'}</span>
+                </button>
+              </div>
             </div>
-            <span className="text-[11px] text-gray-400">Classées par quantité</span>
+
+            {/* Barre de Recherche Rapide Produit */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Rechercher une pizza ou un produit..."
+                  value={productSearch}
+                  onChange={e => setProductSearch(e.target.value)}
+                  className="w-full pl-8 pr-7 py-1.5 bg-white border border-gray-300 rounded text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#E87524]"
+                />
+                {productSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setProductSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filtres de catégorie sans emoji */}
+              <div className="flex items-center space-x-1">
+                {(['ALL', 'pizza', 'drink', 'supplement'] as const).map(catKey => {
+                  const label = catKey === 'ALL' ? 'Tous' : catKey === 'pizza' ? 'Pizzas' : catKey === 'drink' ? 'Boissons' : 'Suppléments';
+                  const isSelected = productCategoryFilter === catKey;
+                  return (
+                    <button
+                      key={catKey}
+                      type="button"
+                      onClick={() => setProductCategoryFilter(catKey)}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${
+                        isSelected
+                          ? 'bg-[#E87524] text-white'
+                          : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
-          <div className="p-0">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200">
-                  <th className="p-3">Produit</th>
-                  <th className="p-3 text-center">Type</th>
-                  <th className="p-3 text-center">Qté</th>
-                  <th className="p-3 text-right">CA (DZD)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metrics?.topProducts?.length ? (
-                  metrics.topProducts.map((p, idx) => (
-                    <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50/50">
-                      <td className="p-3 font-medium text-gray-800">
-                        <span className="font-bold text-[#E87524] mr-1.5">{idx + 1}.</span>
-                        {p.name}
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          p.category === 'pizza'
-                            ? 'bg-orange-100 text-orange-800'
-                            : p.category === 'drink'
-                            ? 'bg-blue-100 text-blue-800'
-                            : p.category === 'supplement'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {p.category === 'pizza' ? '🍕 Pizza' : p.category === 'drink' ? '🥤 Boisson' : p.category === 'supplement' ? '🧀 Extra' : 'Autre'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-800 rounded font-bold font-mono">{p.quantity}</span>
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-gray-900">{CurrencyUtil.formatDZD(p.revenue)}</td>
+          <div className="p-0 flex-1 overflow-y-auto max-h-96">
+            {(() => {
+              const allItems = metrics?.topProducts || [];
+              const filtered = allItems.filter(p => {
+                if (productCategoryFilter !== 'ALL' && p.category !== productCategoryFilter) return false;
+                if (!productSearch.trim()) return true;
+                const q = productSearch.toLowerCase().trim();
+                return p.name.toLowerCase().includes(q);
+              }).sort((a, b) => productSortBy === 'qty' ? b.quantity - a.quantity : b.revenue - a.revenue);
+
+              return (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 text-[10px] uppercase text-gray-500 font-bold border-b border-gray-200 sticky top-0">
+                      <th className="p-2.5">Rang & Produit</th>
+                      <th className="p-2.5 text-center">Catégorie</th>
+                      <th className="p-2.5 text-center">Quantité</th>
+                      <th className="p-2.5 text-right">CA Réalisé (DZD)</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="p-4 text-center text-gray-400">Aucune vente enregistrée pour cette période.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filtered.length ? (
+                      filtered.map((p, idx) => (
+                        <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50/60">
+                          <td className="p-2.5 font-medium text-gray-800">
+                            <span className="font-bold text-[#E87524] mr-1.5 font-mono">#{idx + 1}</span>
+                            <span>{p.name}</span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              p.category === 'pizza'
+                                ? 'bg-orange-50 text-orange-800 border border-orange-200'
+                                : p.category === 'drink'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : p.category === 'supplement'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : 'bg-gray-50 text-gray-700 border border-gray-200'
+                            }`}>
+                              {p.category === 'pizza' ? 'Pizza' : p.category === 'drink' ? 'Boisson' : p.category === 'supplement' ? 'Supplément' : 'Autre'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <span className="px-2 py-0.5 bg-gray-100 text-gray-800 rounded font-bold font-mono">
+                              {p.quantity}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-gray-900">
+                            {CurrencyUtil.formatDZD(p.revenue)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="p-6 text-center text-gray-400 italic">
+                          {productSearch ? `Aucun produit ne correspond à « ${productSearch} »` : "Aucune vente enregistrée pour cette sélection."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              );
+            })()}
           </div>
         </div>
 
@@ -585,7 +846,7 @@ export const ReportsView: React.FC = () => {
           <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Briefcase className="w-4 h-4 text-gray-500" />
-              <span className="font-bold text-gray-900 text-xs">📦 Approvisionnements, Dettes & Alertes Stock</span>
+              <span className="font-bold text-gray-900 text-xs">Approvisionnements, Dettes & Alertes Stock</span>
             </div>
             <span className="text-[11px] text-gray-400">Période & Situation Réelle</span>
           </div>

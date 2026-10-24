@@ -15,6 +15,7 @@ export interface PizzaSupplement {
   category?: 'cheese' | 'meat' | 'veg' | 'sauce' | 'extra';
   is_active: number; // 1 or 0
   created_at?: string;
+  quantity?: number; // عدد الحصص المطلوبة (مثلاً 2x أو 3x لنفس الإضافة)
 }
 
 // Identifiants des anciens suppléments démo par défaut à nettoyer

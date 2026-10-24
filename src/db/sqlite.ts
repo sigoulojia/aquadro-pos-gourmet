@@ -634,9 +634,45 @@ export class DatabaseService {
         localStorage.removeItem('pizzeria_setup_completed');
         localStorage.removeItem('aquadro_setup_completed');
         localStorage.removeItem('pizzeria_defaults_cleaned_v1_0_2');
+        localStorage.removeItem('pizzeria_pizza_supplements');
+        localStorage.removeItem('aquadro_drawer_logs');
+        localStorage.removeItem('pizzeria_store_needs');
+        localStorage.removeItem('pizzeria_expenses');
       }
     } else {
       memoryDb.resetAll();
+    }
+  }
+
+  public async resetTestCatalogAndSales(): Promise<void> {
+    const testTables = [
+      'sale_items', 'sales', 'payments', 'refund_items', 'refunds',
+      'inventory_movements', 'expenses', 'store_needs', 'cash_sessions',
+      'commercial_documents', 'recipe_items', 'product_batches', 'products',
+      'pizza_supplements'
+    ];
+    if (this.isTauri) {
+      if (!this.tauriDb) {
+        throw new Error('Base de données native non initialisée.');
+      }
+      for (const t of testTables) {
+        try {
+          await this.tauriDb.execute(`DELETE FROM ${t}`);
+        } catch (err) {
+          console.warn(`[resetTestCatalogAndSales] Erreur table ${t}:`, err);
+        }
+      }
+    } else {
+      for (const t of testTables) {
+        (memoryDb as any).tables[t] = [];
+      }
+      memoryDb.saveToStorage();
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('pizzeria_pizza_supplements');
+      localStorage.removeItem('pizzeria_store_needs');
+      localStorage.removeItem('pizzeria_expenses');
+      localStorage.removeItem('aquadro_drawer_logs');
     }
   }
 

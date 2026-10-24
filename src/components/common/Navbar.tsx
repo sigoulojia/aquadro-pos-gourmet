@@ -10,6 +10,7 @@ import { printerService } from '../../services/printer.service';
 import { authService } from '../../services/auth.service';
 import { User, CashSession } from '../../types/database';
 import { db } from '../../db/sqlite';
+import { drawerLogService } from '../../services/drawerLog.service';
 import { useToast } from './Toast';
 import {
   Clock,
@@ -67,10 +68,21 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [drawerPulseNotice, setDrawerPulseNotice] = useState<boolean>(false);
+  const [isManualDrawerAllowed, setIsManualDrawerAllowed] = useState<boolean>(() => drawerLogService.isManualDrawerAllowed());
   const [storeName, setStoreName] = useState<string>("");
   const [storeLogo, setStoreLogo] = useState<string | null>(() => {
     return localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
   });
+
+  useEffect(() => {
+    const handleDrawerSetting = () => {
+      setIsManualDrawerAllowed(drawerLogService.isManualDrawerAllowed());
+    };
+    window.addEventListener('drawer_setting_changed', handleDrawerSetting);
+    return () => {
+      window.removeEventListener('drawer_setting_changed', handleDrawerSetting);
+    };
+  }, []);
 
   useEffect(() => {
     const handleLogoUpdate = () => {
@@ -140,7 +152,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
 
   const handleKickDrawer = async () => {
     try {
-      await printerService.kickCashDrawer();
+      await printerService.kickCashDrawer('Ouverture manuelle (Barre supérieure)', user?.name || 'Responsable', user?.role);
       setDrawerPulseNotice(true);
       setTimeout(() => setDrawerPulseNotice(false), 2000);
       showToast('Signal d\'ouverture envoyé au tiroir-caisse avec succès', 'success');
@@ -207,19 +219,21 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
 
       {/* 2. Actions Matérielles & Synchronisation */}
       <div className="flex items-center space-x-2">
-        {/* Impulsion Tiroir-Caisse RJ11 */}
-        <button
-          onClick={handleKickDrawer}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs sm:text-[13px] font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
-            drawerPulseNotice
-              ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
-              : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-800'
-          }`}
-          title="Envoyer impulsion électrique 24V au tiroir-caisse RJ11"
-        >
-          <Vault className="w-4 h-4 text-[#E87524]" />
-          <span>{drawerPulseNotice ? 'Tiroir Ouvert' : 'Tiroir'}</span>
-        </button>
+        {/* Impulsion Tiroir-Caisse RJ11 (Masqué pour le caissier, activable/désactivable par l'Admin) */}
+        {user?.role !== 'cashier' && isManualDrawerAllowed && (
+          <button
+            onClick={handleKickDrawer}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs sm:text-[13px] font-bold transition-all shadow-2xs cursor-pointer active:scale-95 ${
+              drawerPulseNotice
+                ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                : 'bg-stone-50 hover:bg-stone-100 border-stone-200 text-stone-800'
+            }`}
+            title="Envoyer impulsion électrique 24V au tiroir-caisse RJ11"
+          >
+            <Vault className="w-4 h-4 text-[#E87524]" />
+            <span>{drawerPulseNotice ? 'Tiroir Ouvert' : 'Tiroir'}</span>
+          </button>
+        )}
 
         {/* Statut Réseau & Synchronisation Outbox */}
         <button 
