@@ -439,6 +439,8 @@ mod tests {
                     quantity: 2.0,
                     unit_price_ttc: 15500,
                     discount_amount: 0,
+                    supplements: None,
+                    notes: None,
                 }
             ],
             payments: vec![
