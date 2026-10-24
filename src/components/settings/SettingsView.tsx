@@ -101,6 +101,9 @@ export const SettingsView: React.FC = () => {
   // Imprimante
   const [printerPaperSize, setPrinterPaperSize] = useState<'58mm' | '80mm'>('80mm');
   const [autoPrintReceipt, setAutoPrintReceipt] = useState<boolean>(true);
+  const [printersList, setPrintersList] = useState<Array<{ name: string; device_type: string; path_or_id: string; is_default: boolean }>>([]);
+  const [selectedPrinter, setSelectedPrinter] = useState<string>(printerService.getSelectedPrinterName() || '');
+  const [isLoadingPrinters, setIsLoadingPrinters] = useState<boolean>(false);
 
   // Sauvegarde & Restauration
   const [ownerPinForRestore, setOwnerPinForRestore] = useState<string>('');
@@ -118,6 +121,9 @@ export const SettingsView: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'backup') {
       loadBackupDetails();
+    }
+    if (activeTab === 'hardware') {
+      loadPrinters();
     }
   }, [activeTab]);
 
@@ -209,10 +215,28 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  const loadPrinters = async () => {
+    try {
+      setIsLoadingPrinters(true);
+      const list = await printerService.getAvailablePrinters();
+      setPrintersList(list);
+    } catch (e) {
+      console.warn('Could not load hardware printers:', e);
+    } finally {
+      setIsLoadingPrinters(false);
+    }
+  };
+
+  const handleSelectPrinter = (name: string) => {
+    setSelectedPrinter(name);
+    printerService.setSelectedPrinterName(name || null);
+    showToast(name ? `Imprimante sélectionnée : ${name}` : 'Imprimante par défaut du système activée', 'info');
+  };
+
   const handleTestDrawer = async () => {
     try {
       await printerService.kickCashDrawer();
-      showToast('Signal impulsion RJ11 envoyé au tiroir-caisse', 'info');
+      showToast('Signal impulsion RJ11 envoyé au tiroir-caisse avec succès', 'success');
     } catch (err: any) {
       showToast(`Erreur tiroir-caisse : ${err.message}`, 'error');
     }
@@ -762,6 +786,36 @@ export const SettingsView: React.FC = () => {
               </p>
 
               <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50 col-span-2">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-gray-700 font-bold text-xs">Imprimante Thermique Détectée :</label>
+                    <button
+                      type="button"
+                      onClick={loadPrinters}
+                      disabled={isLoadingPrinters}
+                      className="text-xs text-[#E87524] hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <RotateCcw className={`w-3.5 h-3.5 ${isLoadingPrinters ? 'animate-spin' : ''}`} />
+                      Actualiser la liste
+                    </button>
+                  </div>
+                  <select
+                    value={selectedPrinter}
+                    onChange={e => handleSelectPrinter(e.target.value)}
+                    className="w-full p-2 border border-[#E9DCCB] rounded text-xs bg-white text-gray-900 font-medium"
+                  >
+                    <option value="">[Imprimante par défaut de Windows / Détection automatique]</option>
+                    {printersList.map(p => (
+                      <option key={p.name} value={p.name}>
+                        {p.name} {p.is_default ? '(Par défaut du système)' : ''} — [{p.device_type}]
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10.5px] text-gray-500 mt-1.5">
+                    Sélectionnez votre imprimante thermique (ex: Xprinter, POS-80, Epson). Les commandes d'impression directe et d'ouverture du tiroir-caisse lui seront transmises sans aucune fenêtre PowerShell.
+                  </p>
+                </div>
+
                 <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50">
                   <label className="block text-gray-700 font-bold mb-1">Format de papier ticket :</label>
                   <select
@@ -1083,7 +1137,7 @@ export const SettingsView: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Version Installée</span>
-                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.4</p>
+                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.5</p>
                 <span className="text-[11px] text-green-700 font-medium flex items-center gap-1 mt-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Canal Production Stable (NSIS Windows)
                 </span>
@@ -1160,7 +1214,7 @@ export const SettingsView: React.FC = () => {
             {updateState.status === 'up-to-date' && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.4).</span>
+                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.5).</span>
               </div>
             )}
 

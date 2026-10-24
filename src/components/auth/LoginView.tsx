@@ -132,7 +132,7 @@ export const LoginView: React.FC = () => {
         {/* Version & Sécurité */}
         <div className="pt-3 border-t border-stone-200 flex flex-col items-center">
           <span className="text-[11px] text-stone-400 font-mono font-medium">
-            Aquadro POS Gourmet v1.0.4 Stable
+            Aquadro POS Gourmet v1.0.5 Stable
           </span>
         </div>
       </div>

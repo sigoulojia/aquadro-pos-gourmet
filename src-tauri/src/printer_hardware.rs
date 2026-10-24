@@ -1,10 +1,12 @@
 // Aquadro POS — Native Printer & Cash Drawer Hardware Controller
 // Gère l'envoi de commandes brutes ESC/POS et l'impulsion électrique RJ11 (Tiroir-Caisse)
+// Version Windows Spooler Native (Win32 winspool) — Zéro PowerShell, Zéro CMD, Zéro fenêtre intempestive
 
 #[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
 #[cfg(target_os = "linux")]
 use std::io::Write;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +46,203 @@ pub fn build_drawer_kick_payload(pin: Option<u8>) -> Vec<u8> {
     payload
 }
 
+#[cfg(target_os = "windows")]
+mod winspool {
+    use std::ffi::c_void;
+    use super::HardwareDeviceInfo;
+
+    #[repr(C)]
+    struct DocInfo1W {
+        p_doc_name: *const u16,
+        p_output_file: *const u16,
+        p_datatype: *const u16,
+    }
+
+    #[repr(C)]
+    struct PrinterInfo4W {
+        p_printer_name: *const u16,
+        p_server_name: *const u16,
+        attributes: u32,
+    }
+
+    #[link(name = "winspool")]
+    extern "system" {
+        fn OpenPrinterW(
+            p_printer_name: *const u16,
+            ph_printer: *mut isize,
+            p_default: *const c_void,
+        ) -> i32;
+
+        fn StartDocPrinterW(
+            h_printer: isize,
+            level: u32,
+            p_doc_info: *const DocInfo1W,
+        ) -> u32;
+
+        fn StartPagePrinter(h_printer: isize) -> i32;
+
+        fn WritePrinter(
+            h_printer: isize,
+            p_buf: *const u8,
+            cb_buf: u32,
+            pc_written: *mut u32,
+        ) -> i32;
+
+        fn EndPagePrinter(h_printer: isize) -> i32;
+        fn EndDocPrinter(h_printer: isize) -> i32;
+        fn ClosePrinter(h_printer: isize) -> i32;
+
+        fn GetDefaultPrinterW(
+            psz_buffer: *mut u16,
+            pcch_buffer: *mut u32,
+        ) -> i32;
+
+        fn EnumPrintersW(
+            flags: u32,
+            name: *const u16,
+            level: u32,
+            p_printer_enum: *mut u8,
+            cb_buf: u32,
+            pcb_needed: *mut u32,
+            pc_returned: *mut u32,
+        ) -> i32;
+    }
+
+    pub fn get_default_printer_name() -> Option<String> {
+        let mut buffer_size = 0u32;
+        unsafe {
+            GetDefaultPrinterW(std::ptr::null_mut(), &mut buffer_size);
+        }
+        if buffer_size == 0 {
+            return None;
+        }
+
+        let mut buffer: Vec<u16> = vec![0; buffer_size as usize];
+        let res = unsafe {
+            GetDefaultPrinterW(buffer.as_mut_ptr(), &mut buffer_size)
+        };
+        if res == 0 {
+            return None;
+        }
+
+        let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        String::from_utf16(&buffer[..len]).ok()
+    }
+
+    pub fn send_raw_bytes(printer_name: Option<&str>, data: &[u8]) -> Result<String, String> {
+        let target_name = match printer_name {
+            Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+            _ => {
+                if let Some(def) = get_default_printer_name() {
+                    def
+                } else {
+                    let all = list_printers();
+                    if let Some(first) = all.first() {
+                        first.name.clone()
+                    } else {
+                        return Err("لم يتم العثور على أي طابعة في نظام Windows. يرجى التأكد من تعريف وتوصيل طابعة فواتير عبر منفذ USB.".to_string());
+                    }
+                }
+            }
+        };
+
+        let wide_name: Vec<u16> = target_name.encode_utf16().chain(std::iter::once(0)).collect();
+
+        let mut h_printer: isize = 0;
+        let open_res = unsafe {
+            OpenPrinterW(wide_name.as_ptr(), &mut h_printer, std::ptr::null())
+        };
+        if open_res == 0 || h_printer == 0 {
+            return Err(format!(
+                "تعذر فتح الاتصال بالطابعة '{}'. يرجى التأكد من تشغيل الطابعة وتوصيل كابل USB.",
+                target_name
+            ));
+        }
+
+        struct AutoClose(isize);
+        impl Drop for AutoClose {
+            fn drop(&mut self) {
+                if self.0 != 0 {
+                    unsafe { ClosePrinter(self.0); }
+                }
+            }
+        }
+        let _guard = AutoClose(h_printer);
+
+        let doc_name: Vec<u16> = "Aquadro POS Ticket".encode_utf16().chain(std::iter::once(0)).collect();
+        let data_type: Vec<u16> = "RAW".encode_utf16().chain(std::iter::once(0)).collect();
+
+        let doc_info = DocInfo1W {
+            p_doc_name: doc_name.as_ptr(),
+            p_output_file: std::ptr::null(),
+            p_datatype: data_type.as_ptr(),
+        };
+
+        let job_id = unsafe { StartDocPrinterW(h_printer, 1, &doc_info) };
+        if job_id == 0 {
+            return Err(format!("فشل بدء مهمة الطباعة المباشرة على '{}'.", target_name));
+        }
+
+        unsafe {
+            StartPagePrinter(h_printer);
+            let mut written = 0u32;
+            let write_res = WritePrinter(h_printer, data.as_ptr(), data.len() as u32, &mut written);
+            EndPagePrinter(h_printer);
+            EndDocPrinter(h_printer);
+
+            if write_res == 0 || written == 0 {
+                return Err(format!("فشل إرسال البيانات المباشرة إلى منفذ الطابعة '{}'.", target_name));
+            }
+        }
+
+        Ok(target_name)
+    }
+
+    pub fn list_printers() -> Vec<HardwareDeviceInfo> {
+        let mut list = Vec::new();
+        let default_name = get_default_printer_name();
+
+        let flags = 0x00000002 | 0x00000004; // PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
+        let mut needed = 0u32;
+        let mut returned = 0u32;
+
+        unsafe {
+            EnumPrintersW(flags, std::ptr::null(), 4, std::ptr::null_mut(), 0, &mut needed, &mut returned);
+        }
+
+        if needed > 0 {
+            let mut buffer: Vec<u8> = vec![0; needed as usize];
+            let res = unsafe {
+                EnumPrintersW(flags, std::ptr::null(), 4, buffer.as_mut_ptr(), needed, &mut needed, &mut returned)
+            };
+            if res != 0 && returned > 0 {
+                let items = buffer.as_ptr() as *const PrinterInfo4W;
+                for i in 0..returned as usize {
+                    let info = unsafe { &*items.add(i) };
+                    if !info.p_printer_name.is_null() {
+                        let mut len = 0;
+                        while unsafe { *info.p_printer_name.add(len) } != 0 {
+                            len += 1;
+                        }
+                        let slice = unsafe { std::slice::from_raw_parts(info.p_printer_name, len) };
+                        if let Ok(name) = String::from_utf16(slice) {
+                            let is_def = default_name.as_ref().map(|d| d.eq_ignore_ascii_case(&name)).unwrap_or(false);
+                            list.push(HardwareDeviceInfo {
+                                name: name.clone(),
+                                device_type: "WINDOWS_SPOOLER".to_string(),
+                                path_or_id: name,
+                                is_default: is_def,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        list
+    }
+}
+
 /// Envoie la commande d'ouverture du tiroir-caisse connecté à une imprimante thermique
 pub fn trigger_cash_drawer(pin: Option<u8>, preferred_printer: Option<String>) -> Result<DrawerKickResult, String> {
     let payload = build_drawer_kick_payload(pin);
@@ -81,7 +280,6 @@ pub fn trigger_cash_drawer(pin: Option<u8>, preferred_printer: Option<String>) -
     // -------------------------------------------------------------------------
     #[cfg(target_os = "linux")]
     {
-        // Récupérer la liste des imprimantes CUPS disponibles
         let mut target_printers = Vec::new();
         if let Some(ref name) = preferred_printer {
             if !name.trim().is_empty() {
@@ -161,48 +359,18 @@ pub fn trigger_cash_drawer(pin: Option<u8>, preferred_printer: Option<String>) -
     }
 
     // -------------------------------------------------------------------------
-    // STRATÉGIE 4 (Windows Spooler RAW API / PowerShell)
+    // STRATÉGIE 4 (Windows Spooler RAW Direct API — ZÉRO POWERSHELL, ZÉRO CMD)
     // -------------------------------------------------------------------------
     #[cfg(target_os = "windows")]
     {
-        let printer_arg = preferred_printer.as_deref().unwrap_or("");
-        let hex_bytes: Vec<String> = payload.iter().map(|b| format!("0x{:02X}", b)).collect();
-        let bytes_joined = hex_bytes.join(",");
-        let ps_script = format!(
-            r#"$bytes = [byte[]]@({0});
-$printerName = if ('{1}' -ne '') {{ '{1}' }} else {{ (Get-WmiObject -Query 'SELECT Name FROM Win32_Printer WHERE Default = True').Name }};
-if ($printerName) {{
-    $tempFile = [System.IO.Path]::GetTempFileName();
-    [System.IO.File]::WriteAllBytes($tempFile, $bytes);
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c copy /b `"$tempFile`" `"`\`\localhost\`$printerName`"" -NoNewWindow -Wait;
-    Remove-Item $tempFile -Force;
-    Write-Output "OK:$printerName"
-}} else {{
-    Write-Error "No printer found"
-}}"#,
-            bytes_joined,
-            printer_arg
-        );
-
-        match Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(&ps_script)
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    let out_str = String::from_utf8_lossy(&output.stdout);
-                    if out_str.contains("OK:") {
-                        crate::logger::log_info("DRAWER", "Tiroir-caisse ouvert via Windows Spooler");
-                        return Ok(DrawerKickResult {
-                            success: true,
-                            method_used: "Windows Spooler RAW".to_string(),
-                            message: "Signal envoyé au tiroir-caisse via l'imprimante Windows".to_string(),
-                        });
-                    }
-                }
+        match winspool::send_raw_bytes(preferred_printer.as_deref(), &payload) {
+            Ok(printer_used) => {
+                crate::logger::log_info("DRAWER", &format!("Tiroir-caisse ouvert via Windows Spooler sur '{}'", printer_used));
+                return Ok(DrawerKickResult {
+                    success: true,
+                    method_used: format!("Windows Spooler RAW ({})", printer_used),
+                    message: format!("Impulsion électrique RJ11 transmise avec succès à l'imprimante '{}'", printer_used),
+                });
             }
             Err(e) => {
                 attempted_methods.push(format!("Windows Spooler ({})", e));
@@ -275,29 +443,7 @@ pub fn scan_available_printers() -> Vec<HardwareDeviceInfo> {
 
     #[cfg(target_os = "windows")]
     {
-        if let Ok(output) = Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-Command")
-            .arg("Get-WmiObject -Query 'SELECT Name, Default FROM Win32_Printer' | ForEach-Object { \"$($_.Name)|$($_.Default)\" }")
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                for line in text.lines() {
-                    let parts: Vec<&str> = line.trim().split('|').collect();
-                    if !parts[0].is_empty() {
-                        let name = parts[0].to_string();
-                        let is_def = parts.get(1).map(|v| v.eq_ignore_ascii_case("true")).unwrap_or(false);
-                        list.push(HardwareDeviceInfo {
-                            name: name.clone(),
-                            device_type: "WINDOWS_SPOOLER".to_string(),
-                            path_or_id: name,
-                            is_default: is_def,
-                        });
-                    }
-                }
-            }
-        }
+        list.extend(winspool::list_printers());
     }
 
     list
@@ -345,36 +491,14 @@ pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> 
 
     #[cfg(target_os = "windows")]
     {
-        let printer_arg = preferred_printer.as_deref().unwrap_or("");
-        let hex_bytes: Vec<String> = bytes.iter().map(|b| format!("0x{:02X}", b)).collect();
-        let bytes_joined = hex_bytes.join(",");
-        let ps_script = format!(
-            r#"$bytes = [byte[]]@({0});
-$printerName = if ('{1}' -ne '') {{ '{1}' }} else {{ (Get-WmiObject -Query 'SELECT Name FROM Win32_Printer WHERE Default = True').Name }};
-if ($printerName) {{
-    $tempFile = [System.IO.Path]::GetTempFileName();
-    [System.IO.File]::WriteAllBytes($tempFile, $bytes);
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c copy /b `"$tempFile`" `"`\`\localhost\`$printerName`"" -NoNewWindow -Wait;
-    Remove-Item $tempFile -Force;
-    Write-Output "OK:$printerName"
-}}"#,
-            bytes_joined,
-            printer_arg
-        );
-
-        if let Ok(output) = Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-NonInteractive")
-            .arg("-Command")
-            .arg(&ps_script)
-            .output()
-        {
-            if output.status.success() {
-                let out_str = String::from_utf8_lossy(&output.stdout);
-                if out_str.contains("OK:") {
-                    crate::logger::log_info("PRINTER", "Ticket imprimé via Windows Spooler");
-                    return Ok("Ticket imprimé via Windows Spooler".to_string());
-                }
+        match winspool::send_raw_bytes(preferred_printer.as_deref(), &bytes) {
+            Ok(printer_used) => {
+                crate::logger::log_info("PRINTER", &format!("Ticket imprimé via Windows Spooler sur '{}'", printer_used));
+                return Ok(format!("Ticket imprimé avec succès via '{}'", printer_used));
+            }
+            Err(e) => {
+                crate::logger::log_warn("PRINTER", &format!("Échec impression Windows Spooler: {}", e));
+                return Err(e);
             }
         }
     }

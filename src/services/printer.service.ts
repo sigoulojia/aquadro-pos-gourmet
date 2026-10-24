@@ -620,13 +620,35 @@ export class PrinterService {
     `;
   }
 
+  public getSelectedPrinterName(): string | null {
+    if (typeof window !== 'undefined') {
+      try {
+        const val = localStorage.getItem('aquadro_selected_printer');
+        if (val && val.trim()) return val.trim();
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  public setSelectedPrinterName(name: string | null): void {
+    if (typeof window !== 'undefined') {
+      try {
+        if (name && name.trim()) {
+          localStorage.setItem('aquadro_selected_printer', name.trim());
+        } else {
+          localStorage.removeItem('aquadro_selected_printer');
+        }
+      } catch (e) {}
+    }
+  }
+
   // Envoyer la commande d'éjection du tiroir-caisse RJ11
   public async kickCashDrawer(): Promise<boolean> {
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const printerName = localStorage.getItem('aquadro_selected_printer') || null;
-        const res: any = await invoke('open_cash_drawer', { pin: 0, printerName });
+        const printerName = this.getSelectedPrinterName();
+        const res: any = await invoke('open_cash_drawer', { pin: 0, printerName, printer_name: printerName });
         console.log('Impulsion RJ11 envoyée au tiroir-caisse via Tauri:', res);
         return true;
       } catch (err: any) {
@@ -749,14 +771,17 @@ export class PrinterService {
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('raw_print_receipt', { content: receiptText, printer_name: null });
+        const printerName = this.getSelectedPrinterName();
+        await invoke('raw_print_receipt', { content: receiptText, printerName, printer_name: printerName });
       } catch (err) {
-        console.warn('Impression native spooler non disponible :', err);
+        console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.print();
+          }, 50);
+        }
       }
-    }
-
-    // Ouvrir le dialogue d'impression système
-    if (triggerBrowserPrint && typeof window !== 'undefined') {
+    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -947,13 +972,17 @@ export class PrinterService {
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('raw_print_receipt', { content: kitchenText, printer_name: null });
+        const printerName = this.getSelectedPrinterName();
+        await invoke('raw_print_receipt', { content: kitchenText, printerName, printer_name: printerName });
       } catch (err) {
-        console.warn('Impression native spooler non disponible :', err);
+        console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.print();
+          }, 50);
+        }
       }
-    }
-
-    if (triggerBrowserPrint && typeof window !== 'undefined') {
+    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -995,13 +1024,17 @@ export class PrinterService {
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('raw_print_receipt', { content: combinedText, printer_name: null });
+        const printerName = this.getSelectedPrinterName();
+        await invoke('raw_print_receipt', { content: combinedText, printerName, printer_name: printerName });
       } catch (err) {
-        console.warn('Impression native spooler non disponible :', err);
+        console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
+        if (typeof window !== 'undefined') {
+          setTimeout(() => {
+            window.print();
+          }, 50);
+        }
       }
-    }
-
-    if (triggerBrowserPrint && typeof window !== 'undefined') {
+    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);

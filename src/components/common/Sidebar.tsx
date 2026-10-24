@@ -256,7 +256,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ currentView, onNavigate }) =
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] text-stone-400 font-mono">
           <span>Aquadro POS</span>
-          <span className="font-semibold text-stone-500">v1.0.4</span>
+          <span className="font-semibold text-stone-500">v1.0.5</span>
         </div>
       </div>
     </aside>
