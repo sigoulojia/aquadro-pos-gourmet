@@ -310,7 +310,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="اكتب سؤالك (مثال: شحال بعنا اليوم؟ / واش راه ناقص فالمخزون؟)..."
+          placeholder="اكتب سؤالك هنا..."
           className="flex-1 px-3 py-2 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl text-xs text-stone-900 focus:outline-none focus:border-[#E87524] font-medium"
         />
         <button

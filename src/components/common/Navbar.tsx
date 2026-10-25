@@ -30,6 +30,7 @@ import {
 import { NotificationsDropdown } from './NotificationsDropdown';
 import { notificationService } from '../../services/notification.service';
 import { NavView } from './Sidebar';
+import { licenseService, LicenseStatusResponse } from '../../services/license.service';
 
 
 // Composant horloge isolé pour empêcher tout re-render de la barre complète (Optimisation i5 3e Gen / CPU modeste)
@@ -73,6 +74,11 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
   const [storeLogo, setStoreLogo] = useState<string | null>(() => {
     return localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
   });
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatusResponse | null>(null);
+
+  useEffect(() => {
+    licenseService.getStatus().then(setLicenseStatus).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const handleDrawerSetting = () => {
@@ -259,6 +265,18 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
             </span>
           )}
         </button>
+
+        {/* Badge Période d'essai Démo 7 jours */}
+        {licenseStatus?.is_trial_active && !licenseStatus?.is_licensed && (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open_license_modal'))}
+            className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-all shadow-2xs animate-pulse cursor-pointer"
+            title="فترة تجريبية 7 أيام — انقر لتفعيل الترخيص الدائم"
+          >
+            <Clock className="w-3.5 h-3.5 text-[#E87524]" />
+            <span>تجريبي: متبقي {licenseStatus.trial_days_remaining} أيام</span>
+          </button>
+        )}
 
         {/* Horloge Locale */}
         <div className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded border border-gray-200 bg-gray-50 text-gray-600 font-mono text-[11px]">

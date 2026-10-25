@@ -7,8 +7,11 @@ use crate::repo::tx::AquadroTx;
 pub async fn process_checkout(
     payload: ProcessCheckoutPayload,
     pool: State<'_, SqlitePool>,
+    app_handle: tauri::AppHandle,
 ) -> Result<ProcessCheckoutResponse, String> {
-    
+    // Verrouillage de sécurité Kernel : Refus d'encaissement si non licencié
+    crate::license::ensure_license_active_or_die(&app_handle)?;
+
     // 1. Begin atomic transaction with lock retry for busy handling
     let mut tx = AquadroTx::begin_immediate_with_retry(&pool, 3)
         .await

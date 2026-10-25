@@ -7,6 +7,7 @@ pub mod repo;
 pub mod logger;
 pub mod runtime;
 pub mod printer_hardware;
+pub mod license;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
@@ -88,7 +89,15 @@ pub fn run() {
             runtime::get_runtime_paths,
             runtime::create_database_backup,
             runtime::list_database_backups,
-            runtime::verify_database_integrity
+            runtime::verify_database_integrity,
+            runtime::save_report_file,
+            runtime::open_reports_folder,
+            runtime::open_logs_folder,
+            runtime::create_new_usage_session,
+            runtime::list_usage_sessions,
+            runtime::open_folder_path,
+            license::get_license_status,
+            license::activate_license_key
         ])
         .build(tauri::generate_context!())
         .expect("error while building Aquadro POS application");

@@ -40,15 +40,23 @@ import {
   HardDrive,
   Folder,
   Bike,
-  FileText
+  FileText,
+  Sliders,
+  FolderOpen,
+  FolderArchive,
+  ArrowRight
 } from 'lucide-react';
 
 import { updateService, UpdateState } from '../../services/update.service';
 import { PeriodicReportsSection } from './PeriodicReportsSection';
+import { TicketDesignerSection } from './TicketDesignerSection';
+import { UsageSessionsSection } from './UsageSessionsSection';
+import { LicenseSettingsSection } from './LicenseSettingsSection';
 import { drawerLogService, DrawerLogEntry } from '../../services/drawerLog.service';
+import { logger } from '../../services/logger.service';
 import { useAuth } from '../../hooks/useAuth';
 
-type TabKey = 'store' | 'fiscal' | 'hardware' | 'backup' | 'reports' | 'sync' | 'updates';
+type TabKey = 'store' | 'fiscal' | 'hardware' | 'ticket' | 'backup' | 'reports' | 'sessions' | 'sync' | 'updates' | 'license';
 
 export const SettingsView: React.FC = () => {
   const { user } = useAuth();
@@ -412,12 +420,34 @@ export const SettingsView: React.FC = () => {
   return (
     <div className="flex-1 bg-[#FFF8EF] p-4 flex flex-col overflow-hidden text-xs select-none">
       {/* En-tête */}
-      <div className="flex items-center justify-between pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
         <div>
           <h2 className="text-base font-bold text-gray-900">Paramètres Généraux du Système</h2>
           <span className="text-[11px] text-gray-500">
             Profil fiscal algérien DGI, matériel caisse, sauvegardes locales et synchronisation
           </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => logger.openReportsFolder()}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold shadow-2xs transition-colors cursor-pointer text-xs"
+            title="Ouvrir le dossier local des rapports"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-[#E87524]" />
+            <span>مجلد التقارير</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => logger.openLogsFolder()}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold shadow-2xs transition-colors cursor-pointer text-xs"
+            title="Ouvrir le dossier de tous les événements et historique"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+            <span>سجلات النشاط (سجل كل ما حدث)</span>
+          </button>
         </div>
       </div>
 
@@ -460,6 +490,18 @@ export const SettingsView: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('ticket')}
+          className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
+            activeTab === 'ticket'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>تخصيص التيكيت (Ticket)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('backup')}
           className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
             activeTab === 'backup'
@@ -481,6 +523,18 @@ export const SettingsView: React.FC = () => {
         >
           <FileText className="w-4 h-4" />
           <span>Rapports & PDF (التقارير)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('sessions')}
+          className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors cursor-pointer ${
+            activeTab === 'sessions'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <FolderArchive className="w-4 h-4 text-[#E87524]" />
+          <span>فترات الاستخدام والأرشيف (Dossiers)</span>
         </button>
 
         <button
@@ -508,6 +562,18 @@ export const SettingsView: React.FC = () => {
           {updateState.status === 'available' && (
             <span className="w-2 h-2 rounded-full bg-[#E87524] animate-pulse" />
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('license')}
+          className={`px-3 py-2 font-bold flex items-center space-x-2 border-b-2 text-xs transition-colors ${
+            activeTab === 'license'
+              ? 'border-[#E87524] text-[#D46317] bg-[#FFF3EB]/40'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span>الترخيص والحماية (Licence)</span>
         </button>
       </div>
 
@@ -648,7 +714,7 @@ export const SettingsView: React.FC = () => {
                   value={store.rc_number || ''}
                   onChange={e => setStore({ ...store, rc_number: e.target.value })}
                   className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
-                  placeholder="16/00-1234567B22"
+                  placeholder=""
                 />
               </div>
               <div>
@@ -658,7 +724,7 @@ export const SettingsView: React.FC = () => {
                   value={store.nif_number || ''}
                   onChange={e => setStore({ ...store, nif_number: e.target.value })}
                   className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
-                  placeholder="002216012345678"
+                  placeholder=""
                 />
               </div>
               <div>
@@ -668,7 +734,7 @@ export const SettingsView: React.FC = () => {
                   value={store.nis_number || ''}
                   onChange={e => setStore({ ...store, nis_number: e.target.value })}
                   className="w-full p-2 border border-[#E9DCCB] rounded text-xs font-mono text-gray-900"
-                  placeholder="002216010001234"
+                  placeholder=""
                 />
               </div>
             </div>
@@ -704,7 +770,7 @@ export const SettingsView: React.FC = () => {
                     value={defaultDeliveryFee}
                     onChange={e => setDefaultDeliveryFee(parseFloat(e.target.value) || 0)}
                     className="w-full p-2 border border-[#E9DCCB] rounded-lg text-sm font-black font-mono text-[#E87524] bg-white focus:ring-2 focus:ring-[#E87524]"
-                    placeholder="200"
+                    placeholder=""
                   />
                   <span className="font-bold text-xs text-stone-600">DA</span>
                 </div>
@@ -1013,6 +1079,11 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
 
+        {/* TAB TICKET DESIGNER */}
+        {activeTab === 'ticket' && (
+          <TicketDesignerSection onShowToast={showToast} />
+        )}
+
         {/* TAB 4: SAUVEGARDES LOCALES & RESTAURATION */}
         {activeTab === 'backup' && (
           <div className="max-w-3xl space-y-6">
@@ -1189,6 +1260,18 @@ export const SettingsView: React.FC = () => {
                 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('sessions')}
+                  className="px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold rounded-xl shadow-xs flex items-center justify-between transition-colors w-full cursor-pointer"
+                >
+                  <div className="flex items-center space-x-2">
+                    <FolderArchive className="w-4 h-4 text-emerald-200" />
+                    <span>🔄 إعادة نقطة الصفر وإنشاء مجلد استخدام جديد مع أرشفة السابق بأمان (موصى به حتى لا تختلط البيانات)</span>
+                  </div>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
                   onClick={async () => {
                     const { db } = await import('../../db/sqlite');
                     await db.resetTransactionsOnly();
@@ -1234,6 +1317,11 @@ export const SettingsView: React.FC = () => {
         {/* TAB: RAPPORTS PÉRIODIQUES (JOURNALIER 22:00, HEBDO, MENSUEL) */}
         {activeTab === 'reports' && (
           <PeriodicReportsSection store={store} storeLogo={storeLogo} />
+        )}
+
+        {/* TAB: GESTION DES DOSSIERS D'EXERCICE & ARCHIVES */}
+        {activeTab === 'sessions' && (
+          <UsageSessionsSection onShowToast={showToast} />
         )}
 
         {/* TAB 5: SYNCHRONISATION CLOUD */}
@@ -1402,6 +1490,11 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
           </div>
+        )}
+
+        {/* TAB 10: LICENCE & HWID AEGIS */}
+        {activeTab === 'license' && (
+          <LicenseSettingsSection />
         )}
       </div>
 

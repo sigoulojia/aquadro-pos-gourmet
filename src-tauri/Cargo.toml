@@ -1,6 +1,6 @@
 [package]
 name = "aquadro-pos"
-version = "1.0.6"
+version = "1.0.7"
 description = "Aquadro POS Gourmet — Pizzeria Point of Sale"
 authors = ["Aquadro POS Team"]
 edition = "2021"
@@ -27,6 +27,9 @@ argon2 = "0.5"
 keyring = "2"
 rand = "0.8"
 lazy_static = "1.4"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
 
 [dev-dependencies]
 minisign-verify = "0.2"

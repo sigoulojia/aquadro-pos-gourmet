@@ -303,7 +303,7 @@ export const CustomersView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: Prépare compétition, prend uniquement Isolat..."
+                  placeholder=""
                   value={formData.notes}
                   onChange={e => setFormData({ ...formData, notes: e.target.value })}
                   className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none"

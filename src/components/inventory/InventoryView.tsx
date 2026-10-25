@@ -1407,7 +1407,7 @@ export const InventoryView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="ex: Farine T55, Mozzarella Fior di Latte..."
+                  placeholder=""
                   value={ingForm.name_fr}
                   onChange={e => setIngForm({ ...ingForm, name_fr: e.target.value })}
                   className="w-full p-2.5 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl focus:border-[#E87524] focus:outline-none"
@@ -1420,7 +1420,7 @@ export const InventoryView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: فرينة، جبن موزاريلا..."
+                  placeholder=""
                   value={ingForm.name_ar}
                   onChange={e => setIngForm({ ...ingForm, name_ar: e.target.value })}
                   className="w-full p-2.5 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl focus:border-[#E87524] focus:outline-none text-right"
@@ -1483,7 +1483,7 @@ export const InventoryView: React.FC = () => {
                     type="number"
                     step="any"
                     min="0"
-                    placeholder={`ex: ${ingForm.unit === 'kg' ? '120' : ingForm.unit === 'g' ? '0.12' : ingForm.unit === 'L' ? '80' : ingForm.unit === 'ml' ? '0.08' : '50'}`}
+                    placeholder=""
                     value={ingForm.cost_per_unit}
                     onChange={e => setIngForm({ ...ingForm, cost_per_unit: parseFloat(e.target.value) || 0 })}
                     className="w-full p-2.5 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl font-mono focus:border-[#E87524] focus:outline-none text-right"
@@ -1568,7 +1568,7 @@ export const InventoryView: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  placeholder="ex: +5 ou -2"
+                  placeholder=""
                   value={adjustQty}
                   onChange={e => setAdjustQty(parseFloat(e.target.value) || 0)}
                   className="w-full p-2.5 bg-[#FCFBF9] border border-[#E9DCCB] rounded-xl font-mono font-black text-base focus:border-[#E87524] focus:outline-none text-center"

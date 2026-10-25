@@ -172,7 +172,7 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="ex: SARL Agro Industrie ou Ahmed Benali"
+                  placeholder=""
                   value={customerName}
                   onChange={e => setCustomerName(e.target.value)}
                   className="w-full p-2 border border-stone-300 rounded-lg text-xs"
@@ -182,7 +182,7 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
                 <label className="block text-stone-700 font-bold mb-1">Numéro de Téléphone</label>
                 <input
                   type="text"
-                  placeholder="ex: 0550 12 34 56"
+                  placeholder=""
                   value={customerPhone}
                   onChange={e => setCustomerPhone(e.target.value)}
                   className="w-full p-2 border border-stone-300 rounded-lg text-xs"
@@ -215,7 +215,7 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
                 <label className="block text-stone-700 font-bold mb-1">Adresse</label>
                 <input
                   type="text"
-                  placeholder="ex: Alger Centre"
+                  placeholder=""
                   value={customerAddress}
                   onChange={e => setCustomerAddress(e.target.value)}
                   className="w-full p-2 border border-stone-300 rounded-lg text-xs"
@@ -257,7 +257,7 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
             <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Ou article personnalisé (ex: Buffet Pizza 50 personnes)"
+                placeholder="Article personnalisé..."
                 value={customItemName}
                 onChange={e => setCustomItemName(e.target.value)}
                 className="flex-1 p-1.5 border border-stone-300 rounded-lg bg-white text-xs"
@@ -345,7 +345,7 @@ export const CreateInvoiceModal: React.FC<CreateInvoiceModalProps> = ({
             <label className="block text-stone-700 font-bold mb-1">Notes & Mentions Particulières</label>
             <input
               type="text"
-              placeholder="ex: Commande pour séminaire d'entreprise, payable à réception"
+              placeholder=""
               value={notes}
               onChange={e => setNotes(e.target.value)}
               className="w-full p-2 border border-stone-300 rounded-lg text-xs"

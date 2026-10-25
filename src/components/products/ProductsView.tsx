@@ -17,17 +17,24 @@ import {
   UtensilsCrossed,
   Upload,
   Image as ImageIcon,
-  Sparkles
+  Sparkles,
+  Eye,
+  Maximize2
 } from "lucide-react";
 import { SupplementsManagerModal } from "./SupplementsManagerModal";
 import { PizzaAvailabilityModal } from "./PizzaAvailabilityModal";
 import { recipeService, ProductIngredientStatus } from "../../services/recipe.service";
+import { logger } from "../../services/logger.service";
+import { useAuth } from "../../hooks/useAuth";
 
 export const ProductsView: React.FC = () => {
+  const { user } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [ingredientStatusMap, setIngredientStatusMap] = useState<Record<string, ProductIngredientStatus>>({});
+  const [previewImageModal, setPreviewImageModal] = useState<{ url: string; title: string } | null>(null);
+  const [imageFitMode, setImageFitMode] = useState<'contain' | 'cover'>('contain');
   const [search, setSearch] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -54,7 +61,7 @@ export const ProductsView: React.FC = () => {
   }, []);
 
   const loadProducts = async () => {
-    const list = await productService.getProducts(true);
+    const list = await productService.getProducts(false);
     setProducts(list);
     try {
       const statusMap = await recipeService.getAllProductsIngredientStatus();
@@ -267,10 +274,11 @@ export const ProductsView: React.FC = () => {
   const handleConfirmDeleteProduct = async () => {
     if (!deletingProduct) return;
     try {
-      await productService.archiveProduct(deletingProduct.id);
-      showToast(`تم حذف "${deletingProduct.name_fr}" من القائمة بنجاح`, "info");
+      await productService.deleteProduct(deletingProduct.id);
+      await logger.logProductDeleted(deletingProduct.id, deletingProduct.name_fr, user?.name || user?.role || 'Admin');
+      showToast(`تم حذف "${deletingProduct.name_fr}" نهائياً من القائمة وقاعدة البيانات`, "success");
       setDeletingProduct(null);
-      loadProducts();
+      await loadProducts();
     } catch (err: any) {
       showToast(`Erreur : ${err?.message || err}`, "error");
     }
@@ -344,7 +352,7 @@ export const ProductsView: React.FC = () => {
           <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3 pointer-events-none" />
           <input
             type="text"
-            placeholder="Rechercher une pizza, ingrédient..."
+            placeholder="Rechercher..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-8 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524]"
@@ -403,19 +411,32 @@ export const ProductsView: React.FC = () => {
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3.5">
                         {/* Photo réelle ou Icône SVG haute qualité */}
-                        <div className="w-14 h-14 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                        <div
+                          className="w-16 h-16 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] flex items-center justify-center shrink-0 overflow-hidden shadow-2xs group relative cursor-pointer"
+                          onClick={() => {
+                            if (p.image_url) {
+                              setPreviewImageModal({ url: p.image_url, title: p.name_fr });
+                            }
+                          }}
+                          title={p.image_url ? "انقر لتكبير صورة البيتزا بالحجم الكامل" : ""}
+                        >
                           {p.image_url ? (
-                            <img
-                              src={p.image_url}
-                              alt={p.name_fr}
-                              className="w-full h-full object-cover"
-                            />
+                            <>
+                              <img
+                                src={p.image_url}
+                                alt={p.name_fr}
+                                className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                              />
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <Maximize2 className="w-4 h-4 text-white drop-shadow" />
+                              </div>
+                            </>
                           ) : (
                             <div className="text-[#E87524]">
                               {p.category_id === "cat-drink" ? (
-                                <Coffee className="w-7 h-7" />
+                                <Coffee className="w-8 h-8" />
                               ) : (
-                                <Pizza className="w-7 h-7" />
+                                <Pizza className="w-8 h-8" />
                               )}
                             </div>
                           )}
@@ -532,59 +553,96 @@ export const ProductsView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
-              {/* Zone d'Upload Photo */}
+              {/* Zone d'Upload Photo Large & Claire (Full-size, Haute Résolution) */}
               <div>
-                <label className="block font-bold text-stone-700 mb-1.5">
-                  Photo du produit (recommandée)
-                </label>
-                <div className="flex items-center gap-4 p-3 bg-[#FFF8EF]/60 border border-[#E9DCCB] rounded-2xl">
-                  <div className="w-20 h-20 rounded-xl bg-white border border-[#E9DCCB] flex items-center justify-center overflow-hidden shrink-0 shadow-xs relative">
-                    {formData.image_url ? (
-                      <img
-                        src={formData.image_url}
-                        alt="Aperçu"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center text-stone-400">
-                        <ImageIcon className="w-8 h-8 text-stone-300" />
-                        <span className="text-[10px] mt-0.5">Aucune</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 space-y-1.5">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageFileChange}
-                      className="hidden"
-                      id="product-photo-upload"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <label
-                        htmlFor="product-photo-upload"
-                        className="px-3 py-2 bg-white hover:bg-[#FFF3EB] text-[#E87524] border border-[#E87524]/30 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-stone-700 text-xs">
+                    صورة البيتزا / المنتج (واضحة وكاملة بالحجم الأصلي)
+                  </label>
+                  {formData.image_url && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setImageFitMode(prev => prev === 'contain' ? 'cover' : 'contain')}
+                        className="text-[10px] font-bold text-[#E87524] bg-[#FFF3EB] hover:bg-[#FFE6D4] px-2 py-0.5 rounded border border-[#E87524]/30"
                       >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>{formData.image_url ? "Changer la photo" : "Importer une photo"}</span>
-                      </label>
-                      {formData.image_url && (
+                        {imageFitMode === 'contain' ? 'وضع: صورة كاملة (بدون قص)' : 'وضع: ملء الإطار'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-[#FFF8EF]/80 border-2 border-dashed border-[#E9DCCB] rounded-2xl p-4 space-y-3">
+                  {formData.image_url ? (
+                    <div className="space-y-3">
+                      <div className="w-full h-56 sm:h-64 rounded-xl bg-stone-900/5 border border-[#E9DCCB] flex items-center justify-center overflow-hidden shadow-inner relative group">
+                        <img
+                          src={formData.image_url}
+                          alt="Aperçu Grand Format"
+                          className={`w-full h-full transition-all duration-200 ${
+                            imageFitMode === 'contain' ? 'object-contain p-2' : 'object-cover'
+                          }`}
+                        />
                         <button
                           type="button"
-                          onClick={handleRemoveImage}
-                          className="px-2.5 py-2 bg-red-50 hover:bg-red-100 text-[#B9362B] border border-red-200 rounded-xl font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
+                          onClick={() => setPreviewImageModal({ url: formData.image_url, title: formData.name_fr || 'معاينة صورة البيتزا' })}
+                          className="absolute bottom-3 right-3 bg-black/70 hover:bg-black/90 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 backdrop-blur-xs transition shadow"
+                          title="عرض الصورة بملء الشاشة"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Supprimer</span>
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>تكبير بالحجم الكامل</span>
                         </button>
-                      )}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>تم تحميل الصورة بدقة عالية وكاملة</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor="product-photo-upload"
+                            className="px-3 py-1.5 bg-white hover:bg-[#FFF3EB] text-[#E87524] border border-[#E87524]/30 rounded-xl font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>تغيير الصورة</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-[#B9362B] border border-red-200 rounded-xl font-bold text-xs inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>إزالة</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-stone-500">
-                      Formats acceptés: JPG, PNG, WebP (Max 3 Mo). S'affichera directement sur l'écran caisse.
-                    </p>
-                  </div>
+                  ) : (
+                    <label
+                      htmlFor="product-photo-upload"
+                      className="flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-[#E87524]/30 hover:border-[#E87524] rounded-xl bg-white hover:bg-[#FFF8EF]/50 cursor-pointer transition-all group"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-[#FFF3EB] text-[#E87524] flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-xs">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <span className="font-extrabold text-xs text-[#292522]">
+                        انقر هنا لاختيار صورة البيتزا من الحاسوب
+                      </span>
+                      <span className="text-[10px] text-stone-500 mt-1">
+                        تظهر الصورة واضحة وكاملة بحجمها الطبيعي بدون أي تشويه (JPG, PNG, WebP)
+                      </span>
+                    </label>
+                  )}
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                    id="product-photo-upload"
+                  />
                 </div>
               </div>
 
@@ -593,7 +651,7 @@ export const ProductsView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="ex: Pizza Margherita, Pizza Carnivore, Canette Soda..."
+                  placeholder=""
                   value={formData.name_fr}
                   onChange={e => setFormData({ ...formData, name_fr: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
@@ -605,7 +663,7 @@ export const ProductsView: React.FC = () => {
                 <label className="block font-bold text-stone-700 mb-1">Nom en Arabe (Optionnel)</label>
                 <input
                   type="text"
-                  placeholder="مثال: بيتزا مارغريتا، بيتزا لحم..."
+                  placeholder=""
                   value={formData.name_ar}
                   onChange={e => setFormData({ ...formData, name_ar: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none font-arabic"
@@ -697,7 +755,7 @@ export const ProductsView: React.FC = () => {
                       value={priceInput}
                       onFocus={e => e.target.select()}
                       onChange={e => handlePriceChange(e.target.value)}
-                      placeholder="مثال: 700"
+                      placeholder=""
                       className="w-full py-2.5 px-3 bg-white border-2 border-[#E87524] rounded-xl text-center font-black text-lg text-[#E87524] font-mono focus:ring-4 focus:ring-[#E87524]/20 focus:outline-none shadow-xs"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 pointer-events-none">
@@ -759,7 +817,7 @@ export const ProductsView: React.FC = () => {
                 <label className="block font-bold text-stone-700 mb-1">Ingrédients / Recette / Description</label>
                 <textarea
                   rows={2}
-                  placeholder="ex: Sauce tomate, mozzarella fior di latte, basilic frais, huile d'olive..."
+                  placeholder=""
                   value={formData.variant}
                   onChange={e => setFormData({ ...formData, variant: e.target.value })}
                   className="w-full px-3.5 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
@@ -815,7 +873,7 @@ export const ProductsView: React.FC = () => {
         />
       )}
 
-      {/* Modal Confirmation de Suppression de Produit */}
+      {/* Modal Confirmation de Suppression Définitive */}
       {deletingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-sm w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -824,13 +882,13 @@ export const ProductsView: React.FC = () => {
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-stone-900 text-sm">تأكيد حذف الطبق</h3>
-                <p className="text-xs text-stone-500">Suppression du menu</p>
+                <h3 className="font-bold text-stone-900 text-sm">تأكيد الحذف النهائي للطبق</h3>
+                <p className="text-xs text-stone-500">Suppression définitive de la base de données</p>
               </div>
             </div>
 
             <p className="text-xs text-stone-600 leading-relaxed">
-              هل أنت متأكد من رغبتك في حذف <strong className="text-rose-600 font-bold">"{deletingProduct.name_fr}"</strong> من قائمة الأطباق؟
+              هل أنت متأكد من رغبتك في حذف <strong className="text-rose-600 font-bold">"{deletingProduct.name_fr}"</strong> نهائياً؟ سيتم حذفه بالكامل ولن يظهر في القائمة.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
@@ -847,7 +905,50 @@ export const ProductsView: React.FC = () => {
                 className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>حذف من القائمة</span>
+                <span>حذف نهائي</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'Aperçu Haute Définition Plein Écran de l'Image */}
+      {previewImageModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 select-none cursor-pointer"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div
+            className="bg-stone-900 border border-stone-700 rounded-2xl max-w-2xl w-full p-4 space-y-3 cursor-default"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between text-white pb-2 border-b border-stone-800">
+              <div className="font-bold text-sm flex items-center gap-2">
+                <Pizza className="w-4 h-4 text-[#E87524]" />
+                <span>{previewImageModal.title} — صورة كاملة عالية الدقة</span>
+              </div>
+              <button
+                onClick={() => setPreviewImageModal(null)}
+                className="text-stone-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="w-full max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl bg-stone-950 p-2">
+              <img
+                src={previewImageModal.url}
+                alt={previewImageModal.title}
+                className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-2xl"
+              />
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                onClick={() => setPreviewImageModal(null)}
+                className="px-4 py-1.5 bg-[#E87524] text-white rounded-lg text-xs font-bold"
+              >
+                إغلاق (Fermer)
               </button>
             </div>
           </div>

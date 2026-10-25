@@ -30,6 +30,8 @@ import { SplashScreen } from "./components/splash/SplashScreen";
 import { UpdateNotificationModal } from "./components/common/UpdateNotificationModal";
 import { updateService } from "./services/update.service";
 import { logger } from "./services/logger.service";
+import { LicenseActivationModal } from "./components/license/LicenseActivationModal";
+import { licenseService, LicenseStatusResponse } from "./services/license.service";
 
 export const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<NavView>("pos");
@@ -37,6 +39,24 @@ export const AppContent: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [showSetup, setShowSetup] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatusResponse | null>(null);
+  const [showLicenseModal, setShowLicenseModal] = useState<boolean>(false);
+
+  // Vérification de la licence matérielle au démarrage (Aegis License Shield)
+  useEffect(() => {
+    licenseService.getStatus(true).then((status) => {
+      setLicenseStatus(status);
+      if (!status.is_licensed) {
+        setShowLicenseModal(true);
+      }
+    }).catch((err) => {
+      console.error("[License] Erreur vérification licence:", err);
+    });
+
+    const handleOpen = () => setShowLicenseModal(true);
+    window.addEventListener('open_license_modal', handleOpen);
+    return () => window.removeEventListener('open_license_modal', handleOpen);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = authService.subscribe((user) => {
@@ -132,6 +152,21 @@ export const AppContent: React.FC = () => {
           />
         </React.Suspense>
       )}
+
+      {/* Barrière de Sécurité et Verrouillage Matériel de Licence */}
+      <LicenseActivationModal
+        isOpen={showLicenseModal || (licenseStatus !== null && !licenseStatus.is_licensed && licenseStatus.is_trial_expired)}
+        canClose={licenseStatus?.is_trial_active || licenseStatus?.is_licensed || false}
+        onClose={() => {
+          if (licenseStatus?.is_trial_active || licenseStatus?.is_licensed) {
+            setShowLicenseModal(false);
+          }
+        }}
+        onActivated={(status) => {
+          setLicenseStatus(status);
+          setShowLicenseModal(false);
+        }}
+      />
 
       {!currentUser ? (
         <LoginView />

@@ -34,3 +34,6 @@ Thumbs.db
 *.p12
 *.secret
 secrets/
+*.lic
+.sys_clock.dat
+*سجلات_النشاط*

@@ -421,7 +421,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                   </label>
                   <input
                     type="text"
-                    placeholder="ex: 16/00-1234567"
+                    placeholder=""
                     value={rc}
                     onChange={e => setRc(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
@@ -434,7 +434,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                   </label>
                   <input
                     type="text"
-                    placeholder="ex: 000116001234567"
+                    placeholder=""
                     value={nif}
                     onChange={e => setNif(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"
@@ -447,7 +447,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                   </label>
                   <input
                     type="text"
-                    placeholder="ex: 000116001234567"
+                    placeholder=""
                     value={nis}
                     onChange={e => setNis(e.target.value)}
                     className="w-full p-2 border border-gray-300 rounded text-xs font-mono text-gray-900"

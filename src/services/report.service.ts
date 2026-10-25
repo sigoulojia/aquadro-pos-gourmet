@@ -749,21 +749,42 @@ export class ReportService {
     return Array.from(consumptionMap.values()).sort((a, b) => b.totalCostConsumed - a.totalCostConsumed);
   }
 
-  // Export CSV universel certifié Pizzeria
-  public exportToCsv(filename: string, headers: string[], rows: any[][]): void {
+  // Export CSV universel certifié Pizzeria avec enregistrement automatique dans le dossier التقارير
+  public async exportToCsv(filename: string, headers: string[], rows: any[][]): Promise<string> {
     const csvContent = [
       headers.join(';'),
       ...rows.map(r => r.map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(';'))
     ].join('\r\n');
 
+    const cleanFilename = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+    let savedPath = '';
+
+    // 1. Sauvegarde automatique dans le dossier التقارير du programme via Tauri natif
+    if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const res: any = await invoke('save_report_file', {
+          filename: cleanFilename,
+          content: '\uFEFF' + csvContent
+        });
+        savedPath = res?.filepath || '';
+      } catch (err) {
+        console.warn('Erreur sauvegarde automatique rapport CSV:', err);
+      }
+    }
+
+    // 2. Téléchargement automatique navigateur (double garantie)
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.csv`);
+    link.setAttribute('download', cleanFilename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return savedPath;
   }
 }
 

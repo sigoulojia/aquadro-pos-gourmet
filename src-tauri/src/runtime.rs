@@ -209,3 +209,415 @@ pub async fn list_database_backups(app_handle: tauri::AppHandle) -> Result<Vec<B
 pub async fn verify_database_integrity(pool: tauri::State<'_, SqlitePool>) -> Result<IntegrityReport, String> {
     check_pool_integrity(&pool).await
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SaveReportResult {
+    pub success: bool,
+    pub filename: String,
+    pub filepath: String,
+    pub folderpath: String,
+}
+
+/// Resolves the dedicated "التقارير" directory
+pub fn resolve_reports_dir(app_handle: &AppHandle) -> PathBuf {
+    // 1. Program folder ./التقارير (directly in the current working directory)
+    let local_dir = PathBuf::from("التقارير");
+    if fs::create_dir_all(&local_dir).is_ok() {
+        if let Ok(abs) = fs::canonicalize(&local_dir) {
+            return abs;
+        }
+        return local_dir;
+    }
+    // 2. In AppData
+    if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
+        let app_reports = app_data.join("التقارير");
+        let _ = fs::create_dir_all(&app_reports);
+        return app_reports;
+    }
+    PathBuf::from("التقارير")
+}
+
+/// Resolves the dedicated "سجلات_النشاط" directory
+pub fn resolve_activity_logs_dir(app_handle: &AppHandle) -> PathBuf {
+    // 1. Program folder ./سجلات_النشاط
+    let local_dir = PathBuf::from("سجلات_النشاط");
+    if fs::create_dir_all(&local_dir).is_ok() {
+        if let Ok(abs) = fs::canonicalize(&local_dir) {
+            return abs;
+        }
+        return local_dir;
+    }
+    // 2. In AppData
+    if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
+        let app_logs = app_data.join("سجلات_النشاط");
+        let _ = fs::create_dir_all(&app_logs);
+        return app_logs;
+    }
+    PathBuf::from("سجلات_النشاط")
+}
+
+/// Helper to open a directory in the OS file manager
+pub fn open_path_in_explorer(target_path: &Path) -> Result<bool, String> {
+    if !target_path.exists() {
+        let _ = fs::create_dir_all(target_path);
+    }
+
+    let path_str = target_path.display().to_string();
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open Windows Explorer: {}", e))?;
+        return Ok(true);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open Linux File Manager: {}", e))?;
+        return Ok(true);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path_str)
+            .spawn()
+            .map_err(|e| format!("Failed to open macOS Finder: {}", e))?;
+        return Ok(true);
+    }
+
+    #[allow(unreachable_code)]
+    Ok(false)
+}
+
+/// Tauri Command: Save a report file automatically into the dedicated "التقارير" folder
+#[tauri::command]
+pub fn save_report_file(
+    app_handle: tauri::AppHandle,
+    filename: String,
+    content: String,
+) -> Result<SaveReportResult, String> {
+    let reports_dir = resolve_reports_dir(&app_handle);
+    let _ = fs::create_dir_all(&reports_dir);
+
+    // Also mirror to local ./التقارير if possible
+    let _ = fs::create_dir_all("التقارير");
+    let local_file = PathBuf::from("التقارير").join(&filename);
+    let _ = fs::write(&local_file, content.as_bytes());
+
+    let target_path = reports_dir.join(&filename);
+    fs::write(&target_path, content.as_bytes())
+        .map_err(|e| format!("Erreur lors de l'écriture du rapport: {}", e))?;
+
+    let filepath_str = target_path.display().to_string().replace('\\', "/");
+    let folderpath_str = reports_dir.display().to_string().replace('\\', "/");
+
+    crate::logger::log_info("RAPPORT", &format!("Rapport sauvegardé automatiquement : {}", filepath_str));
+
+    Ok(SaveReportResult {
+        success: true,
+        filename,
+        filepath: filepath_str,
+        folderpath: folderpath_str,
+    })
+}
+
+/// Tauri Command: Open the "التقارير" folder directly on the computer
+#[tauri::command]
+pub fn open_reports_folder(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let reports_dir = resolve_reports_dir(&app_handle);
+    let folder_str = reports_dir.display().to_string();
+    open_path_in_explorer(&reports_dir)?;
+    Ok(folder_str)
+}
+
+/// Tauri Command: Open the "سجلات_النشاط" folder directly on the computer
+#[tauri::command]
+pub fn open_logs_folder(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let logs_dir = resolve_activity_logs_dir(&app_handle);
+    let folder_str = logs_dir.display().to_string();
+    open_path_in_explorer(&logs_dir)?;
+    Ok(folder_str)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UsageSessionInfo {
+    pub id: String,
+    pub name: String,
+    pub folder_path: String,
+    pub is_active: bool,
+    pub created_at: String,
+    pub reports_count: usize,
+    pub logs_count: usize,
+    pub has_backup: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateUsageSessionResult {
+    pub success: bool,
+    pub session_name: String,
+    pub session_folder: String,
+    pub archive_folder: Option<String>,
+    pub message: String,
+}
+
+fn copy_dir_contents(src: &Path, dst: &Path) -> std::io::Result<usize> {
+    if !src.exists() {
+        return Ok(0);
+    }
+    fs::create_dir_all(dst)?;
+    let mut count = 0;
+    if let Ok(entries) = fs::read_dir(src) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name() {
+                    let dest_file = dst.join(file_name);
+                    let _ = fs::copy(&path, &dest_file);
+                    count += 1;
+                }
+            }
+        }
+    }
+    Ok(count)
+}
+
+fn clear_dir_files(dir: &Path) {
+    if dir.exists() {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+    }
+}
+
+/// Resolves the dedicated "جلسات_الاستخدام" base directory
+pub fn resolve_sessions_base_dir(app_handle: &AppHandle) -> PathBuf {
+    let local_dir = PathBuf::from("جلسات_الاستخدام");
+    if fs::create_dir_all(&local_dir).is_ok() {
+        if let Ok(abs) = fs::canonicalize(&local_dir) {
+            return abs;
+        }
+        return local_dir;
+    }
+    if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
+        let app_sessions = app_data.join("جلسات_الاستخدام");
+        let _ = fs::create_dir_all(&app_sessions);
+        return app_sessions;
+    }
+    PathBuf::from("جلسات_الاستخدام")
+}
+
+/// Resolves the dedicated "أرشيف_الاستخدامات_السابقة" directory
+pub fn resolve_archives_base_dir(app_handle: &AppHandle) -> PathBuf {
+    let local_dir = PathBuf::from("أرشيف_الاستخدامات_السابقة");
+    if fs::create_dir_all(&local_dir).is_ok() {
+        if let Ok(abs) = fs::canonicalize(&local_dir) {
+            return abs;
+        }
+        return local_dir;
+    }
+    if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
+        let app_archives = app_data.join("أرشيف_الاستخدامات_السابقة");
+        let _ = fs::create_dir_all(&app_archives);
+        return app_archives;
+    }
+    PathBuf::from("أرشيف_الاستخدامات_السابقة")
+}
+
+/// Tauri Command: Create a brand new usage session folder and archive the previous usage completely
+#[tauri::command]
+pub async fn create_new_usage_session(
+    session_name: String,
+    archive_label: Option<String>,
+    pool: tauri::State<'_, SqlitePool>,
+    app_handle: tauri::AppHandle,
+) -> Result<CreateUsageSessionResult, String> {
+    let now = Local::now();
+    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+    let archives_base = resolve_archives_base_dir(&app_handle);
+    let sessions_base = resolve_sessions_base_dir(&app_handle);
+    fs::create_dir_all(&archives_base).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&sessions_base).map_err(|e| e.to_string())?;
+
+    // 1. ARCHIVAGE DU DOSSIER ACTUEL
+    let clean_archive_name = archive_label
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("أرشيف_{}", timestamp));
+
+    let archive_dir = archives_base.join(&clean_archive_name);
+    fs::create_dir_all(&archive_dir).map_err(|e| e.to_string())?;
+
+    // a. Instantané de la base de données
+    let db_archive_dir = archive_dir.join("قاعدة_البيانات");
+    fs::create_dir_all(&db_archive_dir).map_err(|e| e.to_string())?;
+    let db_snapshot_file = db_archive_dir.join("pizzeria_pos_snapshot.db");
+    let db_snapshot_str = db_snapshot_file.display().to_string().replace('\\', "/");
+
+    let query_str = format!("VACUUM INTO '{}';", db_snapshot_str);
+    if let Err(e) = sqlx::query(&query_str).execute(&*pool).await {
+        crate::logger::log_warn("ARCHIVE", &format!("Note: VACUUM INTO warning: {}", e));
+    }
+
+    // b. Copier tous les rapports actuels vers l'archive
+    let reports_archive_dir = archive_dir.join("التقارير");
+    let current_reports = resolve_reports_dir(&app_handle);
+    let copied_reports = copy_dir_contents(&current_reports, &reports_archive_dir).unwrap_or(0);
+    clear_dir_files(&current_reports);
+    clear_dir_files(&PathBuf::from("التقارير"));
+
+    // c. Copier tous les logs d'activité actuels vers l'archive
+    let logs_archive_dir = archive_dir.join("سجلات_النشاط");
+    let current_logs = resolve_activity_logs_dir(&app_handle);
+    let copied_logs = copy_dir_contents(&current_logs, &logs_archive_dir).unwrap_or(0);
+    clear_dir_files(&current_logs);
+    clear_dir_files(&PathBuf::from("سجلات_النشاط"));
+
+    // d. Fiche d'information de l'archive
+    let archive_info = serde_json::json!({
+        "archive_name": clean_archive_name,
+        "archived_at": now.to_rfc3339(),
+        "reports_archived": copied_reports,
+        "logs_archived": copied_logs,
+        "db_snapshot": db_snapshot_str,
+        "status": "SEALED",
+        "description": "تمت أرشفة وتجميد هذا الاستخدام السابق بالكامل لتجنب خلط البيانات"
+    });
+    let _ = fs::write(
+        archive_dir.join("معلومات_الأرشيف.json"),
+        serde_json::to_string_pretty(&archive_info).unwrap_or_default(),
+    );
+
+    // 2. CREATION DU NOUVEAU DOSSIER D'UTILISATION (NOUVELLE SESSION)
+    let clean_session_name = if session_name.trim().is_empty() {
+        format!("استخدام_جديد_{}", timestamp)
+    } else {
+        session_name.trim().replace('/', "_").replace('\\', "_")
+    };
+
+    let new_session_dir = sessions_base.join(&clean_session_name);
+    fs::create_dir_all(&new_session_dir).map_err(|e| e.to_string())?;
+
+    let session_reports = new_session_dir.join("التقارير");
+    let session_logs = new_session_dir.join("سجلات_النشاط");
+    let session_backups = new_session_dir.join("النسخ_الاحتياطية");
+    let _ = fs::create_dir_all(&session_reports);
+    let _ = fs::create_dir_all(&session_logs);
+    let _ = fs::create_dir_all(&session_backups);
+
+    let session_info = serde_json::json!({
+        "id": format!("sess_{}", timestamp),
+        "name": clean_session_name,
+        "started_at": now.to_rfc3339(),
+        "status": "ACTIVE",
+        "folder_path": new_session_dir.display().to_string().replace('\\', "/")
+    });
+    let _ = fs::write(
+        new_session_dir.join("معلومات_الاستخدام.json"),
+        serde_json::to_string_pretty(&session_info).unwrap_or_default(),
+    );
+
+    crate::logger::log_info(
+        "SESSION",
+        &format!("Nouvelle session d'utilisation créée : {} | Archive : {}", clean_session_name, clean_archive_name)
+    );
+
+    // Ouvrir le nouveau dossier dans l'explorateur
+    let _ = open_path_in_explorer(&new_session_dir);
+
+    Ok(CreateUsageSessionResult {
+        success: true,
+        session_name: clean_session_name,
+        session_folder: new_session_dir.display().to_string().replace('\\', "/"),
+        archive_folder: Some(archive_dir.display().to_string().replace('\\', "/")),
+        message: "تم إنشاء مجلد الاستخدام الجديد وأرشفة السابق بأمان".to_string(),
+    })
+}
+
+/// Tauri Command: List all usage sessions (active and archived)
+#[tauri::command]
+pub fn list_usage_sessions(app_handle: tauri::AppHandle) -> Result<Vec<UsageSessionInfo>, String> {
+    let mut sessions = Vec::new();
+    let sessions_base = resolve_sessions_base_dir(&app_handle);
+    let archives_base = resolve_archives_base_dir(&app_handle);
+
+    // 1. Lire les sessions
+    if sessions_base.exists() {
+        if let Ok(entries) = fs::read_dir(&sessions_base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                    let created_at = path.metadata()
+                        .and_then(|m| m.created().or_else(|_| m.modified()))
+                        .map(|t| chrono::DateTime::<Local>::from(t).to_rfc3339())
+                        .unwrap_or_default();
+                    let reports_count = path.join("التقارير").read_dir().map(|d| d.count()).unwrap_or(0);
+                    let logs_count = path.join("سجلات_النشاط").read_dir().map(|d| d.count()).unwrap_or(0);
+
+                    sessions.push(UsageSessionInfo {
+                        id: format!("sess_{}", name),
+                        name,
+                        folder_path: path.display().to_string().replace('\\', "/"),
+                        is_active: true,
+                        created_at,
+                        reports_count,
+                        logs_count,
+                        has_backup: true,
+                    });
+                }
+            }
+        }
+    }
+
+    // 2. Lire les archives précédentes
+    if archives_base.exists() {
+        if let Ok(entries) = fs::read_dir(&archives_base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                    let created_at = path.metadata()
+                        .and_then(|m| m.created().or_else(|_| m.modified()))
+                        .map(|t| chrono::DateTime::<Local>::from(t).to_rfc3339())
+                        .unwrap_or_default();
+                    let reports_count = path.join("التقارير").read_dir().map(|d| d.count()).unwrap_or(0);
+                    let logs_count = path.join("سجلات_النشاط").read_dir().map(|d| d.count()).unwrap_or(0);
+                    let has_backup = path.join("قاعدة_البيانات").exists();
+
+                    sessions.push(UsageSessionInfo {
+                        id: format!("arch_{}", name),
+                        name,
+                        folder_path: path.display().to_string().replace('\\', "/"),
+                        is_active: false,
+                        created_at,
+                        reports_count,
+                        logs_count,
+                        has_backup,
+                    });
+                }
+            }
+        }
+    }
+
+    sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(sessions)
+}
+
+/// Tauri Command: Open any arbitrary folder path in the OS file explorer
+#[tauri::command]
+pub fn open_folder_path(path: String) -> Result<bool, String> {
+    open_path_in_explorer(Path::new(&path))
+}
+
+

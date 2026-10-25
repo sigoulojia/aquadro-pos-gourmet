@@ -255,7 +255,7 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="Ex: Bien cuite, sans oignon, pâte fine, couper en 8..."
+              placeholder=""
               value={notes}
               onChange={e => setNotes(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524] transition-all"

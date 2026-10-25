@@ -287,7 +287,7 @@ export const PurchasesView: React.FC = () => {
                     <label className="text-[10px] text-gray-500 block">N° de Lot prévu</label>
                     <input
                       type="text"
-                      placeholder="Ex: LOT-2026-X"
+                      placeholder=""
                       value={currentBatch}
                       onChange={e => setCurrentBatch(e.target.value)}
                       className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-xs font-mono"

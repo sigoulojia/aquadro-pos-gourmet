@@ -27,6 +27,8 @@ export interface ReceiptPrintData {
   orderType?: 'SUR_PLACE' | 'A_EMPORTER' | 'LIVRAISON' | string;
   tableNumber?: string;
   deliveryFee?: number;
+  notes?: string;
+  customerNotes?: string;
   items: Array<{
     name: string;
     variant?: string;
@@ -57,6 +59,246 @@ export interface ReceiptPrintData {
   paperWidth?: '58mm' | '80mm';
 }
 
+export type CustomerReceiptBlock =
+  | 'header'
+  | 'order_banner'
+  | 'order_info'
+  | 'items'
+  | 'subtotals'
+  | 'total'
+  | 'payment'
+  | 'footer';
+
+export interface ReceiptTemplateConfig {
+  blockOrder: CustomerReceiptBlock[];
+
+  headerTitle: string;
+  headerAlignment: 'center' | 'left' | 'right';
+  showStoreNameFr: boolean;
+  showStoreNameAr: boolean;
+  showLogo: boolean;
+  showPhone: boolean;
+  customPhone: string;
+  showAddress: boolean;
+  customAddress: string;
+  showSocials: boolean;
+  socialsText: string;
+  showWifi: boolean;
+  wifiText: string;
+
+  showOrderNumber: boolean;
+  orderNumberSize: 'normal' | 'large' | 'giant';
+  orderNumberStyle: 'bordered' | 'clean' | 'banner';
+  showOrderType: boolean;
+  showDateTime: boolean;
+  showCashier: boolean;
+  showCustomer: boolean;
+
+  showItemUnitPrices: boolean;
+  showItemSupplements: boolean;
+  showItemNotes: boolean;
+  showItemParts: boolean;
+  itemsSeparatorStyle: 'dashed' | 'solid' | 'dotted' | 'none';
+
+  showDeliveryFee: boolean;
+  showDiscount: boolean;
+  showTax: boolean;
+  showPaymentMethod: boolean;
+  showTenderedAndChange: boolean;
+
+  footerLine1: string;
+  footerLine2: string;
+  footerLine3: string;
+  footerAlignment: 'center' | 'left' | 'right';
+  showBarcode: boolean;
+  barcodeText: string;
+
+  // Tailles de polices granulaires (en pixels)
+  baseFontSize: number;
+  headerTitleFontSize: number;
+  orderNumberFontSize: number;
+  itemTitleFontSize: number;
+  totalPriceFontSize: number;
+  notesFontSize: number;
+  footerFontSize: number;
+
+  boldItemNames: boolean;
+  boldOrderNumber: boolean;
+  boldTotals: boolean;
+
+  paperWidth: '58mm' | '80mm';
+  fontScale: 'compact' | 'normal' | 'large';
+}
+
+export const DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER: CustomerReceiptBlock[] = [
+  'header',
+  'order_banner',
+  'order_info',
+  'items',
+  'subtotals',
+  'total',
+  'payment',
+  'footer'
+];
+
+export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
+  blockOrder: DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER,
+  headerTitle: 'AQUADRO',
+  headerAlignment: 'center',
+  showStoreNameFr: true,
+  showStoreNameAr: true,
+  showLogo: true,
+  showPhone: true,
+  customPhone: '',
+  showAddress: true,
+  customAddress: '',
+  showSocials: false,
+  socialsText: '',
+  showWifi: false,
+  wifiText: '',
+
+  showOrderNumber: true,
+  orderNumberSize: 'large',
+  orderNumberStyle: 'banner',
+  showOrderType: true,
+  showDateTime: true,
+  showCashier: true,
+  showCustomer: true,
+
+  showItemUnitPrices: true,
+  showItemSupplements: true,
+  showItemNotes: true,
+  showItemParts: true,
+  itemsSeparatorStyle: 'dashed',
+
+  showDeliveryFee: true,
+  showDiscount: true,
+  showTax: false,
+  showPaymentMethod: true,
+  showTenderedAndChange: true,
+
+  footerLine1: 'Merci pour votre visite !',
+  footerLine2: 'À bientôt • Aquadro POS',
+  footerLine3: '',
+  footerAlignment: 'center',
+  showBarcode: false,
+  barcodeText: '',
+
+  baseFontSize: 11,
+  headerTitleFontSize: 19,
+  orderNumberFontSize: 20,
+  itemTitleFontSize: 11,
+  totalPriceFontSize: 14,
+  notesFontSize: 9.5,
+  footerFontSize: 9.5,
+
+  boldItemNames: true,
+  boldOrderNumber: true,
+  boldTotals: true,
+
+  paperWidth: '80mm',
+  fontScale: 'normal'
+};
+
+export type KitchenTicketBlock =
+  | 'header'
+  | 'order_banner'
+  | 'service_info'
+  | 'items'
+  | 'notes'
+  | 'footer';
+
+export interface KitchenTicketTemplateConfig {
+  blockOrder: KitchenTicketBlock[];
+
+  headerTitle: string;
+  headerAlignment: 'center' | 'left' | 'right';
+  showTicketTitle: boolean;
+
+  showOrderNumber: boolean;
+  orderNumberStyle: 'bordered' | 'clean' | 'banner';
+  showOrderType: boolean;
+
+  showDateTime: boolean;
+  showCashierOrServer: boolean;
+  showCustomerInfo: boolean;
+
+  itemQuantityStyle: 'large_text' | 'badge' | 'compact';
+  showMultiPartPizzas: boolean;
+  showSupplements: boolean;
+  supplementsHighlight: 'boxed' | 'underline' | 'bold_only';
+  showCookingNotes: boolean;
+  notesHighlight: 'boxed' | 'italic' | 'colored_badge';
+  itemSeparatorStyle: 'solid' | 'dashed' | 'double' | 'none';
+
+  // Tailles de polices granulaires pour le Chef (en pixels)
+  baseFontSize: number;
+  headerTitleFontSize: number;
+  orderNumberFontSize: number;
+  orderTypeFontSize: number;
+  itemQuantityFontSize: number;
+  itemTitleFontSize: number;
+  supplementsFontSize: number;
+  cookingNotesFontSize: number;
+  serviceInfoFontSize: number;
+
+  boldItemNames: boolean;
+  boldQuantities: boolean;
+  uppercaseItemNames: boolean;
+
+  paperWidth: '58mm' | '80mm';
+  bottomSpacingLines: number;
+}
+
+export const DEFAULT_KITCHEN_TICKET_BLOCK_ORDER: KitchenTicketBlock[] = [
+  'header',
+  'order_banner',
+  'service_info',
+  'items',
+  'notes',
+  'footer'
+];
+
+export const DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG: KitchenTicketTemplateConfig = {
+  blockOrder: DEFAULT_KITCHEN_TICKET_BLOCK_ORDER,
+  headerTitle: 'BON DE CUISINE • PIZZAIOLO',
+  headerAlignment: 'center',
+  showTicketTitle: true,
+
+  showOrderNumber: true,
+  orderNumberStyle: 'bordered',
+  showOrderType: true,
+
+  showDateTime: true,
+  showCashierOrServer: true,
+  showCustomerInfo: true,
+
+  itemQuantityStyle: 'large_text',
+  showMultiPartPizzas: true,
+  showSupplements: true,
+  supplementsHighlight: 'boxed',
+  showCookingNotes: true,
+  notesHighlight: 'boxed',
+  itemSeparatorStyle: 'solid',
+
+  baseFontSize: 11,
+  headerTitleFontSize: 10,
+  orderNumberFontSize: 24,
+  orderTypeFontSize: 12,
+  itemQuantityFontSize: 16,
+  itemTitleFontSize: 13.5,
+  supplementsFontSize: 10.5,
+  cookingNotesFontSize: 9.5,
+  serviceInfoFontSize: 9.5,
+
+  boldItemNames: true,
+  boldQuantities: true,
+  uppercaseItemNames: true,
+
+  paperWidth: '80mm',
+  bottomSpacingLines: 1
+};
+
 export class PrinterService {
   private static instance: PrinterService;
   private lastReceiptData: ReceiptPrintData | null = null;
@@ -68,6 +310,75 @@ export class PrinterService {
       PrinterService.instance = new PrinterService();
     }
     return PrinterService.instance;
+  }
+
+  public getTemplateConfig(): ReceiptTemplateConfig {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('aquadro_receipt_template_config');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return {
+            ...DEFAULT_RECEIPT_TEMPLATE_CONFIG,
+            ...parsed,
+            blockOrder: parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
+              ? parsed.blockOrder
+              : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER
+          };
+        }
+      } catch (e) {}
+    }
+    return { ...DEFAULT_RECEIPT_TEMPLATE_CONFIG };
+  }
+
+  public saveTemplateConfig(config: ReceiptTemplateConfig): void {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aquadro_receipt_template_config', JSON.stringify(config));
+        // Synchroniser également la largeur papier
+        const pCfg = this.getConfig();
+        if (config.paperWidth && config.paperWidth !== pCfg.paperWidth) {
+          this.saveConfig({ ...pCfg, paperWidth: config.paperWidth });
+        }
+      } catch (e) {}
+    }
+  }
+
+  public resetTemplateConfig(): ReceiptTemplateConfig {
+    this.saveTemplateConfig({ ...DEFAULT_RECEIPT_TEMPLATE_CONFIG });
+    return { ...DEFAULT_RECEIPT_TEMPLATE_CONFIG };
+  }
+
+  public getKitchenTemplateConfig(): KitchenTicketTemplateConfig {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('aquadro_kitchen_ticket_template_config');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return {
+            ...DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG,
+            ...parsed,
+            blockOrder: parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
+              ? parsed.blockOrder
+              : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER
+          };
+        }
+      } catch (e) {}
+    }
+    return { ...DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG };
+  }
+
+  public saveKitchenTemplateConfig(config: KitchenTicketTemplateConfig): void {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aquadro_kitchen_ticket_template_config', JSON.stringify(config));
+      } catch (e) {}
+    }
+  }
+
+  public resetKitchenTemplateConfig(): KitchenTicketTemplateConfig {
+    this.saveKitchenTemplateConfig({ ...DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG });
+    return { ...DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG };
   }
 
   public getConfig(): { paperWidth: '58mm' | '80mm'; autoPrint: boolean; openDrawerOnSale: boolean } {
@@ -210,7 +521,8 @@ export class PrinterService {
 
   // Génération du texte formaté pour ticket de caisse Client (ESC/POS épuré et lisible)
   public generateReceiptText(data: ReceiptPrintData): string {
-    const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
+    const tpl = this.getTemplateConfig();
+    const is80 = (data.paperWidth || tpl.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const cols = is80 ? 44 : 32;
 
     const center = (str: string) => {
@@ -231,27 +543,39 @@ export class PrinterService {
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const receiptNumClean = this.getCleanReceiptNumber(data.receiptNumber, orderNumClean);
 
-    // 1. En-tête : AQUADRO
-    out.push(center('AQUADRO'));
+    // 1. En-tête : Titre principal personnalisé
+    if (tpl.headerTitle) {
+      out.push(center(tpl.headerTitle.toUpperCase()));
+    }
     const storeFr = data.storeNameFr || data.storeName;
-    if (storeFr && !storeFr.toUpperCase().includes('AQUADRO')) {
+    if (tpl.showStoreNameFr && storeFr && !storeFr.toUpperCase().includes((tpl.headerTitle || 'AQUADRO').toUpperCase())) {
       out.push(center(storeFr));
     }
-    if (data.storePhone) out.push(center(`Tél : ${data.storePhone}`));
-    if (data.storeAddress) out.push(center(data.storeAddress));
+    const storePhone = tpl.customPhone || data.storePhone;
+    if (tpl.showPhone && storePhone) out.push(center(`Tél : ${storePhone}`));
+    const storeAddress = tpl.customAddress || data.storeAddress;
+    if (tpl.showAddress && storeAddress) out.push(center(storeAddress));
+    if (tpl.showSocials && tpl.socialsText) out.push(center(tpl.socialsText));
+    if (tpl.showWifi && tpl.wifiText) out.push(center(tpl.wifiText));
 
     out.push(line);
 
     // 2. Numéro de commande, Mode de commande et Date
-    out.push(center(`COMMANDE N° ${orderNumClean}`));
+    if (tpl.showOrderNumber) {
+      out.push(center(`COMMANDE N° ${orderNumClean}`));
+    }
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
-    out.push(center(`>>> ${orderTypeLabel} <<<`));
-    out.push(twoCols(`Ticket : ${receiptNumClean}`, `Date : ${data.dateTime}`));
-    if (data.cashierName) {
+    if (tpl.showOrderType) {
+      out.push(center(`>>> ${orderTypeLabel} <<<`));
+    }
+    if (tpl.showDateTime) {
+      out.push(twoCols(`Ticket : ${receiptNumClean}`, `Date : ${data.dateTime}`));
+    }
+    if (tpl.showCashier && data.cashierName) {
       out.push(`Caissier : ${data.cashierName}`);
     }
 
-    if (orderTypeLabel === 'LIVRAISON' && data.customerName) {
+    if (tpl.showCustomer && orderTypeLabel === 'LIVRAISON' && data.customerName) {
       out.push(`Client : ${data.customerName}${data.customerPhone ? ' (' + data.customerPhone + ')' : ''}`);
       if (data.customerAddress) {
         out.push(`Adresse : ${data.customerAddress}`);
@@ -269,38 +593,38 @@ export class PrinterService {
       const totalStr = CurrencyUtil.formatDZD(item.total);
       out.push(twoCols(itemTitle, totalStr));
 
-      if (item.quantity > 1) {
+      if (tpl.showItemUnitPrices && item.quantity > 1) {
         out.push(`  (${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})`);
       }
 
-      if (item.multiParts && item.multiParts.parts) {
+      if (tpl.showItemParts && item.multiParts && item.multiParts.parts) {
         item.multiParts.parts.forEach((p, idx) => {
           out.push(`  • Partie ${idx + 1} : ${p.name}`);
         });
       }
 
-      if (item.supplements && item.supplements.length > 0) {
+      if (tpl.showItemSupplements && item.supplements && item.supplements.length > 0) {
         const supps = item.supplements
           .map(s => (typeof s === 'string' ? s : `${s.name_fr} (+${CurrencyUtil.formatDZD(s.price)})`))
           .join(', ');
         out.push(`  + Supplément : ${supps}`);
       }
 
-      if (item.notes) {
+      if (tpl.showItemNotes && item.notes) {
         out.push(`  Note : ${item.notes}`);
       }
     }
 
-    if (data.deliveryFee && data.deliveryFee > 0) {
+    if (tpl.showDeliveryFee && data.deliveryFee && data.deliveryFee > 0) {
       out.push(line);
       out.push(twoCols('Frais de livraison :', CurrencyUtil.formatDZD(data.deliveryFee)));
     }
 
-    if (data.discountTotal && data.discountTotal > 0) {
+    if (tpl.showDiscount && data.discountTotal && data.discountTotal > 0) {
       out.push(twoCols('Remise :', `-${CurrencyUtil.formatDZD(data.discountTotal)}`));
     }
 
-    if (data.taxAmount && data.taxAmount > 0) {
+    if (tpl.showTax && data.taxAmount && data.taxAmount > 0) {
       out.push(twoCols(`TVA (${((data.taxRate || 0) * 100).toFixed(0)}%) :`, CurrencyUtil.formatDZD(data.taxAmount)));
     }
 
@@ -311,35 +635,39 @@ export class PrinterService {
     out.push(twoCols('TOTAL À PAYER :', CurrencyUtil.formatDZD(totalTTC)));
 
     // 5. Règlements
-    const paymentMethod = data.paymentMethod || data.payments?.[0]?.method || 'CASH';
-    const tenderedAmount = data.tenderedAmount ?? data.payments?.[0]?.tendered ?? totalTTC;
-    const changeGiven = data.changeGiven ?? data.payments?.[0]?.change ?? 0;
+    if (tpl.showPaymentMethod) {
+      const paymentMethod = data.paymentMethod || data.payments?.[0]?.method || 'CASH';
+      const tenderedAmount = data.tenderedAmount ?? data.payments?.[0]?.tendered ?? totalTTC;
+      const changeGiven = data.changeGiven ?? data.payments?.[0]?.change ?? 0;
 
-    const paymentLabel = paymentMethod === 'CASH'
-      ? 'Espèces'
-      : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
+      const paymentLabel = paymentMethod === 'CASH'
+        ? 'Espèces'
+        : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
-    out.push(twoCols('Mode de règlement :', paymentLabel));
+      out.push(twoCols('Mode de règlement :', paymentLabel));
 
-    if (paymentMethod === 'CASH' && tenderedAmount > 0) {
-      out.push(twoCols('Montant reçu :', CurrencyUtil.formatDZD(tenderedAmount)));
-      if (changeGiven > 0) {
-        out.push(twoCols('Monnaie rendue :', CurrencyUtil.formatDZD(changeGiven)));
+      if (tpl.showTenderedAndChange && paymentMethod === 'CASH' && tenderedAmount > 0) {
+        out.push(twoCols('Montant reçu :', CurrencyUtil.formatDZD(tenderedAmount)));
+        if (changeGiven > 0) {
+          out.push(twoCols('Monnaie rendue :', CurrencyUtil.formatDZD(changeGiven)));
+        }
       }
     }
 
     out.push(separator);
 
-    // 6. Message de remerciement
-    out.push(center('Merci pour votre visite !'));
-    out.push(center('À bientôt'));
+    // 6. Messages de remerciement personnalisés
+    if (tpl.footerLine1) out.push(center(tpl.footerLine1));
+    if (tpl.footerLine2) out.push(center(tpl.footerLine2));
+    if (tpl.footerLine3) out.push(center(tpl.footerLine3));
 
     return out.join('\n');
   }
 
   // Génération du rendu HTML thermique épuré et lisible pour le client
-  public generateReceiptHtml(data: ReceiptPrintData): string {
-    const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
+  public generateReceiptHtml(data: ReceiptPrintData, customConfig?: ReceiptTemplateConfig): string {
+    const tpl = customConfig || this.getTemplateConfig();
+    const is80 = (data.paperWidth || tpl.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const totalTTC = data.totalTTC ?? data.grandTotal ?? 0;
     const paymentMethod = data.paymentMethod || data.payments?.[0]?.method || 'CASH';
     const tenderedAmount = data.tenderedAmount ?? data.payments?.[0]?.tendered ?? totalTTC;
@@ -349,14 +677,18 @@ export class PrinterService {
     const receiptNumClean = this.getCleanReceiptNumber(data.receiptNumber, orderNumClean);
 
     const storeFr = data.storeNameFr || data.storeName || '';
+    const phone = tpl.customPhone || data.storePhone;
+    const address = tpl.customAddress || data.storeAddress;
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
+    const baseFontSize = `${tpl.baseFontSize || 11}px`;
+
     let logoHtml = '';
-    if (typeof window !== 'undefined') {
+    if (tpl.showLogo && typeof window !== 'undefined') {
       try {
         const logoBase64 = localStorage.getItem('aquadro_store_logo');
         if (logoBase64) {
-          logoHtml = `<div style="text-align: center; margin-bottom: 4px;"><img src="${logoBase64}" style="max-width: 110px; max-height: 55px; object-fit: contain;" alt="Logo" /></div>`;
+          logoHtml = `<div style="text-align: ${tpl.headerAlignment || 'center'}; margin-bottom: 4px;"><img src="${logoBase64}" style="max-width: 110px; max-height: 55px; object-fit: contain;" alt="Logo" /></div>`;
         }
       } catch (e) {}
     }
@@ -365,133 +697,175 @@ export class PrinterService {
       ? 'Espèces'
       : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
-    return `
-      <div class="thermal-receipt" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.35; width: 100%; box-sizing: border-box; font-size: 11px;">
-        <!-- EN-TETE AQUADRO -->
-        <div style="text-align: center; margin-bottom: 8px;">
-          ${logoHtml}
-          <div style="font-size: 19px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;">AQUADRO</div>
-          ${storeFr && !storeFr.toUpperCase().includes('AQUADRO') ? `<div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${storeFr}</div>` : ''}
-          ${data.storePhone ? `<div style="font-size: 10px; margin-top: 2px;">Tél : ${data.storePhone}</div>` : ''}
-          ${data.storeAddress ? `<div style="font-size: 9.5px; margin-top: 1px;">${data.storeAddress}</div>` : ''}
-        </div>
+    const blocks = tpl.blockOrder && tpl.blockOrder.length > 0
+      ? tpl.blockOrder
+      : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
 
-        <!-- NUMÉRO ET TYPE DE COMMANDE -->
-        <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; text-align: center; margin-bottom: 8px;">
-          <div style="font-size: 18px; font-weight: 900;">COMMANDE #${orderNumClean}</div>
-          <div style="font-size: 12px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px;">${orderTypeLabel}</div>
-        </div>
-
-        <!-- DATE & INFORMATIONS SERVICE -->
-        <div style="font-size: 10px; margin-bottom: 8px; border-bottom: 1px dashed #000; padding-bottom: 6px; line-height: 1.4;">
-          <div style="display: flex; justify-content: space-between;">
-            <span>Ticket : <strong>${receiptNumClean}</strong></span>
-            <span>Date : ${data.dateTime}</span>
-          </div>
-          ${data.cashierName ? `<div>Caissier : <strong>${data.cashierName}</strong></div>` : ''}
-          ${orderTypeLabel === 'LIVRAISON' && data.customerName ? `
-            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #000;">
-              <div>Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}</div>
-              ${data.customerAddress ? `<div>Adresse : ${data.customerAddress}</div>` : ''}
+    const renderBlock = (block: CustomerReceiptBlock): string => {
+      switch (block) {
+        case 'header':
+          return `
+            <div style="text-align: ${tpl.headerAlignment || 'center'}; margin-bottom: 8px;">
+              ${logoHtml}
+              ${tpl.headerTitle ? `<div style="font-size: ${tpl.headerTitleFontSize || 19}px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;">${tpl.headerTitle}</div>` : ''}
+              ${tpl.showStoreNameFr && storeFr && !storeFr.toUpperCase().includes((tpl.headerTitle || 'AQUADRO').toUpperCase()) ? `<div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${storeFr}</div>` : ''}
+              ${tpl.showPhone && phone ? `<div style="font-size: 10px; margin-top: 2px;">Tél : ${phone}</div>` : ''}
+              ${tpl.showAddress && address ? `<div style="font-size: 9.5px; margin-top: 1px;">${address}</div>` : ''}
+              ${tpl.showSocials && tpl.socialsText ? `<div style="font-size: 9.5px; margin-top: 1px; color: #333;">${tpl.socialsText}</div>` : ''}
+              ${tpl.showWifi && tpl.wifiText ? `<div style="font-size: 9.5px; margin-top: 1px; font-weight: bold; background: #f3f3f3; padding: 2px 4px; border-radius: 4px; display: inline-block;">${tpl.wifiText}</div>` : ''}
             </div>
-          ` : ''}
-        </div>
+          `;
 
-        <!-- LISTE DES ARTICLES COMMANDES -->
-        <div style="border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 8px;">
-          <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 5px;">
-            <span>Article</span>
-            <span>Total</span>
-          </div>
-          ${data.items.map(item => {
-            const suppNames = item.supplements && item.supplements.length > 0
-              ? item.supplements.map(s => {
-                  const q = (s as any).quantity || 1;
-                  const qStr = q > 1 ? `${q}x ` : '';
-                  const name = typeof s === 'string' ? s : s.name_fr;
-                  const priceStr = typeof s === 'string' ? '' : ` (+${CurrencyUtil.formatDZD(s.price * q)})`;
-                  return `${qStr}${name}${priceStr}`;
-                }).join(', ')
-              : '';
-            const unitPriceStr = item.quantity > 1 ? `(${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})` : '';
-            return `
-              <div style="margin-bottom: 5px; font-size: 10px; word-break: break-word;">
-                <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                  <div style="font-weight: bold; padding-right: 6px;">
-                    ${item.quantity}x ${item.name}${item.variant ? ` (${item.variant})` : ''}
-                  </div>
-                  <div style="font-weight: bold; white-space: nowrap;">
-                    ${CurrencyUtil.formatDZD(item.total)}
-                  </div>
+        case 'order_banner':
+          if (!tpl.showOrderNumber && !tpl.showOrderType) return '';
+          return `
+            <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 6px 0; text-align: center; margin-bottom: 8px;">
+              ${tpl.showOrderNumber ? `<div style="font-size: ${tpl.orderNumberFontSize || 20}px; font-weight: ${tpl.boldOrderNumber !== false ? 900 : 700};">COMMANDE #${orderNumClean}</div>` : ''}
+              ${tpl.showOrderType ? `<div style="font-size: 12px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 1px;">${orderTypeLabel}</div>` : ''}
+            </div>
+          `;
+
+        case 'order_info':
+          if (!tpl.showDateTime && !(tpl.showCashier && data.cashierName) && !(tpl.showCustomer && orderTypeLabel === 'LIVRAISON' && data.customerName)) return '';
+          return `
+            <div style="font-size: 10px; margin-bottom: 8px; border-bottom: 1px dashed #000; padding-bottom: 6px; line-height: 1.4;">
+              ${tpl.showDateTime ? `
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Ticket : <strong>${receiptNumClean}</strong></span>
+                  <span>Date : ${data.dateTime}</span>
                 </div>
-                ${unitPriceStr ? `<div style="font-size: 9px; color: #444; margin-left: 14px;">${unitPriceStr}</div>` : ''}
-                ${item.multiParts && item.multiParts.parts ? `
-                  <div style="font-size: 9px; color: #444; margin-left: 14px; margin-top: 1px;">
-                    ${item.multiParts.parts.map((p, idx) => `<div>• Moitié ${idx + 1} : ${p.name}</div>`).join('')}
+              ` : ''}
+              ${tpl.showCashier && data.cashierName ? `<div>Caissier : <strong>${data.cashierName}</strong></div>` : ''}
+              ${tpl.showCustomer && orderTypeLabel === 'LIVRAISON' && data.customerName ? `
+                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #000;">
+                  <div>Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}</div>
+                  ${data.customerAddress ? `<div>Adresse : ${data.customerAddress}</div>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+        case 'items':
+          return `
+            <div style="border-bottom: 1px dashed #000; padding-bottom: 6px; margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 5px;">
+                <span>Article</span>
+                <span>Total</span>
+              </div>
+              ${data.items.map(item => {
+                const suppNames = item.supplements && item.supplements.length > 0
+                  ? item.supplements.map(s => {
+                      const q = (s as any).quantity || 1;
+                      const qStr = q > 1 ? `${q}x ` : '';
+                      const name = typeof s === 'string' ? s : s.name_fr;
+                      const priceStr = typeof s === 'string' ? '' : ` (+${CurrencyUtil.formatDZD(s.price * q)})`;
+                      return `${qStr}${name}${priceStr}`;
+                    }).join(', ')
+                  : '';
+                const unitPriceStr = item.quantity > 1 ? `(${item.quantity} x ${CurrencyUtil.formatDZD(item.unitPrice)})` : '';
+                return `
+                  <div style="margin-bottom: 5px; font-size: 10px; word-break: break-word;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                      <div style="font-weight: ${tpl.boldItemNames !== false ? 'bold' : 'normal'}; font-size: ${tpl.itemTitleFontSize || 11}px; padding-right: 6px;">
+                        ${item.quantity}x ${item.name}${item.variant ? ` (${item.variant})` : ''}
+                      </div>
+                      <div style="font-weight: bold; white-space: nowrap;">
+                        ${CurrencyUtil.formatDZD(item.total)}
+                      </div>
+                    </div>
+                    ${tpl.showItemUnitPrices && unitPriceStr ? `<div style="font-size: 9px; color: #444; margin-left: 14px;">${unitPriceStr}</div>` : ''}
+                    ${tpl.showItemParts && item.multiParts && item.multiParts.parts ? `
+                      <div style="font-size: 9px; color: #444; margin-left: 14px; margin-top: 1px;">
+                        ${item.multiParts.parts.map((p, idx) => `<div>• Moitié ${idx + 1} : ${p.name}</div>`).join('')}
+                      </div>
+                    ` : ''}
+                    ${tpl.showItemSupplements && suppNames ? `<div style="font-size: 9px; color: #222; margin-left: 14px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
+                    ${tpl.showItemNotes && item.notes ? `<div style="font-size: ${tpl.notesFontSize || 9.5}px; font-style: italic; color: #444; margin-left: 14px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+
+        case 'subtotals':
+          if (!(tpl.showDeliveryFee && data.deliveryFee && data.deliveryFee > 0) && !(tpl.showDiscount && data.discountTotal && data.discountTotal > 0) && !(tpl.showTax && data.taxAmount && data.taxAmount > 0)) return '';
+          return `
+            <div style="font-size: 10px; margin-bottom: 6px;">
+              ${tpl.showDeliveryFee && data.deliveryFee && data.deliveryFee > 0 ? `
+                <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                  <span>Frais de livraison :</span>
+                  <span>${CurrencyUtil.formatDZD(data.deliveryFee)}</span>
+                </div>
+              ` : ''}
+              ${tpl.showDiscount && data.discountTotal && data.discountTotal > 0 ? `
+                <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                  <span>Remise :</span>
+                  <span>-${CurrencyUtil.formatDZD(data.discountTotal)}</span>
+                </div>
+              ` : ''}
+              ${tpl.showTax && data.taxAmount && data.taxAmount > 0 ? `
+                <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+                  <span>TVA (${((data.taxRate || 0) * 100).toFixed(0)}%) :</span>
+                  <span>${CurrencyUtil.formatDZD(data.taxAmount)}</span>
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+        case 'total':
+          return `
+            <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin-bottom: 6px; display: flex; justify-content: space-between; font-size: ${tpl.totalPriceFontSize || 14}px; font-weight: ${tpl.boldTotals !== false ? 900 : 'bold'};">
+              <span>TOTAL À PAYER :</span>
+              <span>${CurrencyUtil.formatDZD(totalTTC)}</span>
+            </div>
+          `;
+
+        case 'payment':
+          if (!tpl.showPaymentMethod) return '';
+          return `
+            <div style="font-size: 9.5px; line-height: 1.35; margin-bottom: 6px;">
+              <div style="display: flex; justify-content: space-between;">
+                <span>Mode de règlement :</span>
+                <strong>${paymentLabel}</strong>
+              </div>
+              ${tpl.showTenderedAndChange && paymentMethod === 'CASH' && tenderedAmount > 0 ? `
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Montant reçu :</span>
+                  <span>${CurrencyUtil.formatDZD(tenderedAmount)}</span>
+                </div>
+                ${changeGiven > 0 ? `
+                  <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                    <span>Monnaie rendue :</span>
+                    <span>${CurrencyUtil.formatDZD(changeGiven)}</span>
                   </div>
                 ` : ''}
-                ${suppNames ? `<div style="font-size: 9px; color: #222; margin-left: 14px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
-                ${item.notes ? `<div style="font-size: 9px; font-style: italic; color: #444; margin-left: 14px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
-              </div>
-            `;
-          }).join('')}
-        </div>
-
-        <!-- SOUS-TOTAUX ET AJUSTEMENTS -->
-        ${(data.deliveryFee && data.deliveryFee > 0) || (data.discountTotal && data.discountTotal > 0) || (data.taxAmount && data.taxAmount > 0) ? `
-          <div style="font-size: 10px; margin-bottom: 6px;">
-            ${data.deliveryFee && data.deliveryFee > 0 ? `
-              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
-                <span>Frais de livraison :</span>
-                <span>${CurrencyUtil.formatDZD(data.deliveryFee)}</span>
-              </div>
-            ` : ''}
-            ${data.discountTotal && data.discountTotal > 0 ? `
-              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
-                <span>Remise :</span>
-                <span>-${CurrencyUtil.formatDZD(data.discountTotal)}</span>
-              </div>
-            ` : ''}
-            ${data.taxAmount && data.taxAmount > 0 ? `
-              <div style="display: flex; justify-content: space-between; padding: 1px 0;">
-                <span>TVA (${((data.taxRate || 0) * 100).toFixed(0)}%) :</span>
-                <span>${CurrencyUtil.formatDZD(data.taxAmount)}</span>
-              </div>
-            ` : ''}
-          </div>
-        ` : ''}
-
-        <!-- TOTAL A PAYER -->
-        <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin-bottom: 6px; display: flex; justify-content: space-between; font-size: 14px; font-weight: 900;">
-          <span>TOTAL À PAYER :</span>
-          <span>${CurrencyUtil.formatDZD(totalTTC)}</span>
-        </div>
-
-        <!-- PAIEMENT -->
-        <div style="font-size: 9.5px; line-height: 1.35; margin-bottom: 6px;">
-          <div style="display: flex; justify-content: space-between;">
-            <span>Mode de règlement :</span>
-            <strong>${paymentLabel}</strong>
-          </div>
-          ${paymentMethod === 'CASH' && tenderedAmount > 0 ? `
-            <div style="display: flex; justify-content: space-between;">
-              <span>Montant reçu :</span>
-              <span>${CurrencyUtil.formatDZD(tenderedAmount)}</span>
+              ` : ''}
             </div>
-            ${changeGiven > 0 ? `
-              <div style="display: flex; justify-content: space-between; font-weight: bold;">
-                <span>Monnaie rendue :</span>
-                <span>${CurrencyUtil.formatDZD(changeGiven)}</span>
-              </div>
-            ` : ''}
-          ` : ''}
-        </div>
+          `;
 
-        <!-- PIED DE TICKET SOBRE -->
-        <div style="text-align: center; border-top: 1px dashed #000; padding-top: 5px; font-size: 10px;">
-          <div style="font-weight: bold;">Merci pour votre visite !</div>
-          <div style="font-size: 7.5px; color: #888; margin-top: 3px; letter-spacing: 0.5px; text-transform: uppercase;">Aquadro POS</div>
-        </div>
+        case 'footer':
+          if (!tpl.footerLine1 && !tpl.footerLine2 && !tpl.footerLine3 && !tpl.showBarcode) return '';
+          return `
+            <div style="text-align: ${tpl.footerAlignment || 'center'}; border-top: 1px dashed #000; padding-top: 5px; font-size: ${tpl.footerFontSize || 9.5}px;">
+              ${tpl.footerLine1 ? `<div style="font-weight: bold;">${tpl.footerLine1}</div>` : ''}
+              ${tpl.footerLine2 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 2px;">${tpl.footerLine2}</div>` : ''}
+              ${tpl.footerLine3 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 1px;">${tpl.footerLine3}</div>` : ''}
+              ${tpl.showBarcode ? `
+                <div style="margin-top: 5px; font-family: monospace; font-size: 8px; letter-spacing: 2px;">
+                  * ${tpl.barcodeText || receiptNumClean} *
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+        default:
+          return '';
+      }
+    };
+
+    return `
+      <div class="thermal-receipt" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.35; width: 100%; box-sizing: border-box; font-size: ${baseFontSize};">
+        ${blocks.map(b => renderBlock(b)).join('')}
       </div>
     `;
   }
@@ -874,81 +1248,171 @@ export class PrinterService {
     return out.join('\n');
   }
 
-  // Rendu HTML du Bon de Cuisine pour le Chef (Pizzaiolo) — Simple et condensé sans liste d'ingrédients
-  public generateKitchenTicketHtml(data: ReceiptPrintData): string {
+  // Rendu HTML du Bon de Cuisine pour le Chef (Pizzaiolo) — Personnalisable et ordonnancé par blocs
+  public generateKitchenTicketHtml(data: ReceiptPrintData, customConfig?: KitchenTicketTemplateConfig): string {
+    const tpl = customConfig || this.getKitchenTemplateConfig();
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
-    return `
-      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.3; width: 100%; box-sizing: border-box; font-size: 11px;">
-        <!-- EN-TETE BON DE CUISINE -->
-        <div style="text-align: center; border: 1.5px solid #000; padding: 5px 3px; margin-bottom: 6px; border-radius: 4px;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1px;">BON DE CUISINE • PIZZAIOLO</div>
-          <div style="font-size: 24px; font-weight: 900; line-height: 1.1; margin: 2px 0;">COMMANDE N° ${orderNumClean}</div>
-          <div style="font-size: 12px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${orderTypeLabel}</div>
-        </div>
+    const blocks = (tpl.blockOrder && tpl.blockOrder.length > 0)
+      ? tpl.blockOrder
+      : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER;
 
-        <!-- DETAILS DATE & SERVEUR -->
-        <div style="font-size: 9.5px; margin-bottom: 6px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
-          <div style="display: flex; justify-content: space-between;">
-            <span>Heure : <strong>${data.dateTime}</strong></span>
-            ${data.cashierName ? `<span>Serveur : <strong>${data.cashierName}</strong></span>` : ''}
-          </div>
-          ${orderTypeLabel === 'LIVRAISON' && data.customerName ? `
-            <div style="margin-top: 3px;">
-              Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}
-            </div>
-          ` : ''}
-        </div>
+    const baseFontSize = `${tpl.baseFontSize || 11}px`;
 
-        <!-- LISTE DES ARTICLES POUR LE CHEF -->
-        <div style="margin-bottom: 6px;">
-          ${data.items.map(item => {
-            const suppNames = item.supplements && item.supplements.length > 0
-              ? item.supplements.map(s => {
-                  const q = (s as any).quantity || 1;
-                  const qStr = q > 1 ? `${q}x ` : '';
-                  return `${qStr}${typeof s === 'string' ? s : s.name_fr}`;
-                }).join(', ')
-              : '';
-            return `
-              <div style="border-bottom: 1.5px solid #000; padding: 5px 0; word-break: break-word;">
-                <!-- NOM ET QUANTITE -->
-                <div style="display: flex; align-items: baseline; gap: 8px;">
-                  <span style="font-size: 16px; font-weight: 900; min-width: 36px;">${item.quantity}x</span>
-                  <span style="font-size: 13.5px; font-weight: 900; text-transform: uppercase;">
-                    ${(item.name || '').toUpperCase()}${item.variant ? ` <span style="font-size: 11px; font-weight: normal;">(${item.variant})</span>` : ''}
-                  </span>
-                </div>
-
-                <!-- SI MOITIE-MOITIE -->
-                ${item.multiParts && item.multiParts.parts ? `
-                  <div style="margin-left: 44px; font-size: 10px; color: #111; margin-top: 2px;">
-                    ${item.multiParts.parts.map((p, idx) => `
-                      <div style="margin-top: 1px;">
-                        • Moitié ${idx + 1} : <strong>${p.name}</strong>
-                      </div>
-                    `).join('')}
-                  </div>
-                ` : ''}
-
-                <!-- SUPPLEMENTS QUE LE CHEF DOIT AJOUTER -->
-                ${suppNames ? `
-                  <div style="margin-left: 44px; font-size: 10.5px; font-weight: 900; color: #000; margin-top: 2px; border: 1px dashed #000; padding: 1px 4px; display: inline-block;">
-                    + AJOUTER : ${suppNames}
-                  </div>
-                ` : ''}
-
-                <!-- NOTES DE CUISSON -->
-                ${item.notes ? `
-                  <div style="margin-left: 44px; font-size: 9.5px; font-weight: bold; margin-top: 2px;">
-                    * NOTE : ${item.notes}
-                  </div>
-                ` : ''}
+    const renderBlock = (block: KitchenTicketBlock): string => {
+      switch (block) {
+        case 'header':
+          if (!tpl.showTicketTitle) return '';
+          return `
+            <div style="text-align: ${tpl.headerAlignment || 'center'}; border: 1.5px solid #000; padding: 4px 3px; margin-bottom: 5px; border-radius: 4px;">
+              <div style="font-size: ${tpl.headerTitleFontSize || 10}px; font-weight: 800; letter-spacing: 1px;">
+                ${tpl.headerTitle || 'BON DE CUISINE • PIZZAIOLO'}
               </div>
-            `;
-          }).join('')}
-        </div>
+            </div>
+          `;
+
+        case 'order_banner':
+          if (!tpl.showOrderNumber && !tpl.showOrderType) return '';
+          const bannerBorderStyle = tpl.orderNumberStyle === 'clean' ? 'border-bottom: 2px solid #000;' : 'border: 2px solid #000;';
+          const bannerBg = tpl.orderNumberStyle === 'banner' ? 'background: #000; color: #fff;' : 'background: #fff; color: #000;';
+          const bannerPadding = tpl.orderNumberStyle === 'clean' ? 'padding: 4px 0;' : 'padding: 5px 3px; border-radius: 4px;';
+          return `
+            <div style="text-align: center; margin-bottom: 6px; ${bannerBorderStyle} ${bannerBg} ${bannerPadding}">
+              ${tpl.showOrderNumber ? `
+                <div style="font-size: ${tpl.orderNumberFontSize || 24}px; font-weight: 900; line-height: 1.1; margin: 2px 0;">
+                  COMMANDE N° ${orderNumClean}
+                </div>
+              ` : ''}
+              ${tpl.showOrderType ? `
+                <div style="font-size: ${tpl.orderTypeFontSize || 12}px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">
+                  ${orderTypeLabel}
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+        case 'service_info':
+          if (!tpl.showDateTime && !tpl.showCashierOrServer && !tpl.showCustomerInfo) return '';
+          return `
+            <div style="font-size: ${tpl.serviceInfoFontSize || 9.5}px; margin-bottom: 6px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
+              <div style="display: flex; justify-content: space-between;">
+                ${tpl.showDateTime ? `<span>Heure : <strong>${data.dateTime}</strong></span>` : '<span></span>'}
+                ${tpl.showCashierOrServer && data.cashierName ? `<span>Serveur : <strong>${data.cashierName}</strong></span>` : ''}
+              </div>
+              ${tpl.showCustomerInfo && orderTypeLabel === 'LIVRAISON' && data.customerName ? `
+                <div style="margin-top: 3px;">
+                  Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}
+                  ${data.customerAddress ? `<br/><span style="font-size: ${(tpl.serviceInfoFontSize || 9.5) - 1}px;">Adresse : ${data.customerAddress}</span>` : ''}
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+        case 'items':
+          let borderBottomCss = '1.5px solid #000';
+          if (tpl.itemSeparatorStyle === 'dashed') borderBottomCss = '1.5px dashed #000';
+          else if (tpl.itemSeparatorStyle === 'double') borderBottomCss = '3px double #000';
+          else if (tpl.itemSeparatorStyle === 'none') borderBottomCss = 'none';
+
+          return `
+            <div style="margin-bottom: 6px;">
+              ${data.items.map(item => {
+                const suppNames = (tpl.showSupplements && item.supplements && item.supplements.length > 0)
+                  ? item.supplements.map(s => {
+                      const q = (s as any).quantity || 1;
+                      const qStr = q > 1 ? `${q}x ` : '';
+                      return `${qStr}${typeof s === 'string' ? s : s.name_fr}`;
+                    }).join(', ')
+                  : '';
+
+                let suppStyle = 'border: 1px dashed #000; padding: 1px 4px; display: inline-block; font-weight: 900;';
+                if (tpl.supplementsHighlight === 'underline') {
+                  suppStyle = 'text-decoration: underline; font-weight: 900;';
+                } else if (tpl.supplementsHighlight === 'bold_only') {
+                  suppStyle = 'font-weight: 900;';
+                }
+
+                let notesStyle = 'font-weight: bold; margin-top: 2px;';
+                if (tpl.notesHighlight === 'boxed') {
+                  notesStyle = 'font-weight: bold; margin-top: 3px; border: 1.5px solid #000; padding: 2px 5px; border-radius: 3px; background: #fafafa; display: inline-block;';
+                } else if (tpl.notesHighlight === 'colored_badge') {
+                  notesStyle = 'font-weight: 900; margin-top: 3px; border: 1px solid #000; background: #eee; padding: 2px 4px; display: inline-block;';
+                } else if (tpl.notesHighlight === 'italic') {
+                  notesStyle = 'font-style: italic; font-weight: bold; margin-top: 2px;';
+                }
+
+                const itemName = tpl.uppercaseItemNames ? (item.name || '').toUpperCase() : (item.name || '');
+
+                let qtyDisplay = `${item.quantity}x`;
+                let qtyStyle = `font-size: ${tpl.itemQuantityFontSize || 16}px; font-weight: ${tpl.boldQuantities ? 900 : 700}; min-width: 36px;`;
+                if (tpl.itemQuantityStyle === 'badge') {
+                  qtyStyle += ' border: 1.5px solid #000; border-radius: 3px; padding: 0 4px; text-align: center; display: inline-block;';
+                } else if (tpl.itemQuantityStyle === 'compact') {
+                  qtyStyle += ' min-width: 26px;';
+                }
+
+                return `
+                  <div style="border-bottom: ${borderBottomCss}; padding: 5px 0; word-break: break-word;">
+                    <!-- NOM ET QUANTITE -->
+                    <div style="display: flex; align-items: baseline; gap: 8px;">
+                      <span style="${qtyStyle}">${qtyDisplay}</span>
+                      <span style="font-size: ${tpl.itemTitleFontSize || 13.5}px; font-weight: ${tpl.boldItemNames ? 900 : 600}; ${tpl.uppercaseItemNames ? 'text-transform: uppercase;' : ''}">
+                        ${itemName}${item.variant ? ` <span style="font-size: ${(tpl.itemTitleFontSize || 13.5) - 2.5}px; font-weight: normal;">(${item.variant})</span>` : ''}
+                      </span>
+                    </div>
+
+                    <!-- SI MOITIE-MOITIE -->
+                    ${tpl.showMultiPartPizzas && item.multiParts && item.multiParts.parts ? `
+                      <div style="margin-left: 40px; font-size: ${(tpl.baseFontSize || 11) - 1}px; color: #111; margin-top: 2px;">
+                        ${item.multiParts.parts.map((p, idx) => `
+                          <div style="margin-top: 1px;">
+                            • Moitié ${idx + 1} : <strong>${p.name}</strong>
+                          </div>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+
+                    <!-- SUPPLEMENTS QUE LE CHEF DOIT AJOUTER -->
+                    ${suppNames ? `
+                      <div style="margin-left: 40px; font-size: ${tpl.supplementsFontSize || 10.5}px; color: #000; margin-top: 2px; ${suppStyle}">
+                        + AJOUTER : ${suppNames}
+                      </div>
+                    ` : ''}
+
+                    <!-- NOTES DE CUISSON -->
+                    ${tpl.showCookingNotes && item.notes ? `
+                      <div style="margin-left: 40px; font-size: ${tpl.cookingNotesFontSize || 9.5}px; ${notesStyle}">
+                        * NOTE : ${item.notes}
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+
+        case 'notes':
+          if (!data.notes && !data.customerNotes) return '';
+          return `
+            <div style="margin-bottom: 6px; padding: 4px; border: 1.5px dashed #000; border-radius: 4px; font-size: ${tpl.cookingNotesFontSize || 10}px;">
+              <div style="font-weight: 900; text-decoration: underline;">INSTRUCTION GENERALE COMMANDE :</div>
+              <div style="font-weight: bold; margin-top: 2px;">${data.notes || data.customerNotes}</div>
+            </div>
+          `;
+
+        case 'footer':
+          const spaces = Math.max(1, tpl.bottomSpacingLines || 1);
+          return `<div style="height: ${spaces * 10}px; border-top: 1px dashed #666; margin-top: 6px;"></div>`;
+
+        default:
+          return '';
+      }
+    };
+
+    return `
+      <div class="thermal-kitchen" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Courier New', monospace; color: #000; background: #fff; line-height: 1.3; width: 100%; box-sizing: border-box; font-size: ${baseFontSize};">
+        ${blocks.map(b => renderBlock(b)).join('')}
       </div>
     `;
   }

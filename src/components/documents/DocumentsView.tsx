@@ -388,7 +388,7 @@ export const DocumentsView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="ex: SARL Agro Alimentaire ou Mohamed"
+                  placeholder=""
                   value={convertClientName}
                   onChange={e => setConvertClientName(e.target.value)}
                   className="w-full p-2 border border-stone-300 rounded-lg text-xs"

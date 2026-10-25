@@ -6,6 +6,8 @@ import React, { useState, useEffect } from 'react';
 import { reportService, FinancialMetrics, InventoryValuation } from '../../services/report.service';
 import { CurrencyUtil } from '../../core/currency/currency';
 import { useToast } from '../common/Toast';
+import { LegendaryFinanceChart } from './LegendaryFinanceChart';
+import { logger } from '../../services/logger.service';
 import {
   BarChart3,
   Download,
@@ -28,7 +30,8 @@ import {
   Search,
   X,
   ArrowUpDown,
-  Activity
+  Activity,
+  FolderOpen
 } from 'lucide-react';
 
 export const ReportsView: React.FC = () => {
@@ -78,7 +81,7 @@ export const ReportsView: React.FC = () => {
     }
   };
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     if (!metrics) return;
 
     const headers = ['Métrique Financière Pizzeria', 'Valeur (DZD)', 'Formule / Règle de Gestion'];
@@ -109,8 +112,10 @@ export const ReportsView: React.FC = () => {
     ];
 
     const labelPeriod = periodMode === 'ALL' ? 'global' : periodMode === 'MONTH' ? 'mois' : dateFilter;
-    reportService.exportToCsv(`aquadro_rapport_pizzeria_${labelPeriod}`, headers, rows);
-    showToast('Export CSV certifié Pizzeria téléchargé avec succès !', 'success');
+    const filename = `aquadro_rapport_pizzeria_${labelPeriod}.csv`;
+    await reportService.exportToCsv(filename, headers, rows);
+    await logger.logReportExported(filename);
+    showToast('تم تحميل التقرير وحفظه تلقائياً في مجلد [التقارير] بنجاح !', 'success');
   };
 
   return (
@@ -192,6 +197,15 @@ export const ReportsView: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5" />
             <span>Exporter CSV</span>
+          </button>
+
+          <button
+            onClick={() => logger.openReportsFolder()}
+            title="Ouvrir le dossier des rapports sur cet ordinateur"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold shadow-2xs transition-colors cursor-pointer"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-[#E87524]" />
+            <span>مجلد التقارير</span>
           </button>
         </div>
       </div>
@@ -462,179 +476,11 @@ export const ReportsView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2.5 Courbe Dynamique des Ventes (منحنى بياني للمبيعات ونسق الطلبات) */}
-      <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-xs">
-        <div className="p-3 border-b border-gray-200 bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center space-x-2">
-            <Activity className="w-4 h-4 text-[#E87524]" />
-            <div>
-              <span className="font-bold text-gray-900 text-xs">
-                Courbe d'Évolution des Ventes & Affluence (منحنى المبيعات)
-              </span>
-              <span className="text-[10px] text-gray-500 block">
-                {periodMode === 'TODAY'
-                  ? "Suivi horaire de la journée (Heures de pointe & rush)"
-                  : periodMode === 'MONTH'
-                  ? "Suivi quotidien du mois en cours (Jour par jour)"
-                  : "Historique global des ventes par date"}
-              </span>
-            </div>
-          </div>
-
-          {/* Indicateurs clés sur la courbe */}
-          <div className="flex items-center flex-wrap gap-2 text-xs">
-            {metrics?.salesTimeline && metrics.salesTimeline.length > 0 && (() => {
-              const best = metrics.salesTimeline.reduce((max, cur) => cur.revenue > max.revenue ? cur : max, metrics.salesTimeline[0]);
-              return (
-                <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-900 font-mono text-[11px] font-bold">
-                  Pic : {best.timeLabel} ({CurrencyUtil.formatDZD(best.revenue)})
-                </span>
-              );
-            })()}
-            <span className="px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-900 font-mono text-[11px] font-bold">
-              Total Commandes : {metrics?.salesTimeline?.reduce((sum, t) => sum + t.orderCount, 0) || 0}
-            </span>
-          </div>
-        </div>
-
-        <div className="p-4">
-          {metrics?.salesTimeline && metrics.salesTimeline.length > 0 ? (() => {
-            const timeline = metrics.salesTimeline;
-            const maxRev = Math.max(...timeline.map(t => t.revenue), 100);
-            const svgW = 800;
-            const svgH = 200;
-            const pLeft = 55;
-            const pRight = 25;
-            const pTop = 20;
-            const pBottom = 30;
-            const pW = svgW - pLeft - pRight;
-            const pH = svgH - pTop - pBottom;
-
-            const pts = timeline.map((pt, i) => {
-              const x = timeline.length <= 1 ? pLeft + pW / 2 : pLeft + (i / (timeline.length - 1)) * pW;
-              const y = pTop + pH - (pt.revenue / maxRev) * pH;
-              return { x, y, pt, i };
-            });
-
-            const lineD = pts.length === 1
-              ? `M ${pLeft},${pts[0].y} L ${pLeft + pW},${pts[0].y}`
-              : `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')}`;
-
-            const areaD = pts.length <= 1
-              ? ''
-              : `M ${pts[0].x},${pTop + pH} L ${pts.map(p => `${p.x},${p.y}`).join(' L ')} L ${pts[pts.length - 1].x},${pTop + pH} Z`;
-
-            const activePt = hoveredPointIndex !== null ? pts[hoveredPointIndex] : null;
-
-            return (
-              <div className="space-y-2">
-                {activePt && (
-                  <div className="flex items-center justify-between bg-orange-50/70 border border-orange-200 rounded px-3 py-1 text-xs">
-                    <span className="font-bold text-gray-800">
-                      Période / Tranche : <span className="text-[#E87524]">{activePt.pt.timeLabel}</span>
-                    </span>
-                    <span className="font-mono font-bold text-gray-900">
-                      Chiffre d'Affaires : {CurrencyUtil.formatDZD(activePt.pt.revenue)}
-                    </span>
-                    <span className="text-gray-600 font-mono">
-                      {activePt.pt.orderCount} commande(s)
-                    </span>
-                  </div>
-                )}
-
-                <div className="w-full overflow-x-auto">
-                  <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-44 select-none">
-                    <defs>
-                      <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#E87524" stopOpacity="0.35" />
-                        <stop offset="100%" stopColor="#E87524" stopOpacity="0.02" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Lignes de repère horizontales */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
-                      const yPos = pTop + pH * (1 - ratio);
-                      const valDzd = Math.round(maxRev * ratio);
-                      return (
-                        <g key={idx}>
-                          <line
-                            x1={pLeft}
-                            y1={yPos}
-                            x2={svgW - pRight}
-                            y2={yPos}
-                            stroke="#E5E7EB"
-                            strokeDasharray="3 3"
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={pLeft - 8}
-                            y={yPos + 3}
-                            textAnchor="end"
-                            fontSize="9"
-                            fill="#9CA3AF"
-                            fontFamily="monospace"
-                          >
-                            {valDzd >= 1000 ? `${Math.round(valDzd / 1000)}k` : valDzd}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Surface dégradée sous la courbe */}
-                    {areaD && <path d={areaD} fill="url(#salesGrad)" />}
-
-                    {/* Ligne principale de la courbe */}
-                    {lineD && (
-                      <path
-                        d={lineD}
-                        fill="none"
-                        stroke="#E87524"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )}
-
-                    {/* Points et étiquettes X */}
-                    {pts.map((p, idx) => {
-                      const isHovered = hoveredPointIndex === idx;
-                      return (
-                        <g key={idx} className="cursor-pointer" onMouseEnter={() => setHoveredPointIndex(idx)} onMouseLeave={() => setHoveredPointIndex(null)}>
-                          <circle
-                            cx={p.x}
-                            cy={p.y}
-                            r={isHovered ? 6 : 3.5}
-                            fill={isHovered ? '#D46317' : '#E87524'}
-                            stroke="#FFFFFF"
-                            strokeWidth="2"
-                            className="transition-all"
-                          />
-                          {/* Label axe X */}
-                          <text
-                            x={p.x}
-                            y={svgH - 10}
-                            textAnchor="middle"
-                            fontSize="9"
-                            fill={isHovered ? '#D46317' : '#6B7280'}
-                            fontWeight={isHovered ? 'bold' : 'normal'}
-                            fontFamily="monospace"
-                          >
-                            {p.pt.timeLabel}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
-              </div>
-            );
-          })() : (
-            <div className="text-center py-6 text-xs text-gray-400 italic">
-              Aucune vente enregistrée sur la période sélectionnée pour générer la courbe des ventes.
-            </div>
-          )}
-        </div>
-      </div>
+      {/* 2.5 Graphique Financier Avancé & Légendaire (Courbe Spline + Histogramme des Ventes) */}
+      <LegendaryFinanceChart
+        timeline={metrics?.salesTimeline || []}
+        periodMode={periodMode}
+      />
 
       {/* 2.6 Ventilation des Charges & Consommables Pizzeria (علب البيتزا، المناديل، التغليف، الرواتب) */}
       <div className="bg-white rounded border border-gray-200 overflow-hidden">
@@ -736,7 +582,7 @@ export const ReportsView: React.FC = () => {
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Rechercher une pizza ou un produit..."
+                  placeholder="Rechercher..."
                   value={productSearch}
                   onChange={e => setProductSearch(e.target.value)}
                   className="w-full pl-8 pr-7 py-1.5 bg-white border border-gray-300 rounded text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-[#E87524]"

@@ -27,22 +27,22 @@
   "redirects": [
     {
       "source": "/download/gourmet-x64",
-      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64-setup.exe",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.7/Aquadro-POS-Gourmet_1.0.7_x64-setup.exe",
       "permanent": false
     },
     {
       "source": "/download/gourmet-x86",
-      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x86-setup.exe",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.7/Aquadro-POS-Gourmet_1.0.7_x86-setup.exe",
       "permanent": false
     },
     {
       "source": "/download/gourmet-msi",
-      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x64_en-US.msi",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.7/Aquadro-POS-Gourmet_1.0.7_x64_en-US.msi",
       "permanent": false
     },
     {
       "source": "/download/gourmet-msi-x86",
-      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.3/Aquadro-POS-Gourmet_1.0.3_x86_en-US.msi",
+      "destination": "https://github.com/sigoulojia/aquadro-pos-gourmet/releases/download/v1.0.7/Aquadro-POS-Gourmet_1.0.7_x86_en-US.msi",
       "permanent": false
     },
     {

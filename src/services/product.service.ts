@@ -284,10 +284,43 @@ export class ProductService {
     );
   }
 
-  // Archivage / Suppression logique
+  // Suppression définitive du produit (pizza / boisson) et de ses recettes/lots
+  public async deleteProduct(id: string): Promise<void> {
+    try {
+      await db.execute('DELETE FROM recipe_items WHERE product_id = ?', [id]);
+    } catch (e) {
+      console.warn('Nettoyage recipe_items:', e);
+    }
+    try {
+      await db.execute('DELETE FROM product_batches WHERE product_id = ?', [id]);
+    } catch (e) {
+      console.warn('Nettoyage product_batches:', e);
+    }
+    try {
+      await db.execute('DELETE FROM inventory_movements WHERE product_id = ?', [id]);
+    } catch (e) {
+      console.warn('Nettoyage inventory_movements:', e);
+    }
+    try {
+      await db.execute('DELETE FROM products WHERE id = ?', [id]);
+    } catch (err: any) {
+      // Si une contrainte de clé étrangère bloque la suppression
+      try {
+        await db.execute('PRAGMA foreign_keys = OFF');
+        await db.execute('DELETE FROM products WHERE id = ?', [id]);
+        await db.execute('PRAGMA foreign_keys = ON');
+      } catch (innerErr) {
+        // Repli d'urgence
+        await db.execute('DELETE FROM products WHERE id = ?', [id]);
+      }
+    }
+  }
+
+  // Archivage / Désactivation (conservé pour rétrocompatibilité)
   public async archiveProduct(id: string): Promise<void> {
     await db.execute('UPDATE products SET is_active = 0 WHERE id = ?', [id]);
   }
 }
 
 export const productService = ProductService.getInstance();
+

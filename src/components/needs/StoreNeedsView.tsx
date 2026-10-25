@@ -320,7 +320,7 @@ export const StoreNeedsView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: Fromage Mozzarella, Boîtes 33cm, Serviettes, Coca 33cl..."
+                  placeholder=""
                   value={itemName}
                   onChange={e => setItemName(e.target.value)}
                   className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs focus:ring-1 focus:ring-[#E87524] outline-none"
@@ -357,7 +357,7 @@ export const StoreNeedsView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: 5 cartons, 10 kg, 20 pièces..."
+                  placeholder=""
                   value={quantityNeeded}
                   onChange={e => setQuantityNeeded(e.target.value)}
                   className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs focus:ring-1 focus:ring-[#E87524] outline-none"
@@ -400,7 +400,7 @@ export const StoreNeedsView: React.FC = () => {
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="ex: Il reste seulement 2 paquets dans la réserve..."
+                  placeholder=""
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                   className="w-full px-3 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs focus:ring-1 focus:ring-[#E87524] outline-none"

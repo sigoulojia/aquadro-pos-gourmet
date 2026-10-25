@@ -11,6 +11,7 @@ import {
 import { Store } from '../../types/database';
 import { CurrencyUtil } from '../../core/currency/currency';
 import { useToast } from '../common/Toast';
+import { logger } from '../../services/logger.service';
 import {
   FileText,
   Calendar,
@@ -32,7 +33,8 @@ import {
   X,
   CreditCard,
   Building,
-  Coins
+  Coins,
+  FolderOpen
 } from 'lucide-react';
 
 interface PeriodicReportsSectionProps {
@@ -127,7 +129,7 @@ export const PeriodicReportsSection: React.FC<PeriodicReportsSectionProps> = ({
     }
   };
 
-  const handleDownloadHtml = () => {
+  const handleDownloadHtml = async () => {
     try {
       const currentData =
         activeReportType === 'daily'
@@ -141,8 +143,9 @@ export const PeriodicReportsSection: React.FC<PeriodicReportsSectionProps> = ({
         return;
       }
 
-      periodicReportService.downloadHtmlReport(activeReportType, currentData, store, storeLogo);
-      showToast('Fichier de rapport téléchargé avec succès !', 'success');
+      await periodicReportService.downloadHtmlReport(activeReportType, currentData, store, storeLogo);
+      await logger.logReportExported(`rapport_${activeReportType}`);
+      showToast('تم تحميل التقرير وحفظه تلقائياً في مجلد [التقارير] بنجاح !', 'success');
     } catch (err: any) {
       showToast(`Erreur de téléchargement : ${err.message || err}`, 'error');
     }
@@ -359,6 +362,16 @@ export const PeriodicReportsSection: React.FC<PeriodicReportsSectionProps> = ({
           >
             <Download className="w-4 h-4 text-gray-600" />
             <span>Sauvegarder Fichier</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => logger.openReportsFolder()}
+            className="px-3 py-1.5 bg-white border border-[#E9DCCB] hover:bg-gray-100 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+            title="Ouvrir le dossier des rapports sur votre ordinateur"
+          >
+            <FolderOpen className="w-4 h-4 text-[#E87524]" />
+            <span>مجلد التقارير</span>
           </button>
 
           <button

@@ -148,7 +148,16 @@ let currentDownloadInfo = null;
 function triggerDirectDownload(url, filename, edition, arch) {
   currentDownloadInfo = { url, filename, edition, arch };
 
-  // 1. Déclencher le téléchargement du binaire dans le navigateur sans quitter la page
+  // 1. Déclencher le téléchargement du binaire directement sans redirection GitHub
+  const directLink = document.createElement('a');
+  directLink.href = url;
+  directLink.setAttribute('download', filename || '');
+  directLink.style.display = 'none';
+  document.body.appendChild(directLink);
+  directLink.click();
+  setTimeout(() => directLink.remove(), 1500);
+
+  // Fallback iframe discret pour forcer le téléchargement si le clic est bloqué
   try {
     const hiddenIframe = document.createElement('iframe');
     hiddenIframe.style.display = 'none';
@@ -156,24 +165,14 @@ function triggerDirectDownload(url, filename, edition, arch) {
     document.body.appendChild(hiddenIframe);
     setTimeout(() => {
       try { hiddenIframe.remove(); } catch (e) {}
-    }, 60000);
+    }, 45000);
   } catch (err) {
     console.warn('Iframe download fallback:', err);
   }
 
-  // Ancre de téléchargement directe avec download attribute
-  const directLink = document.createElement('a');
-  directLink.href = url;
-  directLink.setAttribute('download', filename || '');
-  directLink.setAttribute('target', '_blank');
-  directLink.style.display = 'none';
-  document.body.appendChild(directLink);
-  directLink.click();
-  setTimeout(() => directLink.remove(), 1000);
-
-  // 2. Ouvrir le Centre de Téléchargement Direct & Guide SmartScreen
+  // 2. Afficher la notification et le guide SmartScreen
   openDownloadModal(currentDownloadInfo);
-  showDownloadToast(`Téléchargement direct de ${filename} en cours...`);
+  showDownloadToast(`جارٍ تحميل ${filename} مباشرة (Démo 7 jours)...`);
 }
 
 function retryActiveDownload() {
@@ -282,18 +281,55 @@ function showDownloadToast(text) {
   }, 4000);
 }
 
+// Détection dynamique et automatique de la dernière release GitHub
+async function fetchLatestRelease() {
+  try {
+    const res = await fetch('https://api.github.com/repos/sigoulojia/aquadro-pos-gourmet/releases/latest');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tag = data.tag_name || 'v1.0.7';
+    const assets = data.assets || [];
+
+    const x64 = assets.find(a => a.name.includes('_x64-setup.exe'));
+    const x86 = assets.find(a => a.name.includes('_x86-setup.exe'));
+    const msi = assets.find(a => a.name.endsWith('.msi'));
+
+    if (x64) {
+      document.querySelectorAll('[data-edition="Gourmet"][data-arch*="64"]').forEach(el => {
+        el.setAttribute('data-download-url', x64.browser_download_url);
+        el.setAttribute('data-filename', x64.name);
+      });
+    }
+    if (x86) {
+      document.querySelectorAll('[data-edition="Gourmet"][data-arch*="x86"]').forEach(el => {
+        el.setAttribute('data-download-url', x86.browser_download_url);
+        el.setAttribute('data-filename', x86.name);
+      });
+    }
+    if (msi) {
+      document.querySelectorAll('[data-edition="Gourmet"][data-arch*="MSI"]').forEach(el => {
+        el.setAttribute('data-download-url', msi.browser_download_url);
+        el.setAttribute('data-filename', msi.name);
+      });
+    }
+  } catch (e) {
+    console.warn('Auto-release fetch fallback', e);
+  }
+}
+
 // Initialisation au chargement
 document.addEventListener('DOMContentLoaded', () => {
   switchEdition('gourmet');
   updateLiveSimulator();
   updateDemoMockup();
+  fetchLatestRelease();
 
   // Attacher les écouteurs de téléchargement direct
   document.querySelectorAll('[data-direct-download]').forEach(el => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
       const url = el.getAttribute('data-download-url') || el.getAttribute('href');
-      const filename = el.getAttribute('data-filename') || 'Aquadro-POS-Setup.exe';
+      const filename = el.getAttribute('data-filename') || 'Aquadro-POS-Gourmet_1.0.7_x64-setup.exe';
       const edition = el.getAttribute('data-edition') || 'Gourmet';
       const arch = el.getAttribute('data-arch') || 'Windows 64-bit';
       triggerDirectDownload(url, filename, edition, arch);

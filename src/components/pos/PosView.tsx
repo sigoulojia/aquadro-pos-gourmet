@@ -634,7 +634,7 @@ export const PosView: React.FC = () => {
             <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-2.5 pointer-events-none" />
             <input
               type="text"
-              placeholder="Rechercher pizza, boisson..."
+              placeholder="Rechercher..."
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-stone-50 border border-stone-200 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-[#E87524]"
@@ -757,13 +757,13 @@ export const PosView: React.FC = () => {
                     )}
 
                     <div>
-                      {/* Photo réelle ou Icône sobre & Prix */}
+                      {/* Photo réelle haute qualité ou Icône */}
                       {product.image_url ? (
-                        <div className="w-full h-24 rounded-lg overflow-hidden mb-2 bg-stone-100 border border-[#E9DCCB] relative flex items-center justify-center">
+                        <div className="w-full h-28 sm:h-32 rounded-xl overflow-hidden mb-2 bg-stone-100 border border-[#E9DCCB] relative flex items-center justify-center shadow-2xs">
                           <img
                             src={product.image_url}
                             alt={product.name_fr}
-                            className={`w-full h-full object-cover group-hover:scale-102 transition-transform duration-150 ${
+                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 ${
                               isOutOfIngredients ? "filter grayscale-30" : ""
                             }`}
                           />
@@ -894,7 +894,7 @@ export const PosView: React.FC = () => {
                 type="text"
                 value={tableNumber}
                 onChange={e => setTableNumber(e.target.value)}
-                placeholder="Table 1"
+                placeholder=""
                 className="w-full text-xs font-bold text-[#292522] bg-transparent focus:outline-none"
               />
             </div>
@@ -926,14 +926,14 @@ export const PosView: React.FC = () => {
                   type="tel"
                   value={deliveryPhone}
                   onChange={e => setDeliveryPhone(e.target.value)}
-                  placeholder="Tél: 05 / 06 / 07..."
+                  placeholder=""
                   className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] font-mono bg-white focus:outline-none"
                 />
                 <input
                   type="text"
                   value={deliveryCustomerName}
                   onChange={e => setDeliveryCustomerName(e.target.value)}
-                  placeholder="Nom Client (optionnel)"
+                  placeholder=""
                   className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] bg-white focus:outline-none"
                 />
               </div>
@@ -942,7 +942,7 @@ export const PosView: React.FC = () => {
                 type="text"
                 value={deliveryAddress}
                 onChange={e => setDeliveryAddress(e.target.value)}
-                placeholder="Adresse de livraison (Quartier, Bâtiment)..."
+                placeholder=""
                 className="w-full px-2 py-1 rounded border border-[#E9DCCB] text-[11px] bg-white focus:outline-none"
               />
             </div>

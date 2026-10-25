@@ -112,13 +112,29 @@ pub fn log(level: LogLevel, target: &str, message: &str) {
     print!("{}", log_line);
 
     let logger = GLOBAL_LOGGER.lock().unwrap();
+    let date_str = now.format("%Y-%m-%d").to_string();
+
+    // Mirror to dedicated program folder "سجلات_النشاط" for user audit
+    let audit_line = format!("[{}] [{}] {}\n", now.format("%Y-%m-%d %H:%M:%S"), target, sanitized_msg);
+    let _ = fs::create_dir_all("سجلات_النشاط");
+    let local_audit_path = PathBuf::from("سجلات_النشاط").join(format!("سجل_كل_ما_حدث_{}.txt", date_str));
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&local_audit_path) {
+        let _ = f.write_all(audit_line.as_bytes());
+    }
+
     if let Some(ref dir) = logger.logs_dir {
-        let date_str = now.format("%Y-%m-%d").to_string();
         let log_file_name = format!("aquadro_{}.log", date_str);
         let log_file_path = dir.join(log_file_name);
 
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file_path) {
             let _ = file.write_all(log_line.as_bytes());
+        }
+
+        let app_audit_dir = dir.parent().unwrap_or(dir).join("سجلات_النشاط");
+        let _ = fs::create_dir_all(&app_audit_dir);
+        let app_audit_path = app_audit_dir.join(format!("سجل_كل_ما_حدث_{}.txt", date_str));
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&app_audit_path) {
+            let _ = f.write_all(audit_line.as_bytes());
         }
     }
 }

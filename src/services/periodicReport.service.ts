@@ -1404,14 +1404,14 @@ export class PeriodicReportService {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 6. TÉLÉCHARGEMENT DU FICHIER HTML AUTONOME (POUR ARCHIVAGE / CONVERSION PDF)
+  // 6. TÉLÉCHARGEMENT DU FICHIER HTML AUTONOME ET ENREGISTREMENT DANS التقارير
   // ──────────────────────────────────────────────────────────────────────────
-  public downloadHtmlReport(
+  public async downloadHtmlReport(
     type: 'daily' | 'weekly' | 'monthly',
     data: any,
     store: Partial<Store>,
     storeLogo: string | null = null
-  ): void {
+  ): Promise<string> {
     const htmlContent = this.generateReportHtml(type, data, store, storeLogo);
     const dateLabel = type === 'daily'
       ? (data as DailyReportData).date
@@ -1420,6 +1420,23 @@ export class PeriodicReportService {
       : (data as MonthlyReportData).yearMonth;
 
     const filename = `Rapport_${type.toUpperCase()}_${dateLabel}.html`;
+    let savedPath = '';
+
+    // 1. Sauvegarde automatique native dans le dossier التقارير du programme
+    if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const res: any = await invoke('save_report_file', {
+          filename,
+          content: htmlContent
+        });
+        savedPath = res?.filepath || '';
+      } catch (err) {
+        console.warn('Erreur sauvegarde automatique rapport périodique:', err);
+      }
+    }
+
+    // 2. Téléchargement automatique navigateur
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1429,6 +1446,8 @@ export class PeriodicReportService {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+
+    return savedPath;
   }
 }
 

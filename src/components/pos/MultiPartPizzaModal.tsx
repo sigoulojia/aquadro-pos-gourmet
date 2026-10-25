@@ -347,7 +347,7 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
             </label>
             <input
               type="text"
-              placeholder="Ex: Pâte bien dorée, cuisson spéciale..."
+              placeholder=""
               value={notes}
               onChange={e => setNotes(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-[#FFF8EF] border border-[#E9DCCB] text-xs text-[#292522] placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-[#E87524] transition-all"

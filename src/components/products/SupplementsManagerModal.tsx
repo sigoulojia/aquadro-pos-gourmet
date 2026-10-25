@@ -256,7 +256,7 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
                 <label className="block text-stone-600 font-semibold mb-1 text-[11px]">Nom (Français)</label>
                 <input
                   type="text"
-                  placeholder="ex: Fromage de Chèvre"
+                  placeholder=""
                   value={nameFr}
                   onChange={e => setNameFr(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-lg text-xs focus:ring-1 focus:ring-[#E87524]"
@@ -269,7 +269,7 @@ export const SupplementsManagerModal: React.FC<SupplementsManagerModalProps> = (
                 <label className="block text-stone-600 font-semibold mb-1 text-[11px]">الاسم بالعربية</label>
                 <input
                   type="text"
-                  placeholder="جبن الماعز"
+                  placeholder=""
                   value={nameAr}
                   onChange={e => setNameAr(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-lg text-xs text-right font-arabic focus:ring-1 focus:ring-[#E87524]"

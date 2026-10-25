@@ -282,7 +282,7 @@ export const ExpensesView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Facture Sonelgaz 2ème trimestre, 100 sacs kraft..."
+                  placeholder=""
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
                   className="w-full bg-white border border-gray-300 rounded px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
