@@ -7,9 +7,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 use tauri::{AppHandle, Manager};
 
 type HmacSha256 = Hmac<Sha256>;
+
+static CACHED_HWID: OnceLock<String> = OnceLock::new();
+static CACHED_TRIAL_START: OnceLock<i64> = OnceLock::new();
+static CACHED_STATUS: RwLock<Option<(i64, LicenseStatusResponse)>> = RwLock::new(None);
 
 // Clé secrète Maître du Développeur (obfusquée par XOR pour résister à l'analyse binaire / extraction de chaînes)
 const VENDOR_SECRET_OBFUSCATED: [u8; 36] = [
@@ -60,6 +65,10 @@ pub struct ActivationResult {
 
 /// Calcule l'empreinte matérielle unique et non-falsifiable de cette machine (HWID)
 pub fn get_hardware_fingerprint() -> String {
+    CACHED_HWID.get_or_init(compute_hardware_fingerprint_internal).clone()
+}
+
+fn compute_hardware_fingerprint_internal() -> String {
     let mut raw_ids: Vec<String> = Vec::new();
 
     // 1. Sur Linux : lire /etc/machine-id ou /var/lib/dbus/machine-id
@@ -343,6 +352,15 @@ fn get_redundant_trial_file_paths(app_handle: &AppHandle) -> Vec<PathBuf> {
 
 /// Résout ou initialise le premier horodatage d'essai pour ce HWID avec protection anti-réinstallation
 fn resolve_or_init_trial_start(app_handle: &AppHandle, current_hwid: &str) -> (i64, bool) {
+    if let Some(&ts) = CACHED_TRIAL_START.get() {
+        return (ts, false);
+    }
+    let (ts, is_new) = resolve_or_init_trial_start_internal(app_handle, current_hwid);
+    let _ = CACHED_TRIAL_START.set(ts);
+    (ts, is_new)
+}
+
+fn resolve_or_init_trial_start_internal(app_handle: &AppHandle, current_hwid: &str) -> (i64, bool) {
     let paths = get_redundant_trial_file_paths(app_handle);
     let mut detected_timestamps: Vec<i64> = Vec::new();
 
@@ -399,10 +417,28 @@ fn resolve_or_init_trial_start(app_handle: &AppHandle, current_hwid: &str) -> (i
 /// Commande Tauri : Obtenir le statut actuel de la licence et le HWID
 #[tauri::command]
 pub fn get_license_status(app_handle: tauri::AppHandle) -> Result<LicenseStatusResponse, String> {
+    let now_sec = Local::now().timestamp();
+    if let Ok(guard) = CACHED_STATUS.read() {
+        if let Some((cached_at, ref status)) = *guard {
+            // Cache mémoire de 30 secondes pour une réactivité instantanée
+            if now_sec - cached_at < 30 {
+                return Ok(status.clone());
+            }
+        }
+    }
+
+    let status = compute_license_status_internal(&app_handle)?;
+    if let Ok(mut guard) = CACHED_STATUS.write() {
+        *guard = Some((now_sec, status.clone()));
+    }
+    Ok(status)
+}
+
+fn compute_license_status_internal(app_handle: &tauri::AppHandle) -> Result<LicenseStatusResponse, String> {
     let current_hwid = get_hardware_fingerprint();
 
     // 1. Calcul de la période d'essai Demo 7 jours
-    let (trial_start_ts, _) = resolve_or_init_trial_start(&app_handle, &current_hwid);
+    let (trial_start_ts, _) = resolve_or_init_trial_start(app_handle, &current_hwid);
     let now_sec = Local::now().timestamp();
     let elapsed_sec = now_sec - trial_start_ts;
 
@@ -568,6 +604,11 @@ pub fn activate_license_key(
         "LICENCE",
         &format!("Licence activée avec succès pour le magasin : {} (Type: {})", payload.store_name, payload.license_type),
     );
+
+    // Invalider immédiatement le cache mémoire pour rafraîchir le statut
+    if let Ok(mut guard) = CACHED_STATUS.write() {
+        *guard = None;
+    }
 
     Ok(ActivationResult {
         success: true,

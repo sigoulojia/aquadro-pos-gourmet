@@ -173,17 +173,14 @@ export const LicenseSettingsSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Guide Développeur / Vendeur */}
-      <div className="p-4 bg-blue-50/60 border border-blue-200 rounded-xl text-xs space-y-2 text-stone-700">
-        <div className="flex items-center gap-1.5 font-bold text-blue-900">
-          <Info className="w-4 h-4 text-blue-600" />
-          <span>أداة المطور الخاصة بك (Keygen على سطح المكتب) :</span>
+      {/* Information d'assistance client */}
+      <div className="p-4 bg-stone-50 border border-stone-200 rounded-xl text-xs space-y-2 text-stone-700">
+        <div className="flex items-center gap-1.5 font-bold text-stone-800">
+          <Info className="w-4 h-4 text-[#E87524]" />
+          <span>الدعم الفني وتفعيل الترخيص :</span>
         </div>
-        <p className="text-[11px] leading-relaxed text-blue-950">
-          تم وضع مولد المفاتيح على سطح مكتب حاسوبك داخل مجلد: <strong>Aquadro-Keygen</strong> (ملف تشغيل_مولد_المفاتيح.sh).
-        </p>
-        <p className="text-[10px] text-blue-800">
-          اطلب من الزبون إرسال رمز HWID الخاص به، ثم شغّل الأداة وأدخل اسمه ورمزه وسيعطيك المفتاح فوراً لترسله له.
+        <p className="text-[11px] leading-relaxed text-stone-600">
+          لتفعيل النسخة الدائمة أو تمديد صلاحية البرنامج، انسخ معرّف الجهاز (HWID) وتواصل مع الموزع المعتمد لاستلام مفتاح التفعيل الرسمي الخاص بمحلك.
         </p>
       </div>
 

@@ -109,6 +109,9 @@ export class LicenseService {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<ActivationResult>('activate_license_key', { key: cleanKey });
       this.cachedStatus = result.status;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('license_status_updated', { detail: result.status }));
+      }
       return result;
     }
 
@@ -127,6 +130,7 @@ export class LicenseService {
     };
     if (typeof window !== 'undefined') {
       localStorage.setItem('aquadro_web_license_status', JSON.stringify(webStatus));
+      window.dispatchEvent(new CustomEvent('license_status_updated', { detail: webStatus }));
     }
     this.cachedStatus = webStatus;
 

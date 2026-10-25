@@ -1,4 +1,4 @@
-// Aquadro POS — Script de Téléchargement Direct & Synchronisation v1.0.7
+// Aquadro POS — Script de Téléchargement Direct & Synchronisation v1.0.8
 
 function triggerDirectDownload(url, filename) {
   // 1. Afficher l'indicateur Toast élégant
@@ -67,7 +67,7 @@ async function syncLatestRelease() {
       });
     }
   } catch (err) {
-    console.debug('Synchronisation release en arrière-plan effectuée (fallback local v1.0.7 actif).');
+    console.debug('Synchronisation release en arrière-plan effectuée (fallback local v1.0.8 actif).');
   }
 }
 
@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el.addEventListener('click', (e) => {
       e.preventDefault();
       const url = el.getAttribute('data-download-url') || el.getAttribute('href');
-      const filename = el.getAttribute('data-filename') || 'Aquadro-POS-Gourmet_1.0.7_x64-setup.exe';
+      const filename = el.getAttribute('data-filename') || 'Aquadro-POS-Gourmet_1.0.8_x64-setup.exe';
       triggerDirectDownload(url, filename);
     });
   });

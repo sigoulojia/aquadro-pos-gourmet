@@ -194,7 +194,7 @@ export const LicenseActivationModal: React.FC<LicenseActivationModalProps> = ({
               <div className="space-y-1">
                 <p className="font-bold">⚠️ انتهت فترة التجربة المجانية (7 أيام) لهذا الحاسوب.</p>
                 <p className="text-[11px] text-red-700 leading-relaxed">
-                  تم قفل النظام لحماية بياناتك وحقوق النسخة. للحصول على مفتاح التنشيط الدائم ومتابعة نشاط المحل، يرجى نسخ كود جهازك (HWID) أدناه وإرساله للمطور.
+                  تم قفل النظام لحماية بياناتك وحقوق النسخة. للحصول على مفتاح التنشيط الدائم ومتابعة نشاط المحل، يرجى نسخ كود جهازك (HWID) أدناه وإرساله إلى الموزع المعتمد لاستلام مفتاح التفعيل الرسمي.
                 </p>
               </div>
             </div>
@@ -293,7 +293,7 @@ export const LicenseActivationModal: React.FC<LicenseActivationModalProps> = ({
                 </div>
 
                 <p className="text-[11px] text-stone-600 leading-relaxed pt-1">
-                  💡 <strong>كيفية التنشيط :</strong> انسخ هذا الرمز وأرسله للمطور عبر WhatsApp. سيعطيك مفتاح تنشيط مشفر خاص بجهازك فقط ومحمي من الاستعمال على أي حاسوب آخر.
+                  💡 <strong>كيفية التنشيط :</strong> انسخ هذا الرمز وأرسله إلى الموزع المعتمد لاستلام مفتاح التنشيط المشفر الخاص بجهازك ومحلك ومحمي من الاستعمال على أي حاسوب آخر.
                 </p>
               </div>
 

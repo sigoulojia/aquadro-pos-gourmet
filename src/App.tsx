@@ -46,7 +46,7 @@ export const AppContent: React.FC = () => {
   useEffect(() => {
     licenseService.getStatus(true).then((status) => {
       setLicenseStatus(status);
-      if (!status.is_licensed) {
+      if (!status.is_licensed && !status.is_trial_active) {
         setShowLicenseModal(true);
       }
     }).catch((err) => {
@@ -54,8 +54,20 @@ export const AppContent: React.FC = () => {
     });
 
     const handleOpen = () => setShowLicenseModal(true);
+    const handleUpdate = (e?: any) => {
+      if (e?.detail) {
+        setLicenseStatus(e.detail);
+        if (e.detail.is_licensed) {
+          setShowLicenseModal(false);
+        }
+      }
+    };
     window.addEventListener('open_license_modal', handleOpen);
-    return () => window.removeEventListener('open_license_modal', handleOpen);
+    window.addEventListener('license_status_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('open_license_modal', handleOpen);
+      window.removeEventListener('license_status_updated', handleUpdate);
+    };
   }, []);
 
   useEffect(() => {

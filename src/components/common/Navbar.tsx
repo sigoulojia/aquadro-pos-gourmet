@@ -25,7 +25,8 @@ import {
   AlertCircle,
   LogOut,
   Vault,
-  Bell
+  Bell,
+  ShieldCheck
 } from 'lucide-react';
 import { NotificationsDropdown } from './NotificationsDropdown';
 import { notificationService } from '../../services/notification.service';
@@ -77,7 +78,16 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatusResponse | null>(null);
 
   useEffect(() => {
-    licenseService.getStatus().then(setLicenseStatus).catch(() => {});
+    const handleLicenseUpdate = (e?: any) => {
+      if (e?.detail) {
+        setLicenseStatus(e.detail);
+      } else {
+        licenseService.getStatus(true).then(setLicenseStatus).catch(() => {});
+      }
+    };
+    handleLicenseUpdate();
+    window.addEventListener('license_status_updated', handleLicenseUpdate);
+    return () => window.removeEventListener('license_status_updated', handleLicenseUpdate);
   }, []);
 
   useEffect(() => {
@@ -266,8 +276,17 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
           )}
         </button>
 
-        {/* Badge Période d'essai Démo 7 jours */}
-        {licenseStatus?.is_trial_active && !licenseStatus?.is_licensed && (
+        {/* Badge Statut de Licence (Actif / Démo / Expiré) */}
+        {licenseStatus?.is_licensed ? (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open_license_modal'))}
+            className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title={`البرنامج مفعل رسمياً: ${licenseStatus.store_name || ''} (${licenseStatus.is_lifetime ? 'مدى الحياة' : licenseStatus.expires_at || ''})`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>مفعل {licenseStatus.is_lifetime ? '(دائم)' : ''}</span>
+          </button>
+        ) : licenseStatus?.is_trial_active ? (
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('open_license_modal'))}
             className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold transition-all shadow-2xs animate-pulse cursor-pointer"
@@ -276,7 +295,16 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
             <Clock className="w-3.5 h-3.5 text-[#E87524]" />
             <span>تجريبي: متبقي {licenseStatus.trial_days_remaining} أيام</span>
           </button>
-        )}
+        ) : licenseStatus?.is_trial_expired ? (
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open_license_modal'))}
+            className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1 rounded-xl border border-red-300 bg-red-50 hover:bg-red-100 text-red-900 text-xs font-bold transition-all shadow-2xs cursor-pointer animate-pulse"
+            title="انتهت الفترة التجريبية — يتطلب التفعيل"
+          >
+            <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+            <span>غير مفعل</span>
+          </button>
+        ) : null}
 
         {/* Horloge Locale */}
         <div className="hidden sm:flex items-center space-x-1 px-2 py-1 rounded border border-gray-200 bg-gray-50 text-gray-600 font-mono text-[11px]">
