@@ -470,23 +470,31 @@ pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> 
         }
 
         if let Some(ref p) = preferred_printer {
-            if let Ok(mut child) = Command::new("lp")
-                .arg("-d")
-                .arg(p)
-                .arg("-o")
-                .arg("raw")
-                .stdin(std::process::Stdio::piped())
-                .spawn()
-            {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(&bytes);
-                    let _ = stdin.flush();
+            if !p.trim().is_empty() {
+                if let Ok(mut child) = Command::new("lp")
+                    .arg("-d")
+                    .arg(p)
+                    .arg("-o")
+                    .arg("raw")
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(&bytes);
+                        let _ = stdin.flush();
+                    }
+                    if let Ok(status) = child.wait() {
+                        if status.success() {
+                            crate::logger::log_info("PRINTER", &format!("Ticket transmis à CUPS sur '{}'", p));
+                            return Ok(format!("Ticket envoyé à l'imprimante CUPS '{}'", p));
+                        }
+                    }
                 }
-                let _ = child.wait();
-                crate::logger::log_info("PRINTER", &format!("Ticket transmis à CUPS sur '{}'", p));
-                return Ok(format!("Ticket envoyé à l'imprimante CUPS '{}'", p));
             }
         }
+
+        crate::logger::log_warn("PRINTER", "Aucun port d'impression directe USB ou CUPS disponible");
+        return Err("لم يتم العثور على طابعة فواتير حرارية متصلة مباشرة عبر USB. سيتم استخدام نافذة طباعة النظام.".to_string());
     }
 
     #[cfg(target_os = "windows")]
@@ -503,6 +511,9 @@ pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> 
         }
     }
 
-    crate::logger::log_info("PRINTER", "Ticket traité par le gestionnaire d'impression");
-    Ok("Ticket transmis au spouleur".to_string())
+    #[allow(unreachable_code)]
+    {
+        crate::logger::log_info("PRINTER", "Système d'impression générique");
+        Err("Plateforme sans pilote d'impression thermique directe".to_string())
+    }
 }

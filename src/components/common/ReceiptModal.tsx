@@ -33,6 +33,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   const [paperWidth, setPaperWidth] = useState<'58mm' | '80mm'>('80mm');
   const [autoPrint, setAutoPrint] = useState<boolean>(true);
   const [previewTab, setPreviewTab] = useState<'CLIENT' | 'KITCHEN'>('CLIENT');
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
+  const [printFeedback, setPrintFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const cfg = printerService.getConfig();
@@ -66,14 +68,48 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   };
 
   const handlePrintBoth = async () => {
-    await printerService.printBothTickets(currentReceiptWithWidth, true);
+    try {
+      setIsPrinting(true);
+      setPrintFeedback(null);
+      await printerService.printBothTickets(currentReceiptWithWidth, true);
+      setPrintFeedback({
+        message: language === 'ar' ? 'تم إرسال التيكت المزدوج (الزبون + الطباخ) للطباعة بنجاح !' : 'Tickets Client et Cuisine envoyés à l\'impression !',
+        type: 'success'
+      });
+    } catch (err: any) {
+      setPrintFeedback({
+        message: language === 'ar' ? `خطأ أثناء الطباعة: ${err?.message || err}` : `Erreur d'impression : ${err?.message || err}`,
+        type: 'error'
+      });
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   const handlePrintSingle = async () => {
-    if (previewTab === 'KITCHEN') {
-      await printerService.printKitchenTicket(currentReceiptWithWidth, true);
-    } else {
-      await printerService.printReceipt(currentReceiptWithWidth, true);
+    try {
+      setIsPrinting(true);
+      setPrintFeedback(null);
+      if (previewTab === 'KITCHEN') {
+        await printerService.printKitchenTicket(currentReceiptWithWidth, true);
+        setPrintFeedback({
+          message: language === 'ar' ? 'تم إرسال بون المطبخ (الطباخ) للطباعة بنجاح !' : 'Bon de Cuisine envoyé à l\'impression !',
+          type: 'success'
+        });
+      } else {
+        await printerService.printReceipt(currentReceiptWithWidth, true);
+        setPrintFeedback({
+          message: language === 'ar' ? 'تم إرسال تيكت الزبون للطباعة بنجاح !' : 'Ticket Client envoyé à l\'impression !',
+          type: 'success'
+        });
+      }
+    } catch (err: any) {
+      setPrintFeedback({
+        message: language === 'ar' ? `خطأ أثناء الطباعة: ${err?.message || err}` : `Erreur d'impression : ${err?.message || err}`,
+        type: 'error'
+      });
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -114,7 +150,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-black text-[#292522] text-sm">
-                  {language === 'ar' ? 'تم تسجيل وطباعة الطلب بنجاح' : 'Commande Validée avec Succès'}
+                  {language === 'ar' ? 'تم تسجيل الطلب وتجهيز التيكت' : 'Commande Validée & Prête'}
                 </h3>
                 <span className="bg-[#E87524] text-white px-2.5 py-0.5 rounded-lg text-xs font-black tracking-wide">
                   #{cleanOrderNum}
@@ -133,6 +169,23 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* ========================================================================= */}
+        {/* BANNIÈRE DE RETOUR D'IMPRESSION (FEEDBACK)                                */}
+        {/* ========================================================================= */}
+        {printFeedback && (
+          <div className={`px-5 py-2 text-xs font-bold flex items-center justify-between border-b animate-in fade-in duration-150 ${
+            printFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <Printer className="w-3.5 h-3.5" />
+              <span>{printFeedback.message}</span>
+            </div>
+            <button onClick={() => setPrintFeedback(null)} className="cursor-pointer text-stone-400 hover:text-stone-700">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* ========================================================================= */}
         {/* BANNIÈRE MONNAIE À RENDRE (SI PAIEMENT ESPÈCES)                           */}
@@ -243,22 +296,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="flex items-center space-x-2 w-full sm:w-auto">
             <button
               type="button"
+              disabled={isPrinting}
               onClick={handlePrintSingle}
-              className="flex-1 sm:flex-initial py-2 px-3 rounded-xl bg-white hover:bg-stone-100 border border-[#E9DCCB] text-stone-700 font-bold text-xs transition-colors flex items-center justify-center space-x-1 cursor-pointer"
+              className="flex-1 sm:flex-initial py-2 px-3 rounded-xl bg-white hover:bg-stone-100 border border-[#E9DCCB] text-stone-700 font-bold text-xs transition-colors flex items-center justify-center space-x-1 cursor-pointer disabled:opacity-50"
               title="Imprimer uniquement le ticket affiché"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Printer className={`w-3.5 h-3.5 ${isPrinting ? 'animate-bounce' : ''}`} />
               <span>{previewTab === 'CLIENT' ? 'Reçu Seul' : 'Bon Cuisine Seul'}</span>
             </button>
 
             <button
               type="button"
+              disabled={isPrinting}
               onClick={handlePrintBoth}
-              className="flex-1 sm:flex-initial py-2 px-4 rounded-xl bg-[#E87524] hover:bg-[#D46317] text-white font-black text-xs transition-colors shadow-sm flex items-center justify-center space-x-1.5 cursor-pointer active:scale-95"
+              className="flex-1 sm:flex-initial py-2 px-4 rounded-xl bg-[#E87524] hover:bg-[#D46317] text-white font-black text-xs transition-colors shadow-sm flex items-center justify-center space-x-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
               title="Imprimer le Ticket Client ET le Bon Cuisine pour le Chef"
             >
-              <Printer className="w-4 h-4" />
-              <span>Imprimer les 2 Tickets (Client + Chef)</span>
+              <Printer className={`w-4 h-4 ${isPrinting ? 'animate-bounce' : ''}`} />
+              <span>{isPrinting ? (language === 'ar' ? 'جاري الإرسال للطباعة...' : 'Impression en cours...') : (language === 'ar' ? 'طباعة التيكتين (الزبون + الطباخ)' : 'Imprimer les 2 Tickets (Client + Chef)')}</span>
             </button>
           </div>
         </div>

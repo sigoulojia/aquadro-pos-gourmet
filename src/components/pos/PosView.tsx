@@ -538,6 +538,7 @@ export const PosView: React.FC = () => {
       setLastReceipt(receiptData);
       setShowPayModal(false);
       setCart([]);
+      setShowReceiptModal(true);
       
       // Recharger immédiatement l'état des portions restantes pour mettre à jour les cartes
       try {
@@ -556,13 +557,18 @@ export const PosView: React.FC = () => {
         }
       }
 
-      // Impression directe et automatique sans aucune boîte de dialogue ni modal intrusif
-      try {
-        await printerService.printBothTickets(receiptData, false);
-        showToast("تم الدفع بنجاح وطباعة التيكت مباشرة !", "success");
-      } catch (printErr) {
-        console.warn("Impression directe:", printErr);
-        showToast("تمت معالجة الطلب بنجاح", "success");
+      // Impression automatique si activée dans les paramètres
+      const printerCfg = printerService.getConfig();
+      if (printerCfg.autoPrint !== false) {
+        try {
+          await printerService.printBothTickets(receiptData, true);
+          showToast("تم الدفع بنجاح وإرسال التيكت للطباعة !", "success");
+        } catch (printErr) {
+          console.warn("Impression directe:", printErr);
+          showToast("تم تسجيل الطلب وتجهيز التيكت للمعاينة والطباعة", "success");
+        }
+      } else {
+        showToast("تم تسجيل الطلب وتجهيز التيكت", "success");
       }
     } catch (err: any) {
       showToast(`Erreur d'encaissement : ${err?.message || err}`, "error");
@@ -842,9 +848,28 @@ export const PosView: React.FC = () => {
               <Receipt className="w-4 h-4 text-[#E87524]" />
               <h2 className="font-extrabold text-xs text-stone-800">Commande en cours</h2>
             </div>
-            <span className="text-[11px] font-bold text-[#E87524] bg-white px-2 py-0.5 rounded-full border border-stone-200">
-              {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const last = lastReceipt || printerService.getLastReceipt();
+                  if (last) {
+                    setLastReceipt(last);
+                    setShowReceiptModal(true);
+                  } else {
+                    showToast("لا يوجد تيكت سابق محفوظ للطباعة", "info");
+                  }
+                }}
+                className="px-2 py-0.5 rounded-lg bg-orange-50 hover:bg-[#E87524] text-[#E87524] hover:text-white border border-[#E87524]/30 text-[10.5px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                title="Afficher et réimprimer le dernier ticket (آخر تيكيت)"
+              >
+                <Printer className="w-3 h-3" />
+                <span>آخر تيكيت</span>
+              </button>
+              <span className="text-[11px] font-bold text-[#E87524] bg-white px-2 py-0.5 rounded-full border border-stone-200">
+                {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
 
           {/* Toggle 3 Services Sobre : Sur Place / À Emporter / Livraison */}

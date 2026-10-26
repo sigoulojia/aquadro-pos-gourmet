@@ -31,6 +31,8 @@ import {
   Share2,
   Receipt,
   Eye,
+  EyeOff,
+  CreditCard,
   FileText,
   DollarSign,
   QrCode,
@@ -860,7 +862,22 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
+                          {blockId === 'payment' && (
+                            <button
+                              type="button"
+                              onClick={() => updateCustomerField('showPaymentMethod', !customerConfig.showPaymentMethod)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
+                                customerConfig.showPaymentMethod
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                  : 'bg-stone-100 text-stone-400 border-stone-200 hover:bg-stone-200'
+                              }`}
+                              title={customerConfig.showPaymentMethod ? 'تعطيل ظهور طريقة الدفع' : 'تفعيل ظهور طريقة الدفع'}
+                            >
+                              {customerConfig.showPaymentMethod ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-stone-400" />}
+                              <span>{customerConfig.showPaymentMethod ? 'مفعل (ظاهر)' : 'معطل (مخفي)'}</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => moveCustomerBlock(index, 'up')}
@@ -2161,12 +2178,67 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                   </div>
 
                   {/* ============================================================= */}
-                  {/* 6. تذييل الفاتورة، الباركود والـ QR Code                        */}
+                  {/* 6. طريقة الدفع والباقي المردود (Mode de Règlement & Monnaie) */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-stone-200/70 pb-2">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-[#E87524]" />
+                        <h4 className="text-xs font-bold text-stone-800">6. طريقة الدفع والصرف (Mode de Règlement & Monnaie Rendue)</h4>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">تفعيل ظهور طريقة الدفع (Mode de règlement)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showPaymentMethod}
+                          onChange={e => updateCustomerField('showPaymentMethod', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          تسمية حقل طريقة الدفع (Libellé Mode de Règlement)
+                        </label>
+                        <input
+                          type="text"
+                          disabled={!customerConfig.showPaymentMethod}
+                          value={customerConfig.paymentMethodLabel || 'Mode de règlement'}
+                          onChange={e => updateCustomerField('paymentMethodLabel', e.target.value)}
+                          placeholder="Mode de règlement أو طريقة الدفع"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none disabled:opacity-50 disabled:bg-stone-100"
+                        />
+                      </div>
+
+                      <div className="flex items-end">
+                        <label className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                          !customerConfig.showPaymentMethod ? 'opacity-50 bg-stone-100 border-stone-200' : 'bg-white border-stone-200 hover:border-orange-200'
+                        }`}>
+                          <div>
+                            <span className="text-[11px] font-bold text-stone-700 block">إظهار المقبوض والباقي المردود</span>
+                            <span className="text-[9.5px] text-stone-400">Montant reçu & Monnaie rendue (Espèces)</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            disabled={!customerConfig.showPaymentMethod}
+                            checked={customerConfig.showTenderedAndChange}
+                            onChange={e => updateCustomerField('showTenderedAndChange', e.target.checked)}
+                            className="w-4 h-4 accent-[#E87524] rounded cursor-pointer shrink-0"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ============================================================= */}
+                  {/* 7. تذييل الفاتورة، الباركود والـ QR Code                        */}
                   {/* ============================================================= */}
                   <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3.5">
                     <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
                       <QrCode className="w-4 h-4 text-[#E87524]" />
-                      <h4 className="text-xs font-bold text-stone-800">6. تذييل الفاتورة، الباركود والـ QR Code (Pied de Ticket & Codes)</h4>
+                      <h4 className="text-xs font-bold text-stone-800">7. تذييل الفاتورة، الباركود والـ QR Code (Pied de Ticket & Codes)</h4>
                     </div>
 
                     {/* QR Code */}

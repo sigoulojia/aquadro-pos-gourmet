@@ -142,8 +142,9 @@ export interface ReceiptTemplateConfig {
   discountLabel?: string;
   showTax: boolean;
   taxLabel?: string;
-  totalStyle?: 'standard' | 'double_bordered' | 'banner_dark';
+  totalStyle?: 'banner_dark' | 'double_bordered' | 'standard';
   showPaymentMethod: boolean;
+  paymentMethodLabel?: string;
   showTenderedAndChange: boolean;
 
   // 6. Pied de ticket, QR Code, Barcode & Messages
@@ -260,6 +261,7 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   taxLabel: 'TVA DGI',
   totalStyle: 'banner_dark',
   showPaymentMethod: true,
+  paymentMethodLabel: 'Mode de règlement',
   showTenderedAndChange: true,
 
   // 6. Pied & QR
@@ -408,12 +410,27 @@ export class PrinterService {
         const raw = localStorage.getItem('aquadro_receipt_template_config');
         if (raw) {
           const parsed = JSON.parse(raw);
+          const rawBlockOrder: CustomerReceiptBlock[] = parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
+            ? parsed.blockOrder
+            : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
+
+          // Assurer la présence de tous les blocs par défaut (ex: 'payment' si l'utilisateur avait une version antérieure)
+          const blockOrder = [...rawBlockOrder];
+          DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.forEach(b => {
+            if (!blockOrder.includes(b)) {
+              const footerIdx = blockOrder.indexOf('footer');
+              if (footerIdx !== -1) {
+                blockOrder.splice(footerIdx, 0, b);
+              } else {
+                blockOrder.push(b);
+              }
+            }
+          });
+
           return {
             ...DEFAULT_RECEIPT_TEMPLATE_CONFIG,
             ...parsed,
-            blockOrder: parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
-              ? parsed.blockOrder
-              : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER
+            blockOrder
           };
         }
       } catch (e) {}
@@ -610,8 +627,8 @@ export class PrinterService {
   }
 
   // Génération du texte formaté pour ticket de caisse Client (ESC/POS épuré et lisible)
-  public generateReceiptText(data: ReceiptPrintData): string {
-    const tpl = this.getTemplateConfig();
+  public generateReceiptText(data: ReceiptPrintData, customConfig?: ReceiptTemplateConfig): string {
+    const tpl = customConfig || this.getTemplateConfig();
     const is80 = (data.paperWidth || tpl.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const cols = is80 ? 44 : 32;
 
@@ -734,7 +751,8 @@ export class PrinterService {
         ? 'Espèces'
         : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
-      out.push(twoCols('Mode de règlement :', paymentLabel));
+      const label = tpl.paymentMethodLabel || 'Mode de règlement';
+      out.push(twoCols(`${label} :`, paymentLabel));
 
       if (tpl.showTenderedAndChange && paymentMethod === 'CASH' && tenderedAmount > 0) {
         out.push(twoCols('Montant reçu :', CurrencyUtil.formatDZD(tenderedAmount)));
@@ -817,9 +835,21 @@ export class PrinterService {
       ? 'Espèces'
       : (paymentMethod === 'CARD' ? 'Carte bancaire' : (paymentMethod === 'BARIDIMOB' ? 'BaridiMob' : paymentMethod));
 
-    const blocks = tpl.blockOrder && tpl.blockOrder.length > 0
+    const rawBlocks = tpl.blockOrder && tpl.blockOrder.length > 0
       ? tpl.blockOrder
       : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
+
+    const blocks = [...rawBlocks];
+    DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.forEach(b => {
+      if (!blocks.includes(b)) {
+        const footerIdx = blocks.indexOf('footer');
+        if (footerIdx !== -1) {
+          blocks.splice(footerIdx, 0, b);
+        } else {
+          blocks.push(b);
+        }
+      }
+    });
 
     const renderBlock = (block: CustomerReceiptBlock): string => {
       switch (block) {
@@ -932,11 +962,11 @@ export class PrinterService {
                 const unitPriceStr = item.quantity > 1 ? `(${item.quantity} x ${formatMoney(item.unitPrice)})` : '';
                 return `
                   <div style="margin-bottom: 5px; font-size: 10px; word-break: break-word;">
-                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                      <div style="font-weight: ${tpl.boldItemNames !== false ? 'bold' : 'normal'}; font-size: ${tpl.itemTitleFontSize || 11}px; padding-right: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 4px;">
+                      <div style="flex: 1; min-width: 0; word-break: break-word; font-weight: ${tpl.boldItemNames !== false ? 'bold' : 'normal'}; font-size: ${tpl.itemTitleFontSize || 11}px; padding-right: 4px;">
                         ${item.quantity}x ${item.name}${tpl.showItemVariants !== false && item.variant ? ` (${item.variant})` : ''}
                       </div>
-                      <div style="font-weight: bold; white-space: nowrap;">
+                      <div style="font-weight: bold; white-space: nowrap; flex-shrink: 0; text-align: right;">
                         ${formatMoney(item.total)}
                       </div>
                     </div>
@@ -1020,10 +1050,11 @@ export class PrinterService {
 
         case 'payment': {
           if (!tpl.showPaymentMethod) return '';
+          const label = tpl.paymentMethodLabel || 'Mode de règlement';
           return `
             <div style="font-size: 9.5px; line-height: 1.35; margin-bottom: 6px;">
               <div style="display: flex; justify-content: space-between;">
-                <span>Mode de règlement :</span>
+                <span>${label} :</span>
                 <strong>${paymentLabel}</strong>
               </div>
               ${tpl.showTenderedAndChange && paymentMethod === 'CASH' && tenderedAmount > 0 ? `
@@ -1402,21 +1433,22 @@ export class PrinterService {
 
     const receiptText = this.generateReceiptText(data);
 
+    let nativeSuccess = false;
+
     // Si environnement Tauri natif
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const printerName = this.getSelectedPrinterName();
         await invoke('raw_print_receipt', { content: receiptText, printerName, printer_name: printerName });
+        nativeSuccess = true;
       } catch (err) {
         console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
-        if (typeof window !== 'undefined') {
-          setTimeout(() => {
-            window.print();
-          }, 50);
-        }
       }
-    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
+    }
+
+    // Déclencher le spouleur / dialogue système si l'impression matérielle directe n'a pas abouti OU si triggerBrowserPrint est demandé
+    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -1686,20 +1718,20 @@ export class PrinterService {
 
     const kitchenText = this.generateKitchenTicketText(data);
 
+    let nativeSuccess = false;
+
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const printerName = this.getSelectedPrinterName();
         await invoke('raw_print_receipt', { content: kitchenText, printerName, printer_name: printerName });
+        nativeSuccess = true;
       } catch (err) {
         console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
-        if (typeof window !== 'undefined') {
-          setTimeout(() => {
-            window.print();
-          }, 50);
-        }
       }
-    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
+    }
+
+    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -1737,21 +1769,20 @@ export class PrinterService {
     const clientText = this.generateReceiptText(data);
     const kitchenText = this.generateKitchenTicketText(data);
     const combinedText = `${clientText}\n\n\n\x1d\x56\x00\n\n${kitchenText}\n\n\n\x1d\x56\x00`;
+    let nativeSuccess = false;
 
     if (typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function') {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const printerName = this.getSelectedPrinterName();
         await invoke('raw_print_receipt', { content: combinedText, printerName, printer_name: printerName });
+        nativeSuccess = true;
       } catch (err) {
         console.warn('Impression native spooler non disponible, basculement sur le spouleur système :', err);
-        if (typeof window !== 'undefined') {
-          setTimeout(() => {
-            window.print();
-          }, 50);
-        }
       }
-    } else if (triggerBrowserPrint && typeof window !== 'undefined') {
+    }
+
+    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
