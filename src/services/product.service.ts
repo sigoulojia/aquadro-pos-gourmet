@@ -42,8 +42,8 @@ export class ProductService {
   // Liste de tous les produits avec leurs catégories et marques
   public async getProducts(includeInactive: boolean = false): Promise<Product[]> {
     const query = includeInactive
-      ? 'SELECT * FROM products ORDER BY created_at DESC'
-      : 'SELECT * FROM products WHERE is_active = 1 ORDER BY created_at DESC';
+      ? "SELECT * FROM products WHERE id NOT LIKE 'prod-multi%' AND (sku IS NULL OR sku NOT LIKE 'SKU-prod-multi%') ORDER BY created_at DESC"
+      : "SELECT * FROM products WHERE is_active = 1 AND id NOT LIKE 'prod-multi%' AND (sku IS NULL OR sku NOT LIKE 'SKU-prod-multi%') ORDER BY created_at DESC";
     const products = await db.select<Product>(query);
     const categories = await db.select<Category>('SELECT * FROM categories');
     const brands = await db.select<Brand>('SELECT * FROM brands');

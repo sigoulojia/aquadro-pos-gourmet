@@ -133,7 +133,7 @@ impl CheckoutRepo {
                     let barcode = format!("BC-{}", item.product_id);
                     let _ = sqlx::query(
                         "INSERT OR IGNORE INTO products (id, sku, barcode, name_fr, name_ar, selling_price_ttc, purchase_cost, min_selling_price_ttc, tva_rate, current_stock, min_stock_alert, is_active, created_at, updated_at)
-                         VALUES (?, ?, ?, 'Pizza Personnalisée / Multi', 'بيتزا مخصصة / متعددة', ?, ?, ?, 0, 100, 0, 1, ?, ?)"
+                         VALUES (?, ?, ?, 'Pizza Personnalisée / Multi', 'بيتزا مخصصة / متعددة', ?, ?, ?, 0, 0, 0, 0, ?, ?)"
                     )
                     .bind(&item.product_id)
                     .bind(&sku)

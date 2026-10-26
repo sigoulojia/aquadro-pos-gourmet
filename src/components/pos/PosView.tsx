@@ -168,9 +168,14 @@ export const PosView: React.FC = () => {
     });
   }, [products, selectedCategory, search]);
 
+  const isPizzaProduct = (product: Product) => {
+    return !product.category_id || product.category_id === "cat-pizza" || product.name_fr.toLowerCase().includes("pizza");
+  };
+
   const isViewingPizzas = selectedCategory === "ALL" || selectedCategory === "cat-pizza";
   const searchLower = search.toLowerCase().trim();
-  const showMultiPartCards = isViewingPizzas && (
+  const availablePizzasCount = products.filter(isPizzaProduct).length;
+  const showMultiPartCards = isViewingPizzas && availablePizzasCount >= 2 && (
     !searchLower ||
     searchLower.includes("moitié") ||
     searchLower.includes("moitie") ||
@@ -180,10 +185,6 @@ export const PosView: React.FC = () => {
     searchLower.includes("pizza") ||
     searchLower.includes("بيتزا")
   );
-
-  const isPizzaProduct = (product: Product) => {
-    return !product.category_id || product.category_id === "cat-pizza" || product.name_fr.toLowerCase().includes("pizza");
-  };
 
   // Clic sur une carte :
   // Si Moitié-Moitié ou 4 Saisons -> ouvre directement le modal multi-saveurs
