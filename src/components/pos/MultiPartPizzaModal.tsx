@@ -140,7 +140,7 @@ export const MultiPartPizzaModal: React.FC<MultiPartPizzaModalProps> = ({
       tva_rate: 0,
       current_stock: 100,
       min_stock_alert: 5,
-      is_active: 1,
+      is_active: 0,
       unit_of_measure: "UNIT" as any,
       box_conversion_ratio: 1,
       created_at: new Date().toISOString(),

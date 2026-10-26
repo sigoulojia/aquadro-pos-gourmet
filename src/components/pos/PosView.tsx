@@ -174,8 +174,7 @@ export const PosView: React.FC = () => {
 
   const isViewingPizzas = selectedCategory === "ALL" || selectedCategory === "cat-pizza";
   const searchLower = search.toLowerCase().trim();
-  const availablePizzasCount = products.filter(isPizzaProduct).length;
-  const showMultiPartCards = isViewingPizzas && availablePizzasCount >= 2 && (
+  const showMultiPartCards = isViewingPizzas && (
     !searchLower ||
     searchLower.includes("moitié") ||
     searchLower.includes("moitie") ||
