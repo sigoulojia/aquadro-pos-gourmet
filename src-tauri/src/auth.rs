@@ -9,6 +9,7 @@
     use serde::{Deserialize, Serialize};
     use sqlx::{FromRow, SqlitePool};
     use std::collections::HashMap;
+    use std::fs;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -196,50 +197,85 @@
     const KEYRING_USERNAME: &str = "DB_SECRET_PIN";
 
     #[tauri::command]
-    pub async fn setup_db_secret(secret: String, pool: tauri::State<'_, SqlitePool>) -> Result<(), String> {
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USERNAME).map_err(|e| e.to_string())?;
-        entry.set_password(&secret).map_err(|e| format!("Impossible de sauvegarder le code secret de manière sécurisée: {}", e))?;
+    pub async fn setup_db_secret(
+        secret: String,
+        pool: tauri::State<'_, SqlitePool>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<(), String> {
+        let trimmed = secret.trim().to_string();
+        if trimmed.is_empty() {
+            return Err("Le code secret ne peut pas être vide".to_string());
+        }
+
+        // 1. Sauvegarder dans le Keyring OS sécurisé
+        if let Ok(entry) = Entry::new(KEYRING_SERVICE, KEYRING_USERNAME) {
+            let _ = entry.set_password(&trimmed);
+        }
+
+        // 2. Sauvegarder dans le répertoire de configuration local sécurisé
+        if let Ok((_, _, _, _, config_dir)) = crate::runtime::resolve_runtime_paths(&app_handle) {
+            let _ = fs::create_dir_all(&config_dir);
+            let secret_path = config_dir.join("db_secret.key");
+            let _ = fs::write(secret_path, trimmed.as_bytes());
+        }
         
-        log_audit(&pool, "system", "DB_SECRET_SET", "Danger Zone PIN sécurisé dans le Keyring", "SUCCESS").await;
+        log_audit(&pool, "system", "DB_SECRET_SET", "Danger Zone PIN sécurisé dans le Keyring & Config", "SUCCESS").await;
         Ok(())
     }
 
     #[tauri::command]
-    pub async fn verify_danger_zone(secret: String, token: String, pool: tauri::State<'_, SqlitePool>) -> Result<bool, String> {
+    pub async fn verify_danger_zone(
+        secret: String,
+        token: String,
+        pool: tauri::State<'_, SqlitePool>,
+        app_handle: tauri::AppHandle,
+    ) -> Result<bool, String> {
         let user = verify_session(token).await?;
         if user.role != "owner" && user.role != "admin" {
-            return Err("Accès non autorisé à la Danger Zone (Réservé au Propriétaire).".to_string());
+            return Err("Accès non autorisé : Cette opération critique est strictement réservée au Propriétaire.".to_string());
         }
 
-        // 1. Vérifier si le code correspond au PIN du propriétaire
-        let owner_row: Option<(String,)> = sqlx::query_as("SELECT pin_hash FROM users WHERE id = ?")
-            .bind(&user.id)
-            .fetch_optional(&*pool).await.unwrap_or(None);
-
-        let mut pin_valid = false;
-        if let Some((hash,)) = owner_row {
-            if verify_pin(&secret, &hash).await.unwrap_or(false) {
-                pin_valid = true;
-            }
+        let input_secret = secret.trim();
+        if input_secret.is_empty() {
+            return Err("يرجى إدخال رمز الأمان السري لتأكيد هذه العملية الخطيرة.".to_string());
         }
 
-        if pin_valid || secret == "1234" || secret == "0000" || secret.to_uppercase() == "RESET" {
-            log_audit(&pool, &user.id, "DANGER_ZONE_ACCESS", "Validation réussie via PIN Propriétaire", "SUCCESS").await;
-            return Ok(true);
-        }
-
-        // 2. Vérifier dans le Keyring OS si configuré
+        // 1. Récupérer le secret attendu depuis le Keyring OS
+        let mut expected_secret: Option<String> = None;
         if let Ok(entry) = Entry::new(KEYRING_SERVICE, KEYRING_USERNAME) {
             if let Ok(stored_secret) = entry.get_password() {
-                if secret == stored_secret {
-                    log_audit(&pool, &user.id, "DANGER_ZONE_ACCESS", "Validation réussie via Secret Keyring", "SUCCESS").await;
-                    return Ok(true);
+                let trimmed = stored_secret.trim().to_string();
+                if !trimmed.is_empty() {
+                    expected_secret = Some(trimmed);
                 }
             }
         }
 
-        log_audit(&pool, &user.id, "DANGER_ZONE_FAILED", "Échec de validation Danger Zone", "FAILED").await;
-        Err("Code incorrect. Veuillez entrer votre code PIN Propriétaire ou le code secret.".to_string())
+        // 2. Si non trouvé dans le Keyring (ou OS sans secret-service), lire dans config/db_secret.key
+        if expected_secret.is_none() {
+            if let Ok((_, _, _, _, config_dir)) = crate::runtime::resolve_runtime_paths(&app_handle) {
+                let secret_path = config_dir.join("db_secret.key");
+                if let Ok(content) = fs::read_to_string(secret_path) {
+                    let trimmed = content.trim().to_string();
+                    if !trimmed.is_empty() {
+                        expected_secret = Some(trimmed);
+                    }
+                }
+            }
+        }
+
+        // Vérification stricte contre le code secret de récupération
+        if let Some(valid_code) = expected_secret {
+            if input_secret == valid_code {
+                log_audit(&pool, &user.id, "DANGER_ZONE_ACCESS", "Validation réussie via Secret Setup Charter", "SUCCESS").await;
+                return Ok(true);
+            } else {
+                log_audit(&pool, &user.id, "DANGER_ZONE_FAILED", "Échec validation: Code secret incorrect", "FAILED").await;
+                return Err("رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF). لا يمكن إتمام الحذف أو التنسيق برمز البائع أو المالك العادي.".to_string());
+            }
+        }
+
+        Err("لم يتم العثور على رمز التهيئة المعتمد في النظام. يرجى التأكد من تشغيل وثيقة الإعداد الأولي.".to_string())
     }
 
     pub async fn log_audit(pool: &SqlitePool, user_id: &str, action: &str, details: &str, status: &str) {

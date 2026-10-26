@@ -36,8 +36,10 @@ export const UpdateNotificationModal: React.FC = () => {
     updateService.dismiss();
   };
 
-  // Keep modal visible when update is available, downloading, downloaded, or on error
-  const shouldShow = !isDismissed && (
+  // Si la mise à jour automatique silencieuse est activée ou en cours en arrière-plan,
+  // ne JAMAIS afficher de modale intrusive pour ne pas interrompre l'encaissement.
+  const isAutoUpdate = updateService.isAutoUpdateEnabled();
+  const shouldShow = !isDismissed && !isAutoUpdate && !state.isSilent && (
     state.status === 'available' || 
     state.status === 'downloading' || 
     state.status === 'downloaded' ||

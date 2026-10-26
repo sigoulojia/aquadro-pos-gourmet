@@ -26,6 +26,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useI18n } from "../../i18n";
 import { storeNeedsService } from "../../services/storeNeeds.service";
 import { db } from "../../db/sqlite";
+import { APP_VERSION } from "../../constants/app";
 
 export type NavView =
   | "pos"
@@ -256,7 +257,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ currentView, onNavigate }) =
         </div>
         <div className="flex items-center justify-between px-2 text-[10px] text-stone-400 font-mono">
           <span>Aquadro POS</span>
-          <span className="font-semibold text-stone-500">v1.0.5</span>
+          <span className="font-semibold text-stone-500">v{APP_VERSION}</span>
         </div>
       </div>
     </aside>

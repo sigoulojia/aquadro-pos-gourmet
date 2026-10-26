@@ -137,7 +137,7 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
   const [activeTab, setActiveTab] = useState<'customer' | 'kitchen'>('customer');
 
   // Sous-panneau actif dans l'onglet
-  const [activeSubTab, setActiveSubTab] = useState<'blocks' | 'typography' | 'styles' | 'content'>('blocks');
+  const [activeSubTab, setActiveSubTab] = useState<'dimensions' | 'content' | 'styles' | 'typography' | 'blocks'>('dimensions');
 
   // Configurations
   const [customerConfig, setCustomerConfig] = useState<ReceiptTemplateConfig>(DEFAULT_RECEIPT_TEMPLATE_CONFIG);
@@ -153,6 +153,79 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
     setCustomerConfig(loadedCustomer);
     setKitchenConfig(loadedKitchen);
   }, []);
+
+  // Application des modèles préconçus (Quick Presets)
+  const applyPreset = (preset: 'gourmet' | 'compact' | 'fiscal') => {
+    if (preset === 'gourmet') {
+      setCustomerConfig(prev => ({
+        ...prev,
+        paperWidth: '80mm',
+        paddingX: 6,
+        lineHeight: 'normal',
+        orderNumberStyle: 'banner',
+        totalStyle: 'banner_dark',
+        itemsSeparatorStyle: 'dashed',
+        showLogo: true,
+        logoHeight: 58,
+        showStoreNameAr: true,
+        headerSubtitle: 'Pizzeria & Fast-Food Gourmet',
+        headerWelcomeMessage: 'أهلاً وسهلاً بكم • Bienvenue chez nous',
+        showQrCode: true,
+        qrCodeType: 'menu_url',
+        qrCustomText: 'Scannez pour notre Menu',
+        showSubtotal: true,
+        showTableNumber: true,
+        footerLine1: 'Merci pour votre visite !',
+        footerLine2: 'À bientôt • Aquadro POS',
+        footerLine3: 'صحة وهنا - زورونا مجدداً'
+      }));
+      setHasChanges(true);
+      onShowToast('تم تطبيق قالب المطاعم الفاخر 80مم (Gourmet Deluxe).', 'success');
+    } else if (preset === 'compact') {
+      setCustomerConfig(prev => ({
+        ...prev,
+        paperWidth: '58mm',
+        paddingX: 2,
+        lineHeight: 'compact',
+        baseFontSize: 10,
+        headerTitleFontSize: 16,
+        orderNumberFontSize: 18,
+        itemTitleFontSize: 10,
+        totalPriceFontSize: 13,
+        orderNumberStyle: 'bordered',
+        totalStyle: 'double_bordered',
+        itemsSeparatorStyle: 'solid',
+        showLogo: false,
+        feedTopLines: 0,
+        feedBottomLines: 1,
+        showQrCode: false,
+        showSubtotal: false
+      }));
+      setHasChanges(true);
+      onShowToast('تم تطبيق القالب الاقتصادي المضغوط 58مم (Éco Compact).', 'info');
+    } else if (preset === 'fiscal') {
+      setCustomerConfig(prev => ({
+        ...prev,
+        paperWidth: '80mm',
+        paddingX: 4,
+        lineHeight: 'normal',
+        orderNumberStyle: 'banner',
+        totalStyle: 'banner_dark',
+        itemsSeparatorStyle: 'double',
+        showFiscalInfo: true,
+        customRc: '16/00-1234567B22',
+        customNif: '002216012345678',
+        customNis: '002216012345',
+        customAi: '16223344556',
+        showSubtotal: true,
+        showTax: true,
+        taxLabel: 'TVA (19%)',
+        footerPolicy: 'Facture / Reçu délivré conformément aux normes commerciales algériennes.'
+      }));
+      setHasChanges(true);
+      onShowToast('تم تطبيق القالب المفصل والجبائي 80مم (Fiscal & Détaillé).', 'success');
+    }
+  };
 
   // Mise à jour de la configuration Client
   const updateCustomerField = <K extends keyof ReceiptTemplateConfig>(key: K, value: ReceiptTemplateConfig[K]) => {
@@ -232,9 +305,11 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
     dailyOrderNumber: 42,
     dateTime: new Date().toLocaleDateString('fr-DZ') + ' ' + new Date().toLocaleTimeString('fr-DZ', { hour: '2-digit', minute: '2-digit' }),
     cashierName: 'Ami Youcef (Caisse 1)',
+    tableNumber: 'Table 04',
     orderType: 'SUR_PLACE',
-    storeName: 'Aquadro Gourmet Pizzeria',
-    storeNameFr: 'Aquadro Gourmet Pizzeria',
+    storeName: customerConfig.headerTitle || 'Aquadro Gourmet Pizzeria',
+    storeNameFr: customerConfig.headerTitle || 'Aquadro Gourmet Pizzeria',
+    storeNameAr: customerConfig.customStoreNameAr || 'مطعم وبيتزيريا أكوادرو',
     storeAddress: customerConfig.customAddress || '14 Rue Didouche Mourad, Alger',
     storePhone: customerConfig.customPhone || '0550 12 34 56',
     customerName: 'Karim Benali',
@@ -260,11 +335,11 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
       }
     ],
     subtotal: 1590,
-    deliveryFee: 0,
+    deliveryFee: customerConfig.showDeliveryFee ? 150 : 0,
     discountTotal: 90,
-    taxAmount: 0,
-    totalTTC: 1500,
-    grandTotal: 1500,
+    taxAmount: customerConfig.showTax ? 285 : 0,
+    totalTTC: customerConfig.showDeliveryFee ? 1650 : 1500,
+    grandTotal: customerConfig.showDeliveryFee ? 1650 : 1500,
     paymentMethod: 'CASH',
     tenderedAmount: 2000,
     changeGiven: 500,
@@ -486,10 +561,11 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
         {/* Sous-onglets de configuration */}
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
           {[
-            { id: 'blocks', labelAr: 'مواضع وترتيب الأقسام', icon: MoveVertical },
-            { id: 'typography', labelAr: 'أحجام الخطوط', icon: Type },
-            { id: 'styles', labelAr: 'المظهر والأنماط', icon: Palette },
-            { id: 'content', labelAr: 'المحتوى والنصوص', icon: FileText }
+            { id: 'dimensions', labelAr: 'الأبعاد والهوامش والقوالب', icon: Maximize2 },
+            { id: 'content', labelAr: 'المحتوى والنصوص وهوية المحل', icon: FileText },
+            { id: 'styles', labelAr: 'المظهر والأنماط والأطر', icon: Palette },
+            { id: 'typography', labelAr: 'أحجام الخطوط والتغميق', icon: Type },
+            { id: 'blocks', labelAr: 'مواضع وترتيب الأقسام', icon: MoveVertical }
           ].map(sub => {
             const Icon = sub.icon;
             const isSubActive = activeSubTab === sub.id;
@@ -521,8 +597,227 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
         {/* ========================================================================= */}
         <div className="lg:col-span-7 space-y-5">
           {/* ----------------------------------------------------------------------- */}
-          {/* SOUS-PANNEAU A : REORDONNANCEMENT DES BLOCS (CHANGEMENT DE POSITION)    */}
+          {/* SOUS-PANNEAU : DIMENSIONS, MARGES & GABARITS (DIMENSIONS & PRESETS)     */}
           {/* ----------------------------------------------------------------------- */}
+          {activeSubTab === 'dimensions' && (
+            <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-6">
+              <div className="flex items-center justify-between border-b border-[#E9DCCB]/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <Maximize2 className="w-4 h-4 text-[#E87524]" />
+                  <h3 className="font-bold text-[#292522] text-sm">
+                    {activeTab === 'customer'
+                      ? 'أبعاد الورق، الهوامش، فراغ القص والقوالب الجاهزة'
+                      : 'أبعاد ورق بون الطبخ وفراغ القص'}
+                  </h3>
+                </div>
+                <span className="text-[11px] text-stone-500 font-medium">
+                  تحكم مطلق في مقاسات الفاتورة وتدفق الورق الحراري
+                </span>
+              </div>
+
+              {activeTab === 'customer' && (
+                // Gabarits prêts à l'emploi (Presets)
+                <div className="space-y-2.5">
+                  <span className="text-xs font-bold text-stone-700 block flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#E87524]" />
+                    <span>نماذج وقوالب جاهزة بضغطة زر واحدة (Gabarits Prédéfinis) :</span>
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('gourmet')}
+                      className="p-3 bg-gradient-to-br from-[#FFF8EF] to-[#FFEEDB] hover:from-[#FFEEDB] hover:to-[#FFE0C2] border border-[#E87524]/40 rounded-xl text-right transition-all cursor-pointer shadow-2xs group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-[#292522]">👑 موديل فاخر للمطاعم</span>
+                        <span className="text-[9px] bg-[#E87524] text-white px-1.5 py-0.5 rounded font-mono font-bold">80mm</span>
+                      </div>
+                      <p className="text-[10px] text-stone-600 line-clamp-2 leading-relaxed">
+                        لوغو كبير، اسم بالعربية، بانر أسود للإجمالي ورقم الطلب، ورمز QR للمنيو
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('compact')}
+                      className="p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-xl text-right transition-all cursor-pointer shadow-2xs group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-stone-800">⚡ موديل اقتصادي ومضغوط</span>
+                        <span className="text-[9px] bg-stone-700 text-white px-1.5 py-0.5 rounded font-mono font-bold">58mm</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 line-clamp-2 leading-relaxed">
+                        توفير أقصى للورق، خطوط مدمجة 10px، بدون فراغات زائدة مناسب للبائعين السريعين
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => applyPreset('fiscal')}
+                      className="p-3 bg-emerald-50/60 hover:bg-emerald-100/50 border border-emerald-300 rounded-xl text-right transition-all cursor-pointer shadow-2xs group"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-black text-emerald-900">📑 موديل مفصل وجبائي</span>
+                        <span className="text-[9px] bg-emerald-700 text-white px-1.5 py-0.5 rounded font-mono font-bold">80mm</span>
+                      </div>
+                      <p className="text-[10px] text-emerald-700 line-clamp-2 leading-relaxed">
+                        إظهار السجل التجاري RC، NIF، NIS، المادة، تفصيل المجاميع الفرعية والضريبة
+                      </p>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Largeur du papier */}
+              <div className="space-y-2 pt-2 border-t border-stone-100">
+                <label className="block text-xs font-bold text-stone-700">عرض بكرة الورق الحراري (Largeur du Rouleau)</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeTab === 'customer') updateCustomerField('paperWidth', '80mm');
+                      else updateKitchenField('paperWidth', '80mm');
+                    }}
+                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                      (activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '80mm'
+                        ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
+                        : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <div>
+                      <span className="block font-black text-sm">80 mm (ورق عريض قياسي)</span>
+                      <span className="text-[10px] text-stone-500">الطابعات القياسية EPSON, Xprinter 80</span>
+                    </div>
+                    <span className="text-xs font-mono font-bold">~44 حرف/سطر</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeTab === 'customer') updateCustomerField('paperWidth', '58mm');
+                      else updateKitchenField('paperWidth', '58mm');
+                    }}
+                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                      (activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '58mm'
+                        ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
+                        : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <div>
+                      <span className="block font-black text-sm">58 mm (ورق مضغوط صغير)</span>
+                      <span className="text-[10px] text-stone-500">طابعات البلوتوث والمحمولة الصغيرة</span>
+                    </div>
+                    <span className="text-xs font-mono font-bold">~32 حرف/سطر</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Marges latérales (Padding X) */}
+              {activeTab === 'customer' && (
+                <div className="space-y-2 pt-2 border-t border-stone-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700">الهوامش الجانبية للتيكيت (Marge & Rembourrage Latéral)</label>
+                      <span className="text-[10px] text-stone-500">فراغ أمان داخلي يمين ويسار لمنع قص الحروف عند حافة الورقة</span>
+                    </div>
+                    <div className="flex items-center gap-1 bg-white border border-[#E9DCCB] px-2.5 py-0.5 rounded-lg shadow-2xs">
+                      <span className="text-xs font-mono font-black text-[#E87524]">{customerConfig.paddingX ?? 4}</span>
+                      <span className="text-[10px] text-stone-400">px</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-stone-400 font-bold">0px (بدون هامش)</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={16}
+                      step={1}
+                      value={customerConfig.paddingX ?? 4}
+                      onChange={e => updateCustomerField('paddingX', Number(e.target.value))}
+                      className="flex-1 accent-[#E87524] cursor-pointer h-2 bg-stone-200 rounded-lg"
+                    />
+                    <span className="text-[10px] text-stone-400 font-bold">16px (هامش واسع)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Densité & Hauteur de ligne (Line-height) */}
+              {activeTab === 'customer' && (
+                <div className="space-y-2 pt-2 border-t border-stone-100">
+                  <label className="block text-xs font-bold text-stone-700">كثافة وتباعد الأسطر (Densité du Texte)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'compact', titleAr: 'مضغوط (Économique)', desc: 'توفير أقصى للورق' },
+                      { id: 'normal', titleAr: 'عادي (Standard)', desc: 'مقروء ومتوازن' },
+                      { id: 'relaxed', titleAr: 'مريح (Aéré)', desc: 'فراغات واضحة جداً' }
+                    ].map(d => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => updateCustomerField('lineHeight', d.id as any)}
+                        className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                          (customerConfig.lineHeight || 'normal') === d.id
+                            ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
+                            : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
+                        }`}
+                      >
+                        <span className="text-xs font-bold block">{d.titleAr}</span>
+                        <span className="text-[9px] text-stone-400">{d.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Espacements de tête et de pied (Feed Lines) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-stone-100">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">فراغ الورق في أعلى التيكيت (Feed Haut)</label>
+                  <span className="text-[10px] text-stone-400 block mb-2">أسطر بيضاء قبل طباعة رأس الفاتورة</span>
+                  <div className="flex items-center gap-1.5">
+                    {[0, 1, 2, 3].map(lines => (
+                      <button
+                        key={lines}
+                        type="button"
+                        onClick={() => updateCustomerField('feedTopLines', lines)}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                          (customerConfig.feedTopLines || 0) === lines
+                            ? 'bg-[#E87524] text-white border-[#E87524]'
+                            : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                        }`}
+                      >
+                        {lines === 0 ? 'بدون' : `${lines} أسطر`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">فراغ القص في أسفل التيكيت (Feed Bas / Coupe)</label>
+                  <span className="text-[10px] text-stone-400 block mb-2">أسطر بيضاء بعد الفاتورة لضمان خروج التيكيت بالكامل قبل القص</span>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 3, 4, 5].map(lines => (
+                      <button
+                        key={lines}
+                        type="button"
+                        onClick={() => {
+                          if (activeTab === 'customer') updateCustomerField('feedBottomLines', lines);
+                          else updateKitchenField('bottomSpacingLines', lines);
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                          (activeTab === 'customer' ? (customerConfig.feedBottomLines ?? 2) : (kitchenConfig.bottomSpacingLines ?? 2)) === lines
+                            ? 'bg-[#E87524] text-white border-[#E87524]'
+                            : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                        }`}
+                      >
+                        {lines} أسطر
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {activeSubTab === 'blocks' && (
             <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-[#E9DCCB]/60 pb-3">
@@ -898,13 +1193,40 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
               {activeTab === 'customer' ? (
                 // Styles Client
                 <div className="space-y-4">
-                  {/* Style du numéro de commande */}
+                  {/* Style du montant total à payer */}
                   <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1.5">شكل إبراز رقم الطلب</label>
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">شكل إبراز المجموع الإجمالي النهائي (Total à Payer)</label>
                     <div className="grid grid-cols-3 gap-2">
                       {[
-                        { id: 'bordered', label: 'إطار كلاسيكي (Encadré)' },
-                        { id: 'banner', label: 'بانر أسود عريض (Bannière)' },
+                        { id: 'banner_dark', label: 'بانر أسود فاخر (Bannière Inversée)', desc: 'أعلى وضوح وأناقة حرارية' },
+                        { id: 'double_bordered', label: 'إطار مزدوج (Double Ligne ═══)', desc: 'مظهر محاسبي كلاسيكي' },
+                        { id: 'standard', label: 'خط عادي متصل (Standard)', desc: 'تصميم بسيط ونظيف' }
+                      ].map(tst => (
+                        <button
+                          key={tst.id}
+                          type="button"
+                          onClick={() => updateCustomerField('totalStyle', tst.id as any)}
+                          className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                            (customerConfig.totalStyle || 'standard') === tst.id
+                              ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
+                              : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          <span className="text-xs font-bold block">{tst.label}</span>
+                          <span className="text-[10px] text-stone-400 block mt-0.5">{tst.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Style du numéro de commande */}
+                  <div className="pt-2 border-t border-stone-100">
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">شكل إبراز رقم الطلب (N° de Commande)</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { id: 'banner', label: 'بانر أسود (Bannière)' },
+                        { id: 'bordered', label: 'إطار مربع (Encadré)' },
+                        { id: 'badge', label: 'شارة بيضاوية (Badge)' },
                         { id: 'clean', label: 'بسيط بخطين (Épuré)' }
                       ].map(st => (
                         <button
@@ -924,12 +1246,13 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                   </div>
 
                   {/* Style de séparateur des articles */}
-                  <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1.5">شكل خط الفاصل بين الوجبات</label>
-                    <div className="grid grid-cols-4 gap-2">
+                  <div className="pt-2 border-t border-stone-100">
+                    <label className="block text-xs font-bold text-stone-700 mb-1.5">شكل خط الفاصل بين الوجبات (Séparateur)</label>
+                    <div className="grid grid-cols-5 gap-2">
                       {[
                         { id: 'dashed', label: 'متقطع (- - -)' },
                         { id: 'solid', label: 'متصل (———)' },
+                        { id: 'double', label: 'مزدوج (═══)' },
                         { id: 'dotted', label: 'منقط (• • •)' },
                         { id: 'none', label: 'بدون فاصل' }
                       ].map(sep => (
@@ -949,8 +1272,37 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                     </div>
                   </div>
 
-                  {/* Alignement de l'en-tête et du pied */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  {/* Alignement de l'en-tête, du logo et du pied */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-stone-100">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1.5">محاذاة الشعار</label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { id: 'right', label: 'يمين', icon: AlignRight },
+                          { id: 'center', label: 'وسط', icon: AlignCenter },
+                          { id: 'left', label: 'يسار', icon: AlignLeft }
+                        ].map(al => {
+                          const Icon = al.icon;
+                          const isSel = (customerConfig.logoAlignment || 'center') === al.id;
+                          return (
+                            <button
+                              key={al.id}
+                              type="button"
+                              onClick={() => updateCustomerField('logoAlignment', al.id as any)}
+                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                isSel
+                                  ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524]'
+                                  : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                              }`}
+                            >
+                              <Icon className="w-3.5 h-3.5" />
+                              <span>{al.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-bold text-stone-700 mb-1.5">محاذاة رأس التيكيت</label>
                       <div className="grid grid-cols-3 gap-1.5">
@@ -1005,35 +1357,6 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           );
                         })}
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Largeur du papier */}
-                  <div className="pt-2 border-t border-stone-100">
-                    <label className="block text-xs font-bold text-stone-700 mb-1.5">عرض الورق الحراري</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => updateCustomerField('paperWidth', '80mm')}
-                        className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                          customerConfig.paperWidth === '80mm'
-                            ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
-                            : 'bg-white border-stone-200 text-stone-600'
-                        }`}
-                      >
-                        80 mm (ورق عريض قياسي)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateCustomerField('paperWidth', '58mm')}
-                        className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                          customerConfig.paperWidth === '58mm'
-                            ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
-                            : 'bg-white border-stone-200 text-stone-600'
-                        }`}
-                      >
-                        58 mm (ورق مضغوط صغير)
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -1186,174 +1509,775 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
               </div>
 
               {activeTab === 'customer' ? (
-                // Contenu Client
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1">
-                      العنوان الرئيسي الكبير في أعلى التيكيت
-                    </label>
-                    <input
-                      type="text"
-                      value={customerConfig.headerTitle}
-                      onChange={e => updateCustomerField('headerTitle', e.target.value)}
-                      placeholder="AQUADRO"
-                      className="w-full px-3.5 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="flex items-center justify-between p-3 bg-stone-50 hover:bg-orange-50/50 rounded-xl border border-stone-200 cursor-pointer">
-                      <span className="text-xs font-bold text-stone-700">إظهار شعار المحل (Logo)</span>
-                      <input
-                        type="checkbox"
-                        checked={customerConfig.showLogo}
-                        onChange={e => updateCustomerField('showLogo', e.target.checked)}
-                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
-                      />
-                    </label>
-
-                    <label className="flex items-center justify-between p-3 bg-stone-50 hover:bg-orange-50/50 rounded-xl border border-stone-200 cursor-pointer">
-                      <span className="text-xs font-bold text-stone-700">إظهار اسم المحل الفرعي</span>
-                      <input
-                        type="checkbox"
-                        checked={customerConfig.showStoreNameFr}
-                        onChange={e => updateCustomerField('showStoreNameFr', e.target.checked)}
-                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
-                      />
-                    </label>
-                  </div>
-
-                  {/* Téléphone & Adresse */}
-                  <div className="space-y-2 pt-2 border-t border-stone-100">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
-                        <Phone className="w-3.5 h-3.5 text-stone-500" />
-                        <span>رقم الهاتف المطبوع على التيكيت</span>
-                      </label>
-                      <input
-                        type="checkbox"
-                        checked={customerConfig.showPhone}
-                        onChange={e => updateCustomerField('showPhone', e.target.checked)}
-                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
-                      />
+                // Contenu Client Complet et Granulaire
+                <div className="space-y-5">
+                  {/* ============================================================= */}
+                  {/* 1. هوية المتجر ورأس الفاتورة                                */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3.5">
+                    <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
+                      <Store className="w-4 h-4 text-[#E87524]" />
+                      <h4 className="text-xs font-bold text-stone-800">1. رأس الفاتورة وهوية المتجر (En-tête & Identité Magasin)</h4>
                     </div>
-                    {customerConfig.showPhone && (
-                      <input
-                        type="text"
-                        value={customerConfig.customPhone}
-                        onChange={e => updateCustomerField('customPhone', e.target.value)}
-                        placeholder="الهاتف (اتركه فارغاً لاستخدام هاتف الإعدادات)"
-                        className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
-                      />
-                    )}
-                  </div>
 
-                  <div className="space-y-2 pt-2 border-t border-stone-100">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-stone-500" />
-                        <span>عنوان المطعم / البيتزيريا</span>
-                      </label>
-                      <input
-                        type="checkbox"
-                        checked={customerConfig.showAddress}
-                        onChange={e => updateCustomerField('showAddress', e.target.checked)}
-                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">اسم المحل الرئيسي (العنوان الكبير)</label>
+                        <input
+                          type="text"
+                          value={customerConfig.headerTitle}
+                          onChange={e => updateCustomerField('headerTitle', e.target.value)}
+                          placeholder="AQUADRO"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-black text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">العنوان الفرعي / التخصص (Sous-titre)</label>
+                        <input
+                          type="text"
+                          value={customerConfig.headerSubtitle || ''}
+                          onChange={e => updateCustomerField('headerSubtitle', e.target.value)}
+                          placeholder="Pizzeria & Fast-Food Gourmet"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                        />
+                      </div>
                     </div>
-                    {customerConfig.showAddress && (
-                      <input
-                        type="text"
-                        value={customerConfig.customAddress}
-                        onChange={e => updateCustomerField('customAddress', e.target.value)}
-                        placeholder="العنوان (اتركه فارغاً لاستخدام عنوان الإعدادات)"
-                        className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
-                      />
-                    )}
-                  </div>
 
-                  {/* Réseaux Sociaux & Wi-Fi */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-100">
-                    <div className="space-y-1.5">
+                    {/* Nom en Arabe & Message de bienvenue */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700">اسم المحل باللغة العربية</label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showStoreNameAr}
+                            onChange={e => updateCustomerField('showStoreNameAr', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showStoreNameAr && (
+                          <input
+                            type="text"
+                            value={customerConfig.customStoreNameAr || ''}
+                            onChange={e => updateCustomerField('customStoreNameAr', e.target.value)}
+                            placeholder="مطعم وبيتزيريا أكوادرو"
+                            dir="rtl"
+                            className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-stone-800 focus:outline-none"
+                          />
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">رسالة الترحيب في الرأس</label>
+                        <input
+                          type="text"
+                          value={customerConfig.headerWelcomeMessage || ''}
+                          onChange={e => updateCustomerField('headerWelcomeMessage', e.target.value)}
+                          placeholder="أهلاً وسهلاً بكم • Bienvenue chez nous"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Logo & options logo */}
+                    <div className="pt-2 border-t border-stone-200/60 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-stone-700 flex items-center gap-1">
-                          <Share2 className="w-3.5 h-3.5 text-stone-500" />
-                          <span>انستغرام / فيسبوك</span>
-                        </span>
+                        <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <span>إظهار شعار المحل المطبوع (Logo)</span>
+                        </label>
                         <input
                           type="checkbox"
-                          checked={customerConfig.showSocials}
-                          onChange={e => updateCustomerField('showSocials', e.target.checked)}
+                          checked={customerConfig.showLogo}
+                          onChange={e => updateCustomerField('showLogo', e.target.checked)}
                           className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
                         />
                       </div>
-                      {customerConfig.showSocials && (
+
+                      {customerConfig.showLogo && (
+                        <div className="p-3 bg-white border border-[#E9DCCB] rounded-xl space-y-3">
+                          {/* موضع ومحاذاة الشعار */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-[11px] font-bold text-stone-700">موضع ومحاذاة الشعار على التيكيت</label>
+                              <span className="text-[10px] font-bold text-[#E87524]">
+                                {(customerConfig.logoAlignment || 'center') === 'right' ? 'الجهة اليمنى' : ((customerConfig.logoAlignment || 'center') === 'left' ? 'الجهة اليسرى' : 'في المنتصف')}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {[
+                                { id: 'right', label: 'يمين', desc: 'جهة اليمين', icon: AlignRight },
+                                { id: 'center', label: 'وسط', desc: 'في الوسط', icon: AlignCenter },
+                                { id: 'left', label: 'يسار', desc: 'جهة اليسار', icon: AlignLeft }
+                              ].map(al => {
+                                const Icon = al.icon;
+                                const isSelected = (customerConfig.logoAlignment || 'center') === al.id;
+                                return (
+                                  <button
+                                    key={al.id}
+                                    type="button"
+                                    onClick={() => updateCustomerField('logoAlignment', al.id as any)}
+                                    className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs'
+                                        : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                                    }`}
+                                  >
+                                    <Icon className="w-3.5 h-3.5" />
+                                    <span>{al.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200/60">
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[11px] font-bold text-stone-700">ارتفاع الشعار على الورق</span>
+                                <span className="text-[10px] font-mono font-bold text-[#E87524]">{customerConfig.logoHeight || 55}px</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={25}
+                                max={90}
+                                step={5}
+                                value={customerConfig.logoHeight || 55}
+                                onChange={e => updateCustomerField('logoHeight', Number(e.target.value))}
+                                className="w-full accent-[#E87524] cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                              />
+                            </div>
+
+                            <label className="flex items-center justify-between cursor-pointer">
+                              <div>
+                                <span className="text-[11px] font-bold text-stone-800 block">أبيض وأسود عالي التباين</span>
+                                <span className="text-[9px] text-stone-400">مثالي لرؤوس الطابعات الحرارية</span>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={customerConfig.logoGrayscale || false}
+                                onChange={e => updateCustomerField('logoGrayscale', e.target.checked)}
+                                className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Téléphone 1 & 2 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200/60">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-stone-500" />
+                            <span>رقم الهاتف الأول</span>
+                          </label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showPhone}
+                            onChange={e => updateCustomerField('showPhone', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showPhone && (
+                          <input
+                            type="text"
+                            value={customerConfig.customPhone}
+                            onChange={e => updateCustomerField('customPhone', e.target.value)}
+                            placeholder="0550 12 34 56 (أو اتركه لفون الإعدادات)"
+                            className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-stone-700 block">رقم هاتف ثانٍ إضافي (اختياري)</label>
                         <input
                           type="text"
-                          value={customerConfig.socialsText}
-                          onChange={e => updateCustomerField('socialsText', e.target.value)}
-                          placeholder="@aquadro_pizza"
-                          className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
+                          value={customerConfig.customPhone2 || ''}
+                          onChange={e => updateCustomerField('customPhone2', e.target.value)}
+                          placeholder="0770 98 76 54"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Adresse */}
+                    <div className="space-y-1 pt-2 border-t border-stone-200/60">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-stone-500" />
+                          <span>عنوان المحل المطبوع</span>
+                        </label>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showAddress}
+                          onChange={e => updateCustomerField('showAddress', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </div>
+                      {customerConfig.showAddress && (
+                        <input
+                          type="text"
+                          value={customerConfig.customAddress}
+                          onChange={e => updateCustomerField('customAddress', e.target.value)}
+                          placeholder="14 Rue Didouche Mourad, Alger"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
                         />
                       )}
                     </div>
 
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-stone-700 flex items-center gap-1">
-                          <Wifi className="w-3.5 h-3.5 text-stone-500" />
-                          <span>واي فاي الزبائن (Wi-Fi)</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={customerConfig.showWifi}
-                          onChange={e => updateCustomerField('showWifi', e.target.checked)}
-                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
-                        />
+                    {/* Réseaux Sociaux & Wi-Fi */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-stone-200/60">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-stone-700 flex items-center gap-1">
+                            <Share2 className="w-3.5 h-3.5 text-stone-500" />
+                            <span>حسابات التواصل (انستغرام / فيسبوك)</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showSocials}
+                            onChange={e => updateCustomerField('showSocials', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showSocials && (
+                          <input
+                            type="text"
+                            value={customerConfig.socialsText}
+                            onChange={e => updateCustomerField('socialsText', e.target.value)}
+                            placeholder="@aquadro_pizza"
+                            className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
+                          />
+                        )}
                       </div>
-                      {customerConfig.showWifi && (
-                        <input
-                          type="text"
-                          value={customerConfig.wifiText}
-                          onChange={e => updateCustomerField('wifiText', e.target.value)}
-                          placeholder="Wi-Fi: Aquadro-Client"
-                          className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
-                        />
-                      )}
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-stone-700 flex items-center gap-1">
+                            <Wifi className="w-3.5 h-3.5 text-stone-500" />
+                            <span>واي فاي الزبائن (Wi-Fi)</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showWifi}
+                            onChange={e => updateCustomerField('showWifi', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showWifi && (
+                          <input
+                            type="text"
+                            value={customerConfig.wifiText}
+                            onChange={e => updateCustomerField('wifiText', e.target.value)}
+                            placeholder="Wi-Fi: Aquadro-Client"
+                            className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-800 focus:outline-none"
+                          />
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Lignes de Remerciements en Bas */}
-                  <div className="space-y-3 pt-3 border-t border-stone-200">
-                    <span className="text-xs font-bold text-stone-700 block">رسائل الشكر في أسفل التيكيت :</span>
-                    <div>
-                      <label className="block text-[11px] text-stone-500 mb-1">السطر الأول</label>
+                  {/* ============================================================= */}
+                  {/* 2. البيانات الجبائية والقانونية                                 */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3">
+                    <div className="flex items-center justify-between border-b border-stone-200/70 pb-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-[#E87524]" />
+                        <h4 className="text-xs font-bold text-stone-800">2. البيانات الجبائية والقانونية (Données Fiscales & Légales)</h4>
+                      </div>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-600">تفعيل الطباعة الجبائية</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showFiscalInfo || false}
+                          onChange={e => updateCustomerField('showFiscalInfo', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+
+                    {customerConfig.showFiscalInfo && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 animate-in fade-in duration-100">
+                        <div>
+                          <label className="block text-[10px] font-bold text-stone-600 mb-0.5">السجل التجاري (RC)</label>
+                          <input
+                            type="text"
+                            value={customerConfig.customRc || ''}
+                            onChange={e => updateCustomerField('customRc', e.target.value)}
+                            placeholder="16/00-1234567B22"
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-[11px] font-mono text-stone-800 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-stone-600 mb-0.5">التعريف الجبائي (NIF)</label>
+                          <input
+                            type="text"
+                            value={customerConfig.customNif || ''}
+                            onChange={e => updateCustomerField('customNif', e.target.value)}
+                            placeholder="002216012345678"
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-[11px] font-mono text-stone-800 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-stone-600 mb-0.5">التعريف الإحصائي (NIS)</label>
+                          <input
+                            type="text"
+                            value={customerConfig.customNis || ''}
+                            onChange={e => updateCustomerField('customNis', e.target.value)}
+                            placeholder="002216012345"
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-[11px] font-mono text-stone-800 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-stone-600 mb-0.5">رقم المادة (Art. Imp)</label>
+                          <input
+                            type="text"
+                            value={customerConfig.customAi || ''}
+                            onChange={e => updateCustomerField('customAi', e.target.value)}
+                            placeholder="16223344556"
+                            className="w-full px-2.5 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-[11px] font-mono text-stone-800 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ============================================================= */}
+                  {/* 3. بيانات الطلب، الكاشير والزبون                                */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3">
+                    <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
+                      <Receipt className="w-4 h-4 text-[#E87524]" />
+                      <h4 className="text-xs font-bold text-stone-800">3. بيانات الطلب، الكاشير والزبون (Commande & Client)</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">بادئة رقم الطلب (Préfixe N° Commande)</label>
+                        <input
+                          type="text"
+                          value={customerConfig.orderNumberPrefix || 'COMMANDE #'}
+                          onChange={e => updateCustomerField('orderNumberPrefix', e.target.value)}
+                          placeholder="COMMANDE # أو طلب رقم #"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">تسمية البائع / الكاشير (Libellé Caissier)</label>
+                        <input
+                          type="text"
+                          value={customerConfig.cashierLabel || 'Caissier'}
+                          onChange={e => updateCustomerField('cashierLabel', e.target.value)}
+                          placeholder="Caissier أو البائع أو الكاشير"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">رقم الطلب (#42)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showOrderNumber}
+                          onChange={e => updateCustomerField('showOrderNumber', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">نوع الطلب (طاولة/سفري)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showOrderType}
+                          onChange={e => updateCustomerField('showOrderType', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">رقم الطاولة (Table)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showTableNumber ?? true}
+                          onChange={e => updateCustomerField('showTableNumber', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">التاريخ والساعة</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showDateTime}
+                          onChange={e => updateCustomerField('showDateTime', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">اسم الكاشير</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showCashier}
+                          onChange={e => updateCustomerField('showCashier', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">بيانات زبون التوصيل</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showCustomer}
+                          onChange={e => updateCustomerField('showCustomer', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* ============================================================= */}
+                  {/* 4. جدول المواد والوجبات والبيتزا                               */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3">
+                    <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
+                      <ChefHat className="w-4 h-4 text-[#E87524]" />
+                      <h4 className="text-xs font-bold text-stone-800">4. جدول الوجبات والبيتزا والإضافات (Articles & Suppléments)</h4>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">سعر الوحدة (Prix Unit.)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showItemUnitPrices}
+                          onChange={e => updateCustomerField('showItemUnitPrices', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">الأحجام (Variantes)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showItemVariants ?? true}
+                          onChange={e => updateCustomerField('showItemVariants', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">نصفين (Moitié-Moitié)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showItemParts}
+                          onChange={e => updateCustomerField('showItemParts', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">الإضافات (+ Suppléments)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showItemSupplements}
+                          onChange={e => updateCustomerField('showItemSupplements', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">ملاحظات الوجبة (* Note)</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showItemNotes}
+                          onChange={e => updateCustomerField('showItemNotes', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <span className="text-[11px] font-bold text-stone-700">أسماء المواد بالخط العريض</span>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.boldItemNames}
+                          onChange={e => updateCustomerField('boldItemNames', e.target.checked)}
+                          className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* ============================================================= */}
+                  {/* 5. المجاميع، الخصومات والعملة                                   */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3.5">
+                    <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
+                      <DollarSign className="w-4 h-4 text-[#E87524]" />
+                      <h4 className="text-xs font-bold text-stone-800">5. المجاميع، الخصومات وتنسيق العملة (Totaux & Devise)</h4>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">رمز العملة (Symbole Devise)</label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {(['DZD', 'دج', 'DA'] as const).map(sym => (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => updateCustomerField('currencySymbol', sym)}
+                              className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                                (customerConfig.currencySymbol || 'DZD') === sym
+                                  ? 'bg-[#E87524] text-white border-[#E87524]'
+                                  : 'bg-white border-stone-200 text-stone-700'
+                              }`}
+                            >
+                              {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">موضع رمز العملة</label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => updateCustomerField('currencyPosition', 'after')}
+                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                              (customerConfig.currencyPosition || 'after') === 'after'
+                                ? 'bg-[#E87524] text-white border-[#E87524]'
+                                : 'bg-white border-stone-200 text-stone-700'
+                            }`}
+                          >
+                            بعد الرقم (1500 DZD)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCustomerField('currencyPosition', 'before')}
+                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                              customerConfig.currencyPosition === 'before'
+                                ? 'bg-[#E87524] text-white border-[#E87524]'
+                                : 'bg-white border-stone-200 text-stone-700'
+                            }`}
+                          >
+                            قبل الرقم (DZD 1500)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Lignes de calcul et libellés */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-stone-200/60">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700">المجموع الفرعي (Sous-total)</label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showSubtotal ?? true}
+                            onChange={e => updateCustomerField('showSubtotal', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showSubtotal && (
+                          <input
+                            type="text"
+                            value={customerConfig.subtotalLabel || 'Sous-total'}
+                            onChange={e => updateCustomerField('subtotalLabel', e.target.value)}
+                            className="w-full px-3 py-1 bg-white border border-[#E9DCCB] rounded-lg text-xs"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700">سعر التوصيل (Livraison)</label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showDeliveryFee}
+                            onChange={e => updateCustomerField('showDeliveryFee', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showDeliveryFee && (
+                          <input
+                            type="text"
+                            value={customerConfig.deliveryFeeLabel || 'Frais de livraison'}
+                            onChange={e => updateCustomerField('deliveryFeeLabel', e.target.value)}
+                            className="w-full px-3 py-1 bg-white border border-[#E9DCCB] rounded-lg text-xs"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700">التخفيض والخصم (Remise)</label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showDiscount}
+                            onChange={e => updateCustomerField('showDiscount', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showDiscount && (
+                          <input
+                            type="text"
+                            value={customerConfig.discountLabel || 'Remise'}
+                            onChange={e => updateCustomerField('discountLabel', e.target.value)}
+                            className="w-full px-3 py-1 bg-white border border-[#E9DCCB] rounded-lg text-xs"
+                          />
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-stone-700">الضريبة (TVA)</label>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showTax}
+                            onChange={e => updateCustomerField('showTax', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </div>
+                        {customerConfig.showTax && (
+                          <input
+                            type="text"
+                            value={customerConfig.taxLabel || 'TVA'}
+                            onChange={e => updateCustomerField('taxLabel', e.target.value)}
+                            className="w-full px-3 py-1 bg-white border border-[#E9DCCB] rounded-lg text-xs"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ============================================================= */}
+                  {/* 6. تذييل الفاتورة، الباركود والـ QR Code                        */}
+                  {/* ============================================================= */}
+                  <div className="p-4 bg-stone-50/70 rounded-2xl border border-stone-200/90 space-y-3.5">
+                    <div className="flex items-center gap-2 border-b border-stone-200/70 pb-2">
+                      <QrCode className="w-4 h-4 text-[#E87524]" />
+                      <h4 className="text-xs font-bold text-stone-800">6. تذييل الفاتورة، الباركود والـ QR Code (Pied de Ticket & Codes)</h4>
+                    </div>
+
+                    {/* QR Code */}
+                    <div className="p-3 bg-white border border-[#E9DCCB] rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <span>رمز الاستجابة السريع (QR Code الحراري)</span>
+                        </label>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.showQrCode || false}
+                          onChange={e => updateCustomerField('showQrCode', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </div>
+
+                      {customerConfig.showQrCode && (
+                        <div className="space-y-2 pt-1 border-t border-stone-100">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-stone-600 mb-1">نوع رابط الـ QR</label>
+                              <select
+                                value={customerConfig.qrCodeType || 'menu_url'}
+                                onChange={e => updateCustomerField('qrCodeType', e.target.value as any)}
+                                className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs text-stone-800 focus:outline-none"
+                              >
+                                <option value="menu_url">منيو المحل الإلكتروني (Menu en ligne)</option>
+                                <option value="store_url">الموقع الرسمي أو صفحة الفيسبوك</option>
+                                <option value="wifi">اتصال تلقائي بالواي فاي (Auto Wi-Fi)</option>
+                                <option value="custom">نص أو رابط مخصص بالكامل</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-bold text-stone-600">حجم الـ QR Code</span>
+                                <span className="text-[10px] font-mono font-bold text-[#E87524]">{customerConfig.qrCodeSize || 64}px</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={40}
+                                max={100}
+                                step={5}
+                                value={customerConfig.qrCodeSize || 64}
+                                onChange={e => updateCustomerField('qrCodeSize', Number(e.target.value))}
+                                className="w-full accent-[#E87524] cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-600 mb-0.5">النص أسفل الـ QR Code</label>
+                            <input
+                              type="text"
+                              value={customerConfig.qrCustomText || ''}
+                              onChange={e => updateCustomerField('qrCustomText', e.target.value)}
+                              placeholder="امسح الرمز للاطلاع على المنيو أو صفحتنا"
+                              className="w-full px-2.5 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs text-stone-800 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Barcode */}
+                    <div className="flex items-center justify-between p-3 bg-white border border-[#E9DCCB] rounded-xl">
+                      <div>
+                        <span className="text-xs font-bold text-stone-800 block">طباعة الباركود (Barcode)</span>
+                        <span className="text-[10px] text-stone-400">طباعة رقم الفاتورة كباركود لسهولة البحث عند الإرجاع</span>
+                      </div>
                       <input
-                        type="text"
-                        value={customerConfig.footerLine1}
-                        onChange={e => updateCustomerField('footerLine1', e.target.value)}
-                        placeholder="Merci pour votre visite !"
-                        className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                        type="checkbox"
+                        checked={customerConfig.showBarcode}
+                        onChange={e => updateCustomerField('showBarcode', e.target.checked)}
+                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
                       />
                     </div>
-                    <div>
-                      <label className="block text-[11px] text-stone-500 mb-1">السطر الثاني</label>
-                      <input
-                        type="text"
-                        value={customerConfig.footerLine2}
-                        onChange={e => updateCustomerField('footerLine2', e.target.value)}
-                        placeholder="À bientôt • Aquadro POS"
-                        className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-stone-500 mb-1">السطر الثالث (اختياري / بالعربية)</label>
+
+                    {/* Lignes de remerciements & politique */}
+                    <div className="space-y-2 pt-2 border-t border-stone-200/60">
+                      <span className="text-xs font-bold text-stone-700 block">رسائل الشكر وسياسة المحل :</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={customerConfig.footerLine1}
+                          onChange={e => updateCustomerField('footerLine1', e.target.value)}
+                          placeholder="Merci pour votre visite !"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={customerConfig.footerLine2}
+                          onChange={e => updateCustomerField('footerLine2', e.target.value)}
+                          placeholder="À bientôt • Aquadro POS"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        />
+                      </div>
                       <input
                         type="text"
                         value={customerConfig.footerLine3}
                         onChange={e => updateCustomerField('footerLine3', e.target.value)}
                         placeholder="صحة وهنا - زورونا مجدداً"
-                        className="w-full px-3 py-1.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        dir="rtl"
+                      />
+                      <input
+                        type="text"
+                        value={customerConfig.footerPolicy || ''}
+                        onChange={e => updateCustomerField('footerPolicy', e.target.value)}
+                        placeholder="الشكاوى مقبولة في أجل 30 دقيقة • تذوق طيب وشكراً لوفائكم"
+                        className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-600 focus:outline-none italic"
                         dir="rtl"
                       />
                     </div>

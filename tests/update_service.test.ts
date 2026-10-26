@@ -50,4 +50,17 @@ describe('UpdateService & Auto-Update Engine', () => {
     expect(state.status).toBe('idle');
     expect(state.error).toBeNull();
   });
+
+  it('manages auto-update enabled preference with true as default', () => {
+    expect(updateService.isAutoUpdateEnabled()).toBe(true);
+    updateService.setAutoUpdateEnabled(false);
+    expect(updateService.isAutoUpdateEnabled()).toBe(false);
+    updateService.setAutoUpdateEnabled(true);
+    expect(updateService.isAutoUpdateEnabled()).toBe(true);
+  });
+
+  it('checkAndAutoUpdate runs non-blockingly and returns null in web/test environment', async () => {
+    const result = await updateService.checkAndAutoUpdate();
+    expect(result).toBeNull();
+  });
 });

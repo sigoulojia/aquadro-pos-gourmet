@@ -31,6 +31,7 @@ export interface UpdateState {
   progress: DownloadProgress;
   error: string | null;
   lastChecked: string | null;
+  isSilent?: boolean;
 }
 
 type UpdateListener = (state: UpdateState) => void;
@@ -41,6 +42,7 @@ export class UpdateService {
   private listeners: Set<UpdateListener> = new Set();
   private lastCheckTimestamp = 0;
   private readonly CHECK_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes throttle for silent checks
+  private readonly AUTO_UPDATE_STORAGE_KEY = 'aquadro_auto_update_enabled';
 
   private state: UpdateState = {
     status: 'idle',
@@ -52,9 +54,34 @@ export class UpdateService {
     },
     error: null,
     lastChecked: null,
+    isSilent: false,
   };
 
   private constructor() {}
+
+  private autoUpdateEnabledFallback = true;
+
+  public isAutoUpdateEnabled(): boolean {
+    if (typeof localStorage === 'undefined') {
+      return this.autoUpdateEnabledFallback;
+    }
+    try {
+      const stored = localStorage.getItem(this.AUTO_UPDATE_STORAGE_KEY);
+      return stored === null ? this.autoUpdateEnabledFallback : stored === 'true';
+    } catch {
+      return this.autoUpdateEnabledFallback;
+    }
+  }
+
+  public setAutoUpdateEnabled(enabled: boolean): void {
+    this.autoUpdateEnabledFallback = enabled;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(this.AUTO_UPDATE_STORAGE_KEY, enabled ? 'true' : 'false');
+      } catch {}
+    }
+    this.notify();
+  }
 
   public static getInstance(): UpdateService {
     if (!UpdateService.instance) {
@@ -151,6 +178,7 @@ export class UpdateService {
         this.state = {
           ...this.state,
           status: 'available',
+          isSilent: silent,
           updateInfo: info,
           error: null,
           lastChecked: new Date().toISOString(),
@@ -188,6 +216,91 @@ export class UpdateService {
       };
       this.notify();
       return null;
+    }
+  }
+
+  /**
+   * Check and silently download & prepare update in the background if available.
+   * Does NOT show intrusive modals and does not abruptly restart during cashier service.
+   */
+  public async checkAndAutoUpdate(): Promise<UpdateInfo | null> {
+    if (!this.isAutoUpdateEnabled()) {
+      return null;
+    }
+
+    if (this.state.status === 'downloading' || this.state.status === 'downloaded') {
+      return this.state.updateInfo;
+    }
+
+    const info = await this.checkForUpdates(true);
+    if (info && this.pendingUpdate && this.isTauriEnvironment()) {
+      console.log(`[UpdateService] Auto-update found: v${info.version}. Silently preparing in background...`);
+      await this.downloadAndInstallSilently();
+    }
+    return info;
+  }
+
+  /**
+   * Silently download and stage update in background without interrupting cashier.
+   */
+  public async downloadAndInstallSilently(): Promise<void> {
+    if (!this.pendingUpdate || !this.isTauriEnvironment()) return;
+
+    this.state = {
+      ...this.state,
+      status: 'downloading',
+      isSilent: true,
+      error: null,
+      progress: {
+        downloadedBytes: 0,
+        totalBytes: 0,
+        percent: 0,
+      },
+    };
+    this.notify();
+
+    let totalBytes = 0;
+    let downloadedBytes = 0;
+
+    try {
+      await this.pendingUpdate.downloadAndInstall((event: DownloadEvent) => {
+        if (event.event === 'Started') {
+          totalBytes = event.data.contentLength ?? 0;
+          this.state.progress = {
+            downloadedBytes: 0,
+            totalBytes,
+            percent: 0,
+          };
+          this.notify();
+        } else if (event.event === 'Progress') {
+          downloadedBytes += event.data.chunkLength;
+          const percent = totalBytes > 0 ? Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)) : 0;
+          this.state.progress = {
+            downloadedBytes,
+            totalBytes,
+            percent,
+          };
+          this.notify();
+        } else if (event.event === 'Finished') {
+          this.state.status = 'downloaded';
+          this.state.progress.percent = 100;
+          this.notify();
+        }
+      }, {
+        timeout: 300000,
+        restartAfterInstall: false, // Ne pas redémarrer brutalement en plein encaissement
+      });
+      console.log('[UpdateService] Auto-update downloaded and installed silently in background.');
+    } catch (err: unknown) {
+      const sanitized = this.sanitizeErrorMessage(err);
+      console.warn('[UpdateService] Silent auto-update download failed:', sanitized);
+      this.state = {
+        ...this.state,
+        status: 'idle',
+        isSilent: false,
+        error: null,
+      };
+      this.notify();
     }
   }
 

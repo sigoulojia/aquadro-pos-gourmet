@@ -96,6 +96,8 @@ pub fn run() {
             runtime::create_new_usage_session,
             runtime::list_usage_sessions,
             runtime::open_folder_path,
+            runtime::get_active_session_info,
+            runtime::delete_archived_session,
             license::get_license_status,
             license::activate_license_key
         ])

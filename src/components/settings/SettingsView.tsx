@@ -44,7 +44,8 @@ import {
   Sliders,
   FolderOpen,
   FolderArchive,
-  ArrowRight
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
 
 import { updateService, UpdateState } from '../../services/update.service';
@@ -55,6 +56,7 @@ import { LicenseSettingsSection } from './LicenseSettingsSection';
 import { drawerLogService, DrawerLogEntry } from '../../services/drawerLog.service';
 import { logger } from '../../services/logger.service';
 import { useAuth } from '../../hooks/useAuth';
+import { APP_VERSION } from '../../constants/app';
 
 type TabKey = 'store' | 'fiscal' | 'hardware' | 'ticket' | 'backup' | 'reports' | 'sessions' | 'sync' | 'updates' | 'license';
 
@@ -63,6 +65,7 @@ export const SettingsView: React.FC = () => {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabKey>('store');
   const [updateState, setUpdateState] = useState<UpdateState>(updateService.getState());
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState<boolean>(() => updateService.isAutoUpdateEnabled());
 
   // Contrôle & Audit du Tiroir-Caisse
   const [allowManualDrawer, setAllowManualDrawer] = useState<boolean>(() => drawerLogService.isManualDrawerAllowed());
@@ -105,7 +108,18 @@ export const SettingsView: React.FC = () => {
   }, []);
 
   // Logo du Magasin
-  const [storeLogo, setStoreLogo] = useState<string | null>(null);
+  const [storeLogo, setStoreLogo] = useState<string | null>(() => {
+    return localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
+  });
+
+  useEffect(() => {
+    const handleLogoSync = () => {
+      const current = localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
+      setStoreLogo(current);
+    };
+    window.addEventListener('store_logo_updated', handleLogoSync);
+    return () => window.removeEventListener('store_logo_updated', handleLogoSync);
+  }, []);
 
   // Frais de livraison par défaut
   const [defaultDeliveryFee, setDefaultDeliveryFee] = useState<number>(() => {
@@ -199,7 +213,7 @@ export const SettingsView: React.FC = () => {
       const count = await syncService.getPendingCount();
       setPendingSyncCount(count);
       
-      const savedLogo = localStorage.getItem('aquadro_store_logo');
+      const savedLogo = localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo');
       if (savedLogo) setStoreLogo(savedLogo);
     } catch (err) {
       console.error('Erreur chargement paramètres:', err);
@@ -534,7 +548,7 @@ export const SettingsView: React.FC = () => {
           }`}
         >
           <FolderArchive className="w-4 h-4 text-[#E87524]" />
-          <span>فترات الاستخدام والأرشيف (Dossiers)</span>
+          <span>فترات الاستخدام والأرشيف والتهيئة (Sessions & Formatage)</span>
         </button>
 
         <button
@@ -1303,11 +1317,16 @@ export const SettingsView: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setShowDangerModal(true)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded shadow-sm flex items-center space-x-2 transition-colors w-full"
+                  onClick={() => setActiveTab('sessions')}
+                  className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded shadow-sm flex items-center justify-between transition-colors w-full cursor-pointer"
                 >
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>Formatage complet (Repartir à zéro avec l'assistant)</span>
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Formatage complet (التهيئة الشاملة وإعادة ضبط المصنع)</span>
+                  </div>
+                  <span className="text-[10px] bg-red-800/60 px-2.5 py-0.5 rounded-full font-medium">
+                    انتقل لقسم فترات الاستخدام والأرشيف ➔
+                  </span>
                 </button>
               </div>
             </div>
@@ -1373,10 +1392,59 @@ export const SettingsView: React.FC = () => {
               </p>
             </div>
 
+            {/* Carte التحديث التلقائي الصامت في الخلفية */}
+            <div className="p-4 bg-gradient-to-r from-amber-50/70 to-orange-50/40 border border-[#E9DCCB] rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-[#E87524]/10 text-[#E87524] rounded-lg">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-stone-900">
+                      التحديث التلقائي الصامت في الخلفية (Mises à jour silencieuses)
+                    </h4>
+                    <p className="text-[11px] text-stone-500 mt-0.5">
+                      فحص، تنزيل، وتثبيت الإصدارات الجديدة تلقائياً وبشكل صامت فور صدورها دون إظهار أي نوافذ منبثقة أو مقاطعة الكاسة.
+                    </p>
+                  </div>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoUpdateEnabled}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setAutoUpdateEnabled(val);
+                      updateService.setAutoUpdateEnabled(val);
+                      showToast(
+                        val
+                          ? 'تم تفعيل التحديث التلقائي الصامت في الخلفية.'
+                          : 'تم تعطيل التحديث التلقائي الصامت.',
+                        val ? 'success' : 'info'
+                      );
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-stone-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#E87524]"></div>
+                </label>
+              </div>
+
+              <div className="text-[11px] text-stone-600 bg-white/90 border border-[#E9DCCB] rounded-lg p-2.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>حالة التحديث الذكي المستمر :</span>
+                </span>
+                <span className="font-bold text-[#E87524]">
+                  {autoUpdateEnabled ? '✅ نشط ومفعّل (تحديث هادئ في الخلفية)' : '⏸️ متوقف مؤقتاً (فحص يدوي)'}
+                </span>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="border border-[#E9DCCB] rounded p-4 bg-gray-50/50">
                 <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block">Version Installée</span>
-                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v1.0.5</p>
+                <p className="text-lg font-bold text-gray-900 font-mono mt-0.5">v{APP_VERSION}</p>
                 <span className="text-[11px] text-green-700 font-medium flex items-center gap-1 mt-1">
                   <CheckCircle2 className="w-3.5 h-3.5" /> Canal Production Stable (NSIS Windows)
                 </span>
@@ -1453,7 +1521,7 @@ export const SettingsView: React.FC = () => {
             {updateState.status === 'up-to-date' && (
               <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-xs font-medium">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
-                <span>Votre système Aquadro POS est parfaitement à jour (v1.0.5).</span>
+                <span>Votre système Aquadro POS est parfaitement à jour (v{APP_VERSION}).</span>
               </div>
             )}
 

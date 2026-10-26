@@ -191,6 +191,34 @@ export class UsageSessionService {
   }
 
   /**
+   * Récupère la session d'utilisation active courante avec chemin absolu réel
+   */
+  public async fetchActiveSession(): Promise<ActiveSessionMeta> {
+    if (this.isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const nativeInfo = await invoke<any>('get_active_session_info');
+        if (nativeInfo && nativeInfo.folder_path) {
+          const currentMeta = this.getActiveSession();
+          const updated: ActiveSessionMeta = {
+            id: currentMeta.id || nativeInfo.id || 'sess_main',
+            name: currentMeta.name || nativeInfo.name || 'الاستخدام_الرئيسي (Dossier Principal)',
+            folderPath: nativeInfo.folder_path,
+            startedAt: currentMeta.startedAt || nativeInfo.created_at || new Date().toISOString()
+          };
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('aquadro_active_usage_session', JSON.stringify(updated));
+          }
+          return updated;
+        }
+      } catch (err) {
+        console.warn('[UsageSessionService] Impossible de récupérer la session native:', err);
+      }
+    }
+    return this.getActiveSession();
+  }
+
+  /**
    * Ouvre un dossier arbitraire dans le gestionnaire de fichiers de l'OS
    */
   public async openFolderPath(path: string): Promise<boolean> {
@@ -211,9 +239,65 @@ export class UsageSessionService {
    * Ouvre le dossier d'exercice actif directement
    */
   public async openActiveSessionFolder(): Promise<boolean> {
-    const active = this.getActiveSession();
+    const active = await this.fetchActiveSession();
     return await this.openFolderPath(active.folderPath);
+  }
+
+  /**
+   * Supprime définitivement un dossier d'archive (action haute sécurité)
+   */
+  public async deleteArchive(folderPath: string, archiveId?: string): Promise<boolean> {
+    if (this.isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('delete_archived_session', { folderPath });
+      } catch (err: any) {
+        throw new Error(err?.message || err || 'Erreur lors de la suppression du dossier d\'archive');
+      }
+    } else {
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('aquadro_archived_sessions') || '[]';
+          const list: UsageSessionInfo[] = JSON.parse(raw);
+          const filtered = list.filter(item => item.id !== archiveId && item.folder_path !== folderPath);
+          localStorage.setItem('aquadro_archived_sessions', JSON.stringify(filtered));
+        } catch (e) {}
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Vérifie le code secret de récupération issu de la charte de setup PDF
+   */
+  public async verifyRecoveryCode(secretCode: string): Promise<{ valid: boolean; error?: string }> {
+    const clean = secretCode.trim();
+    if (!clean) {
+      return { valid: false, error: 'يرجى إدخال الرمز السري المطبوع في وثيقة الإعداد (Setup Charter PDF)' };
+    }
+
+    if (this.isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        let token = localStorage.getItem('aquadro_session_token') || 'dev-token-usr-owner';
+        const isOk = await invoke<boolean>('verify_danger_zone', { secret: clean, token });
+        return { valid: isOk };
+      } catch (err: any) {
+        return { valid: false, error: err?.message || String(err) };
+      }
+    } else {
+      // Mode Web / Secours
+      const savedSecret = localStorage.getItem('aquadro_db_secret_key');
+      if (savedSecret && clean === savedSecret.trim()) {
+        return { valid: true };
+      }
+      return {
+        valid: false,
+        error: 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF).'
+      };
+    }
   }
 }
 
 export const usageSessionService = UsageSessionService.getInstance();
+

@@ -258,11 +258,17 @@ pub fn resolve_activity_logs_dir(app_handle: &AppHandle) -> PathBuf {
 
 /// Helper to open a directory in the OS file manager
 pub fn open_path_in_explorer(target_path: &Path) -> Result<bool, String> {
-    if !target_path.exists() {
-        let _ = fs::create_dir_all(target_path);
-    }
+    let abs_path = if target_path.is_absolute() {
+        target_path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cur| cur.join(target_path))
+            .unwrap_or_else(|_| target_path.to_path_buf())
+    };
 
-    let path_str = target_path.display().to_string();
+    let _ = fs::create_dir_all(&abs_path);
+    let canonical = fs::canonicalize(&abs_path).unwrap_or(abs_path);
+    let path_str = canonical.display().to_string();
 
     #[cfg(target_os = "windows")]
     {
@@ -275,11 +281,26 @@ pub fn open_path_in_explorer(target_path: &Path) -> Result<bool, String> {
 
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
+        // 1. Tenter xdg-open avec le chemin absolu
+        if let Ok(_) = std::process::Command::new("xdg-open")
             .arg(&path_str)
-            .spawn()
-            .map_err(|e| format!("Failed to open Linux File Manager: {}", e))?;
-        return Ok(true);
+            .spawn() {
+            return Ok(true);
+        }
+        // 2. Repli gio open
+        if let Ok(_) = std::process::Command::new("gio")
+            .arg("open")
+            .arg(&path_str)
+            .spawn() {
+            return Ok(true);
+        }
+        // 3. Repli nautilus
+        if let Ok(_) = std::process::Command::new("nautilus")
+            .arg(&path_str)
+            .spawn() {
+            return Ok(true);
+        }
+        return Err(format!("Impossible d'ouvrir le gestionnaire de fichiers pour: {}", path_str));
     }
 
     #[cfg(target_os = "macos")]
@@ -402,36 +423,32 @@ fn clear_dir_files(dir: &Path) {
 
 /// Resolves the dedicated "جلسات_الاستخدام" base directory
 pub fn resolve_sessions_base_dir(app_handle: &AppHandle) -> PathBuf {
-    let local_dir = PathBuf::from("جلسات_الاستخدام");
-    if fs::create_dir_all(&local_dir).is_ok() {
-        if let Ok(abs) = fs::canonicalize(&local_dir) {
-            return abs;
-        }
-        return local_dir;
-    }
     if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
         let app_sessions = app_data.join("جلسات_الاستخدام");
         let _ = fs::create_dir_all(&app_sessions);
+        if let Ok(abs) = fs::canonicalize(&app_sessions) {
+            return abs;
+        }
         return app_sessions;
     }
-    PathBuf::from("جلسات_الاستخدام")
+    let local = std::env::current_dir().unwrap_or_default().join("جلسات_الاستخدام");
+    let _ = fs::create_dir_all(&local);
+    fs::canonicalize(&local).unwrap_or(local)
 }
 
 /// Resolves the dedicated "أرشيف_الاستخدامات_السابقة" directory
 pub fn resolve_archives_base_dir(app_handle: &AppHandle) -> PathBuf {
-    let local_dir = PathBuf::from("أرشيف_الاستخدامات_السابقة");
-    if fs::create_dir_all(&local_dir).is_ok() {
-        if let Ok(abs) = fs::canonicalize(&local_dir) {
-            return abs;
-        }
-        return local_dir;
-    }
     if let Ok((app_data, _, _, _, _)) = resolve_runtime_paths(app_handle) {
         let app_archives = app_data.join("أرشيف_الاستخدامات_السابقة");
         let _ = fs::create_dir_all(&app_archives);
+        if let Ok(abs) = fs::canonicalize(&app_archives) {
+            return abs;
+        }
         return app_archives;
     }
-    PathBuf::from("أرشيف_الاستخدامات_السابقة")
+    let local = std::env::current_dir().unwrap_or_default().join("أرشيف_الاستخدامات_السابقة");
+    let _ = fs::create_dir_all(&local);
+    fs::canonicalize(&local).unwrap_or(local)
 }
 
 /// Tauri Command: Create a brand new usage session folder and archive the previous usage completely
@@ -616,8 +633,78 @@ pub fn list_usage_sessions(app_handle: tauri::AppHandle) -> Result<Vec<UsageSess
 
 /// Tauri Command: Open any arbitrary folder path in the OS file explorer
 #[tauri::command]
-pub fn open_folder_path(path: String) -> Result<bool, String> {
-    open_path_in_explorer(Path::new(&path))
+pub fn open_folder_path(path: String, app_handle: tauri::AppHandle) -> Result<bool, String> {
+    let p = Path::new(&path);
+    let resolved = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        let sessions_base = resolve_sessions_base_dir(&app_handle);
+        let in_sessions = sessions_base.join(&path);
+        if in_sessions.exists() {
+            in_sessions
+        } else {
+            let archives_base = resolve_archives_base_dir(&app_handle);
+            let in_archives = archives_base.join(&path);
+            if in_archives.exists() {
+                in_archives
+            } else if let Ok((app_data, ..)) = resolve_runtime_paths(&app_handle) {
+                app_data.join(&path)
+            } else {
+                std::env::current_dir().unwrap_or_default().join(&path)
+            }
+        }
+    };
+
+    let _ = fs::create_dir_all(&resolved);
+    let canonical = fs::canonicalize(&resolved).unwrap_or(resolved);
+    open_path_in_explorer(&canonical)
 }
+
+/// Tauri Command: Get active session absolute info
+#[tauri::command]
+pub fn get_active_session_info(app_handle: tauri::AppHandle) -> Result<UsageSessionInfo, String> {
+    let sessions_base = resolve_sessions_base_dir(&app_handle);
+    let main_session = sessions_base.join("الاستخدام_الرئيسي");
+    let _ = fs::create_dir_all(&main_session);
+    let _ = fs::create_dir_all(main_session.join("التقارير"));
+    let _ = fs::create_dir_all(main_session.join("سجلات_النشاط"));
+    let _ = fs::create_dir_all(main_session.join("النسخ_الاحتياطية"));
+
+    let abs_main = fs::canonicalize(&main_session).unwrap_or(main_session);
+    let abs_str = abs_main.display().to_string().replace('\\', "/");
+    
+    let reports_count = abs_main.join("التقارير").read_dir().map(|d| d.count()).unwrap_or(0);
+    let logs_count = abs_main.join("سجلات_النشاط").read_dir().map(|d| d.count()).unwrap_or(0);
+
+    Ok(UsageSessionInfo {
+        id: "sess_main".to_string(),
+        name: "الاستخدام_الرئيسي (Dossier Principal)".to_string(),
+        folder_path: abs_str,
+        is_active: true,
+        created_at: Local::now().to_rfc3339(),
+        reports_count,
+        logs_count,
+        has_backup: true,
+    })
+}
+
+/// Tauri Command: Safely delete an archived session folder
+#[tauri::command]
+pub fn delete_archived_session(folder_path: String, app_handle: tauri::AppHandle) -> Result<bool, String> {
+    let archives_base = resolve_archives_base_dir(&app_handle);
+    let canonical_archives = fs::canonicalize(&archives_base).map_err(|e| e.to_string())?;
+    
+    let target = Path::new(&folder_path);
+    let canonical_target = fs::canonicalize(target).map_err(|e| format!("Dossier introuvable: {}", e))?;
+    
+    // Safety check: ensure target is strictly inside archives_base to prevent path traversal
+    if !canonical_target.starts_with(&canonical_archives) || canonical_target == canonical_archives {
+        return Err("Action non autorisée: Tentative de suppression hors du dossier d'archives".to_string());
+    }
+
+    fs::remove_dir_all(&canonical_target).map_err(|e| format!("Erreur suppression archive: {}", e))?;
+    Ok(true)
+}
+
 
 

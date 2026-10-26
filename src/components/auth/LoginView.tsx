@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { authService } from "../../services/auth.service";
 import { db } from "../../db/sqlite";
+import { APP_VERSION, APP_NAME } from "../../constants/app";
 
 export const LoginView: React.FC = () => {
   const [pin, setPin] = useState("");
@@ -132,7 +133,7 @@ export const LoginView: React.FC = () => {
         {/* Version & Sécurité */}
         <div className="pt-3 border-t border-stone-200 flex flex-col items-center">
           <span className="text-[11px] text-stone-400 font-mono font-medium">
-            Aquadro POS Gourmet v1.0.5 Stable
+            {APP_NAME} v{APP_VERSION} Stable
           </span>
         </div>
       </div>

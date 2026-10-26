@@ -1,6 +1,7 @@
-// Aquadro POS Algérie V2 — Module de Gestion des Dossiers d'Exercice & Nouveau Départ
-// Permet de repartir de zéro tout en isolant et archivant l'utilisation précédente dans un dossier dédié,
-// et en initialisant un nouveau dossier propre pour éviter tout mélange de données.
+// Aquadro POS Algérie V2 — Module Unifié de Gestion des Dossiers d'Exercice, Archives & Formatage Complet
+// Permet de gérer les sessions d'utilisation, isoler les données, ouvrir les dossiers sur le disque,
+// et effectuer le formatage complet ou la suppression d'archives exclusivement avec le code secret
+// imprimé sur la charte d'initialisation Setup Charter PDF.
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -21,14 +22,19 @@ import {
   Lock,
   Layers,
   Clock,
-  Check
+  Check,
+  Trash2,
+  Key,
+  ShieldAlert,
+  Info
 } from 'lucide-react';
 import {
   usageSessionService,
   UsageSessionInfo,
   ActiveSessionMeta
 } from '../../services/usageSession.service';
-import { authService } from '../../services/auth.service';
+import { backupService } from '../../services/backup.service';
+import { db } from '../../db/sqlite';
 
 interface UsageSessionsSectionProps {
   onShowToast: (message: string, type: 'info' | 'success' | 'warning' | 'error') => void;
@@ -39,7 +45,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
   const [sessions, setSessions] = useState<UsageSessionInfo[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // État du modal de création de nouveau dossier
+  // Modal 1 : Nouveau dossier d'exercice & nouveau départ
   const [showModal, setShowModal] = useState<boolean>(false);
   const [newSessionName, setNewSessionName] = useState<string>('');
   const [archiveLabel, setArchiveLabel] = useState<string>('');
@@ -47,11 +53,22 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
   const [securityPin, setSecurityPin] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Charger la liste des sessions au montage
+  // Modal 2 : Formatage Complet (DANGER ZONE)
+  const [showFormatModal, setShowFormatModal] = useState<boolean>(false);
+  const [formatSecret, setFormatSecret] = useState<string>('');
+  const [hasAgreedFormat, setHasAgreedFormat] = useState<boolean>(false);
+  const [isFormatting, setIsFormatting] = useState<boolean>(false);
+
+  // Modal 3 : Suppression d'une archive scellée
+  const [archiveToDelete, setArchiveToDelete] = useState<UsageSessionInfo | null>(null);
+  const [deleteSecret, setDeleteSecret] = useState<string>('');
+  const [isDeletingArchive, setIsDeletingArchive] = useState<boolean>(false);
+
+  // Charger la liste des sessions avec les chemins absolus réels
   const loadSessions = async () => {
     setIsLoading(true);
     try {
-      const current = usageSessionService.getActiveSession();
+      const current = await usageSessionService.fetchActiveSession();
       setActiveSession(current);
       const list = await usageSessionService.listSessions();
       setSessions(list);
@@ -66,7 +83,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
     loadSessions();
   }, []);
 
-  // Ouvrir le modal avec des valeurs suggérées basées sur la date courante
+  // Ouvrir le modal Nouveau Dossier
   const handleOpenModal = () => {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
@@ -84,32 +101,21 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
       return;
     }
 
-    // Vérification du PIN de sécurité
-    try {
-      let isPinValid = false;
-      const pinCheck = await authService.verifyManagerOrOwnerPin(securityPin);
-      if (
-        pinCheck.valid ||
-        securityPin === '1234' ||
-        securityPin === '0000' ||
-        securityPin.toUpperCase() === 'RESET'
-      ) {
-        isPinValid = true;
-      }
-
-      if (!isPinValid) {
-        onShowToast('رمز PIN الأمان غير صحيح', 'error');
-        return;
-      }
-    } catch (e: any) {
-      if (securityPin !== '1234' && securityPin !== '0000' && securityPin.toUpperCase() !== 'RESET') {
-        onShowToast('رمز PIN الأمان غير صحيح', 'error');
-        return;
-      }
+    if (!securityPin.trim()) {
+      onShowToast('يرجى إدخال رمز الأمان السري المطبوع في ورقة ميثاق الإعداد الأولي (Setup Charter PDF)', 'warning');
+      return;
     }
 
     setIsSubmitting(true);
     try {
+      // Vérification stricte du code secret de récupération
+      const verification = await usageSessionService.verifyRecoveryCode(securityPin);
+      if (!verification.valid) {
+        onShowToast(verification.error || 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF).', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
       onShowToast('جاري أرشفة الاستخدام الحالي وإنشاء المجلد الجديد...', 'info');
 
       const result = await usageSessionService.createNewSession({
@@ -124,14 +130,99 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
       // Rafraîchir l'application pour charger le nouvel environnement propre
       setTimeout(() => {
         window.location.reload();
-      }, 1500);
+      }, 1400);
     } catch (err: any) {
       onShowToast(`خطأ أثناء إنشاء الاستخدام الجديد : ${err?.message || err}`, 'error');
       setIsSubmitting(false);
     }
   };
 
-  // Ouvrir un dossier dans l'explorateur du système
+  // Exécution du Formatage Complet (Repartir de zéro avec l'assistant)
+  const handleExecuteFormatageComplet = async () => {
+    if (!hasAgreedFormat) {
+      onShowToast('يرجى الموافقة على شروط الميثاق قبل المتابعة', 'warning');
+      return;
+    }
+
+    if (!formatSecret.trim()) {
+      onShowToast('يرجى إدخال رمز الأمان السري المطبوع في وثيقة الإعداد الأولي (Setup Charter PDF)', 'warning');
+      return;
+    }
+
+    setIsFormatting(true);
+    try {
+      // 1. Vérification stricte du code secret de récupération de la charte PDF
+      const checkResult = await usageSessionService.verifyRecoveryCode(formatSecret);
+      if (!checkResult.valid) {
+        onShowToast(checkResult.error || 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF). تم رفض العملية.', 'error');
+        setIsFormatting(false);
+        return;
+      }
+
+      // 2. Création d'une sauvegarde de précaution avant formatage
+      try {
+        onShowToast('جاري حفظ نسخة احتياطية من البيانات قبل التنسيق...', 'info');
+        await backupService.createBackup('formatage_securise');
+      } catch (backupErr) {
+        console.warn('Backup before format warning:', backupErr);
+      }
+
+      // 3. Effacement complet de la base de données
+      onShowToast('جاري تهيئة قاعدة البيانات ومسح الإعدادات...', 'info');
+      await db.resetAll();
+
+      // 4. Nettoyage du stockage local et des tokens de session
+      localStorage.removeItem('aquadro_setup_completed');
+      localStorage.removeItem('pizzeria_setup_completed');
+      localStorage.removeItem('aquadro_store_logo');
+      localStorage.removeItem('pizzeria_store_logo');
+      localStorage.removeItem('aquadro_session_token');
+      localStorage.removeItem('aquadro_active_usage_session');
+      localStorage.removeItem('aquadro_archived_sessions');
+
+      onShowToast('تمت التهيئة الكاملة بنجاح! جاري الانتقال إلى معالج الإعداد...', 'success');
+      setShowFormatModal(false);
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err: any) {
+      onShowToast(`فشل في عملية التهيئة الكاملة: ${err?.message || err}`, 'error');
+      setIsFormatting(false);
+    }
+  };
+
+  // Suppression d'un dossier d'archive avec vérification du code secret
+  const handleDeleteArchive = async () => {
+    if (!archiveToDelete) return;
+
+    if (!deleteSecret.trim()) {
+      onShowToast('يرجى إدخال رمز الأمان السري المطبوع في وثيقة الإعداد الأولي (Setup Charter PDF)', 'warning');
+      return;
+    }
+
+    setIsDeletingArchive(true);
+    try {
+      const checkResult = await usageSessionService.verifyRecoveryCode(deleteSecret);
+      if (!checkResult.valid) {
+        onShowToast(checkResult.error || 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF).', 'error');
+        setIsDeletingArchive(false);
+        return;
+      }
+
+      await usageSessionService.deleteArchive(archiveToDelete.folder_path, archiveToDelete.id);
+      onShowToast('تم حذف مجلد الأرشيف نهائياً بنجاح', 'success');
+      setArchiveToDelete(null);
+      setDeleteSecret('');
+      await loadSessions();
+    } catch (err: any) {
+      onShowToast(`تعذر حذف الأرشيف : ${err?.message || err}`, 'error');
+    } finally {
+      setIsDeletingArchive(false);
+    }
+  };
+
+  // Ouvrir un dossier dans l'explorateur du système (chemin absolu)
   const handleOpenFolder = async (path: string) => {
     try {
       const opened = await usageSessionService.openFolderPath(path);
@@ -146,25 +237,25 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
   const archivedSessions = sessions.filter(s => !s.is_active);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <div className="space-y-6 animate-in fade-in duration-150 text-right" dir="rtl">
       {/* ========================================================================= */}
       {/* 1. BARRE DE TITRE & ACTIONS                                               */}
       {/* ========================================================================= */}
       <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FFF3EB] to-[#FFE2CC] border border-[#E87524]/30 text-[#E87524] flex items-center justify-center shrink-0 shadow-xs">
-              <FolderArchive className="w-5 h-5" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FFF3EB] to-[#FFE2CC] border border-[#E87524]/30 text-[#E87524] flex items-center justify-center shrink-0 shadow-xs">
+              <FolderArchive className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-lg font-black text-[#292522] flex items-center gap-2">
-                <span>فترات وجلسات الاستخدام وإعادة نقطة الصفر</span>
+                <span>فترات وجلسات الاستخدام، الأرشيف والتهيئة الشاملة</span>
                 <span className="bg-[#FFF3EB] text-[#E87524] text-[10px] font-black px-2.5 py-0.5 rounded-full border border-[#E87524]/20 shadow-2xs">
-                  عزل البيانات والأرشيف
+                  نظام الأمان الموحد
                 </span>
               </h2>
               <p className="text-xs text-stone-500 mt-0.5">
-                تخصيص مجلد مستقل لكل فترة استخدام مع أرشفة الفترة السابقة بأمان تام حتى لا تختلط التقارير والمبيعات
+                عزل بيانات كل موسم وفترة عمل، إدارة الأرشيف بأمان تام، والتهيئة الكاملة المحمية بالرمز السري المطبوع
               </p>
             </div>
           </div>
@@ -188,7 +279,21 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
             title="إنشاء مجلد جديد وإعادة نقطة الصفر مع أرشفة السابق"
           >
             <FolderPlus className="w-4 h-4" />
-            <span>بدء استخدام جديد وإعادة نقطة الصفر</span>
+            <span>بدء استخدام جديد وأرشفة السابق</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setHasAgreedFormat(false);
+              setFormatSecret('');
+              setShowFormatModal(true);
+            }}
+            className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+            title="تهيئة كاملة للنظام والعودة لمعالج الإعداد"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span>Formatage complet</span>
           </button>
         </div>
       </div>
@@ -216,7 +321,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
               <span>{activeSession.name}</span>
             </h3>
 
-            <p className="text-xs text-stone-600 font-mono bg-white/80 border border-emerald-200/60 px-3 py-1 rounded-lg inline-block text-left" dir="ltr">
+            <p className="text-xs text-stone-600 font-mono bg-white/80 border border-emerald-200/60 px-3 py-1.5 rounded-lg inline-block text-left" dir="ltr">
               📂 {activeSession.folderPath}
             </p>
           </div>
@@ -234,15 +339,15 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
         <div className="mt-4 pt-3 border-t border-emerald-200/50 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-emerald-950 font-medium">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>التقارير الحالية تنزل تلقائياً في هذا المجلد</span>
+            <span>التقارير الحالية تنزل تلقائياً في هذا المجلد المحدد</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>سجلات النشاط معزولة ومحمية</span>
+            <span>سجلات النشاط معزولة ومحمية بالكامل</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>بيانات المبيعات مفصولة عن الفترات السابقة</span>
+            <span>بيانات المبيعات مفصولة عن الفترات السابقة لتجنب أي تداخل</span>
           </div>
         </div>
       </div>
@@ -270,7 +375,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
             </div>
             <h4 className="text-sm font-bold text-stone-700">لا توجد فترات استخدام سابقة مؤرشفة بعد</h4>
             <p className="text-xs text-stone-500 max-w-md mx-auto">
-              عندما تقوم بالضغط على "بدء استخدام جديد وإعادة نقطة الصفر"، سيتم نقل وأرشفة الفترة الحالية بكل تقاريرها وسجلاتها هنا تلقائياً لكي لا تضيع أبداً.
+              عندما تقوم بالضغط على "بدء استخدام جديد وأرشفة السابق"، سيتم نقل وتجميد الفترة الحالية بكل تقاريرها وسجلاتها هنا تلقائياً لكي لا تضيع أبداً.
             </p>
           </div>
         ) : (
@@ -312,6 +417,18 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
                     <FolderOpen className="w-3.5 h-3.5 text-stone-500" />
                     <span>فتح مجلد الأرشيف</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setArchiveToDelete(session);
+                      setDeleteSecret('');
+                    }}
+                    className="p-2 rounded-xl text-stone-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-all cursor-pointer"
+                    title="حذف هذا الأرشيف نهائياً (يتطلب رمز الأمان السري من PDF)"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -320,7 +437,42 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. MODAL NOUVEAU DOSSIER D'EXERCICE & REINITIALISATION A ZERO             */}
+      {/* 4. CARTE DÉDIÉE : FORMATAGE COMPLET DGI & INITIALISATION A ZERO           */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-red-50/70 via-orange-50/40 to-white rounded-2xl border border-red-200 p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="w-8 h-8 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold">
+                <AlertTriangle className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-black text-red-950">
+                منطقة العمليات الحرجة : Formatage complet (التهيئة الشاملة للنظام)
+              </h3>
+            </div>
+            <p className="text-xs text-stone-600">
+              مسح شامل لكافة المنتجات والمعاملات والإعدادات والعودة إلى معالج الإعداد الأولي (Setup Wizard).
+              هذه العملية خطيرة للغاية ومحمية حصرياً برمز الأمان السري المطبوع في ورقة ميثاق الإعداد (Setup Charter PDF).
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setHasAgreedFormat(false);
+              setFormatSecret('');
+              setShowFormatModal(true);
+            }}
+            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs shrink-0 active:scale-95"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>تهيئة النظام بالكامل (Formatage)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL 1 : NOUVEAU DOSSIER D'EXERCICE & REINITIALISATION                   */}
       {/* ========================================================================= */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -333,7 +485,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
                 </div>
                 <div>
                   <h3 className="text-base font-black text-stone-900">
-                    بدء استخدام جديد وإعادة نقطة الصفر
+                    بدء استخدام جديد وأرشفة الفترة السابقة
                   </h3>
                   <span className="text-[11px] text-stone-500">
                     Nouveau Dossier d'Exercice & Archivage Sécurisé
@@ -415,7 +567,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
                     />
                     <div>
                       <span className="font-bold text-stone-800 block">
-                        تصفير المعاملات والمبيعات والمخزون فقط (موصى به)
+                        تصفير المعاملات والمبيعات والمخزون فقط (موصى به للمطاعم)
                       </span>
                       <span className="text-[11px] text-stone-500">
                         يحتفظ بقائمة البيتزا والمنتجات والمشروبات والإضافات والأسعار حتى لا تعيد كتابتها، مع تصفير المبيعات ورصيد الصندوق والمخزون للبدء من جديد.
@@ -450,18 +602,21 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
                 </div>
               </div>
 
-              {/* Code PIN de Sécurité */}
-              <div>
-                <label className="block font-bold text-stone-700 mb-1 flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5 text-stone-500" />
-                  <span>4. رمز PIN الخاص بالمالك (Owner PIN) أو 1234 :</span>
+              {/* Code Secret de Récupération (Setup Charter PDF) */}
+              <div className="p-3.5 bg-red-50/60 border border-red-200/80 rounded-2xl space-y-1.5">
+                <label className="block font-bold text-red-900 mb-1 flex items-center gap-1.5">
+                  <Key className="w-4 h-4 text-red-600" />
+                  <span>4. الرمز السري من وثيقة الإعداد (Setup Charter PDF) :</span>
                 </label>
+                <p className="text-[11px] text-stone-600">
+                  أدخل الرمز السري المطبوع في ورقة ميثاق الإعداد الأولي. تم إلغاء قبول رمز البائع أو المالك العادي لمنع أي تصفير غير مصرح به.
+                </p>
                 <input
                   type="password"
                   value={securityPin}
                   onChange={e => setSecurityPin(e.target.value)}
-                  placeholder="رمز PIN الأمان..."
-                  className="w-full px-3.5 py-2.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-center text-sm font-mono tracking-widest text-stone-900 focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                  placeholder="الرمز السري المطبوع في PDF..."
+                  className="w-full px-3.5 py-2.5 bg-white border border-red-300 rounded-xl text-center text-base font-mono tracking-widest text-stone-900 focus:ring-2 focus:ring-red-500 focus:outline-none"
                   disabled={isSubmitting}
                 />
               </div>
@@ -481,7 +636,7 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
               <button
                 type="button"
                 onClick={handleCreateSession}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !securityPin.trim()}
                 className="px-5 py-2.5 rounded-xl bg-[#E87524] hover:bg-[#D46317] text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
               >
                 {isSubmitting ? (
@@ -495,6 +650,176 @@ export const UsageSessionsSection: React.FC<UsageSessionsSectionProps> = ({ onSh
                     <span>تأكيد، أرشفة وبدء الاستخدام الجديد</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2 : FORMATAGE COMPLET DGI                                           */}
+      {/* ========================================================================= */}
+      {showFormatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-red-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] shadow-2xl">
+            {/* Header Rouge Danger */}
+            <div className="p-5 bg-gradient-to-r from-red-600 to-red-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">Formatage Complet (التهيئة الشاملة)</h3>
+                  <span className="text-[11px] text-red-100">مسح كافة البيانات والعودة لنقطة الصفر</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isFormatting && setShowFormatModal(false)}
+                className="w-8 h-8 rounded-lg text-white/80 hover:text-white hover:bg-white/10 flex items-center justify-center cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Corps */}
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-950 space-y-2">
+                <span className="font-black text-sm flex items-center gap-1.5 text-red-700">
+                  <ShieldAlert className="w-4 h-4" />
+                  <span>تنبيه أمان صارم وميثاق الاستخدام</span>
+                </span>
+                <p className="leading-relaxed">
+                  هذه العملية ستقوم بحذف جميع المنتجات، المبيعات، الصناديق والمستخدمين وإعادة النظام إلى معالج الترحيب الأولي.
+                </p>
+                <ul className="list-disc pr-5 space-y-1 text-[11px] text-red-800">
+                  <li>سيتم إنشاء نسخة احتياطية محلية تلقائية قبل المسح لحماية بياناتك من الضياع التام.</li>
+                  <li>لا يمكن تنفيذ هذه العملية بواسطة رمز البائع أو رمز الدخول العادي للمالك.</li>
+                  <li>تتطلب هذه العملية حصرياً إدخال الرمز السري المطبوع في ورقة ميثاق الإعداد (Setup Charter PDF).</li>
+                </ul>
+              </div>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-xl border border-stone-200 bg-stone-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hasAgreedFormat}
+                  onChange={e => setHasAgreedFormat(e.target.checked)}
+                  className="mt-0.5 rounded text-red-600 focus:ring-red-500 w-4 h-4 accent-red-600 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-stone-800 leading-relaxed">
+                  أؤكد موافقتي التامة على الشروط، وأرغب في تنزيل نسخة احتياطية ومسح كافة البيانات للعودة إلى نقطة الصفر.
+                </span>
+              </label>
+
+              {hasAgreedFormat && (
+                <div className="p-4 bg-[#FFF8EF] border border-[#E9DCCB] rounded-2xl space-y-2 animate-in fade-in duration-200">
+                  <label className="block font-bold text-stone-800 flex items-center gap-1.5">
+                    <Key className="w-4 h-4 text-[#E87524]" />
+                    <span>أدخل الرمز السري لقاعدة البيانات (المطبوع في ورقة Setup PDF) :</span>
+                  </label>
+                  <p className="text-[11px] text-stone-500">
+                    أدخل الرمز السري المكون من 6 أرقام الموجود في وثيقة "DOCUMENT CONFIDENTIEL D'INITIALISATION" التي قمت بحفظها أول مرة.
+                  </p>
+                  <input
+                    type="password"
+                    value={formatSecret}
+                    onChange={e => setFormatSecret(e.target.value)}
+                    placeholder="الرمز السري المطبوع..."
+                    className="w-full p-2.5 bg-white border border-[#E9DCCB] rounded-xl text-center text-lg font-mono tracking-widest text-stone-900 focus:border-red-500 focus:ring-2 focus:ring-red-500 focus:outline-none"
+                    disabled={isFormatting}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 border-t border-stone-200 bg-stone-50 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowFormatModal(false)}
+                disabled={isFormatting}
+                className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                إلغاء وتراجع
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteFormatageComplet}
+                disabled={!hasAgreedFormat || !formatSecret.trim() || isFormatting}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 disabled:opacity-50 transition-all cursor-pointer shadow-md"
+              >
+                {isFormatting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>جاري التنسيق والمسح...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>حفظ نسخة احتياطية ثم مسح كل شيء</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3 : SUPPRESSION D'UN DOSSIER D'ARCHIVE                              */}
+      {/* ========================================================================= */}
+      {archiveToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-red-200 max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 border-b border-stone-200 pb-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-stone-900">حذف مجلد الأرشيف نهائياً</h3>
+                <span className="text-[11px] text-stone-500">{archiveToDelete.name}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 space-y-1">
+              <span className="font-bold block">تحذير أمان :</span>
+              <span>
+                سيتم حذف كافة التقارير وسجلات النشاط ونسخة قاعدة البيانات الخاصة بهذا الأرشيف من القرص الصلب نهائياً.
+              </span>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="block font-bold text-stone-800">
+                أدخل الرمز السري من ورقة ميثاق الإعداد الأولي (Setup Charter PDF) :
+              </label>
+              <input
+                type="password"
+                value={deleteSecret}
+                onChange={e => setDeleteSecret(e.target.value)}
+                placeholder="الرمز السري المطبوع..."
+                className="w-full px-3.5 py-2.5 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-center text-sm font-mono tracking-widest text-stone-900 focus:ring-2 focus:ring-red-500 focus:outline-none"
+                disabled={isDeletingArchive}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-200">
+              <button
+                type="button"
+                onClick={() => setArchiveToDelete(null)}
+                disabled={isDeletingArchive}
+                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold transition-colors cursor-pointer"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteArchive}
+                disabled={isDeletingArchive || !deleteSecret.trim()}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {isDeletingArchive ? 'جاري الحذف...' : 'تأكيد الحذف النهائي'}
               </button>
             </div>
           </div>

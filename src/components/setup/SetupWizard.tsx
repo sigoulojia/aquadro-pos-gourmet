@@ -153,8 +153,22 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         owner_pin: pin,
       };
 
-      // 1. Sauvegarder le DB Secret dans le Keyring OS (Rust)
-      await invoke('setup_db_secret', { secret: generatedDbSecret });
+      // 1. Sauvegarder le DB Secret dans le Keyring OS (Rust) et localStorage
+      try {
+        await invoke('setup_db_secret', { secret: generatedDbSecret });
+      } catch (keyringErr) {
+        console.warn('Keyring non disponible, sauvegarde locale:', keyringErr);
+      }
+      if (generatedDbSecret) {
+        localStorage.setItem('aquadro_db_secret_key', generatedDbSecret);
+      }
+
+      // Sauvegarder le logo du magasin s'il a été sélectionné
+      if (logo) {
+        localStorage.setItem('aquadro_store_logo', logo);
+        localStorage.setItem('pizzeria_store_logo', logo);
+        window.dispatchEvent(new Event('store_logo_updated'));
+      }
 
       // 2. Exécuter l'initialisation atomique de la BDD via Rust
       await invoke('complete_setup', { payload });

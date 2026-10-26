@@ -97,11 +97,19 @@ export const AppContent: React.FC = () => {
     setIsInitializing(false);
     logger.info("APPLICATION", "Pizzeria POS prêt et actif");
 
-    // Non-blocking silent background update check
-    updateService.checkForUpdates(true).catch((err) => {
-      logger.warn("UPDATER", `Vérification mise à jour en arrière-plan ignorée: ${err}`);
+    // Non-blocking silent background update check & auto-installation
+    updateService.checkAndAutoUpdate().catch((err) => {
+      logger.warn("UPDATER", `Vérification mise à jour automatique en arrière-plan: ${err}`);
     });
   };
+
+  // Mise à jour automatique périodique en arrière-plan toutes les 3 heures
+  useEffect(() => {
+    const updateInterval = setInterval(() => {
+      updateService.checkAndAutoUpdate().catch(() => {});
+    }, 3 * 60 * 60 * 1000);
+    return () => clearInterval(updateInterval);
+  }, []);
 
   // Raccourcis clavier globaux POS et Navigation ERP F1-F12
   useEffect(() => {
