@@ -23,6 +23,7 @@ import {
   Layers
 } from 'lucide-react';
 import { licenseService, LicenseStatusResponse } from '../../services/license.service';
+import { APP_VERSION } from '../../constants/app';
 
 interface LicenseActivationModalProps {
   isOpen: boolean;
@@ -426,7 +427,7 @@ export const LicenseActivationModal: React.FC<LicenseActivationModalProps> = ({
               <span>مصلحة الزبائن والتراخيص : Aquadro Systems Algérie</span>
             </span>
             <span className="text-[10px] bg-stone-100 text-stone-600 px-2.5 py-0.5 rounded-full font-mono">
-              v1.0.8 • 2026
+              v{APP_VERSION} • 2026
             </span>
           </div>
         </div>

@@ -36,10 +36,8 @@ export const UpdateNotificationModal: React.FC = () => {
     updateService.dismiss();
   };
 
-  // Si la mise à jour automatique silencieuse est activée ou en cours en arrière-plan,
-  // ne JAMAIS afficher de modale intrusive pour ne pas interrompre l'encaissement.
-  const isAutoUpdate = updateService.isAutoUpdateEnabled();
-  const shouldShow = !isDismissed && !isAutoUpdate && !state.isSilent && (
+  // Afficher la fenêtre de notification dès qu'une nouvelle mise à jour est disponible
+  const shouldShow = !isDismissed && (
     state.status === 'available' || 
     state.status === 'downloading' || 
     state.status === 'downloaded' ||
