@@ -71,6 +71,7 @@ export type CustomerReceiptBlock =
 
 export interface ReceiptTemplateConfig {
   blockOrder: CustomerReceiptBlock[];
+  hiddenBlocks?: CustomerReceiptBlock[]; // Blocs masqués ou supprimés du ticket
 
   // 1. Dimensions, Marges & Débit Papier
   paperWidth: '58mm' | '80mm';
@@ -81,8 +82,10 @@ export interface ReceiptTemplateConfig {
   fontScale: 'compact' | 'normal' | 'large';
 
   // 2. En-tête & Identité Magasin
+  showHeaderTitle?: boolean;
   headerTitle: string;
   headerSubtitle?: string;
+  showHeaderSubtitle?: boolean;
   headerAlignment: 'center' | 'left' | 'right';
   showStoreNameFr: boolean;
   showStoreNameAr: boolean;
@@ -100,6 +103,7 @@ export interface ReceiptTemplateConfig {
   socialsText: string;
   showWifi: boolean;
   wifiText: string;
+  showWelcomeMessage?: boolean;
   headerWelcomeMessage?: string;
   showFiscalInfo?: boolean;
   customRc?: string;
@@ -123,12 +127,15 @@ export interface ReceiptTemplateConfig {
   showCustomerAddress?: boolean;
 
   // 4. Articles, Pizzeria & Lignes de Vente
+  showItemTableHeader?: boolean;
   showItemUnitPrices: boolean;
   showItemVariants?: boolean;
   showItemSupplements: boolean;
   showItemNotes: boolean;
   showItemParts: boolean;
   showPartsIngredients?: boolean;
+  showBaseIngredients?: boolean;
+  ingredientsStyle?: 'italic' | 'bullets' | 'parentheses';
   itemsSeparatorStyle: 'dashed' | 'solid' | 'dotted' | 'double' | 'none';
   currencySymbol?: 'DZD' | 'دج' | 'DA';
   currencyPosition?: 'after' | 'before';
@@ -142,15 +149,19 @@ export interface ReceiptTemplateConfig {
   discountLabel?: string;
   showTax: boolean;
   taxLabel?: string;
+  showGrandTotal?: boolean;
   totalStyle?: 'banner_dark' | 'double_bordered' | 'standard';
   showPaymentMethod: boolean;
   paymentMethodLabel?: string;
   showTenderedAndChange: boolean;
 
   // 6. Pied de ticket, QR Code, Barcode & Messages
+  showFooterLines?: boolean;
   footerLine1: string;
   footerLine2: string;
   footerLine3: string;
+  footerLine4?: string;
+  showFooterPolicy?: boolean;
   footerPolicy?: string;
   footerAlignment: 'center' | 'left' | 'right';
   showQrCode?: boolean;
@@ -159,6 +170,10 @@ export interface ReceiptTemplateConfig {
   qrCodeSize?: number;
   showBarcode: boolean;
   barcodeText: string;
+  showThankYouMessageAr?: boolean;
+  thankYouMessageAr?: string;
+  showWatermark?: boolean;
+  showCutLine?: boolean;
 
   // 7. Tailles de polices granulaires (en pixels)
   baseFontSize: number;
@@ -166,6 +181,10 @@ export interface ReceiptTemplateConfig {
   headerSubtitleFontSize?: number;
   orderNumberFontSize: number;
   itemTitleFontSize: number;
+  supplementsFontSize?: number; // 8 à 24px - Personnalisable pour lisibilité parfaite
+  boldSupplements?: boolean; // Gras intense pour imprimantes thermiques
+  supplementsHighlight?: 'standard' | 'boxed' | 'underline' | 'badge'; // Mise en valeur
+  supplementsPriceDisplay?: boolean;
   totalPriceFontSize: number;
   notesFontSize: number;
   footerFontSize: number;
@@ -173,6 +192,13 @@ export interface ReceiptTemplateConfig {
   boldItemNames: boolean;
   boldOrderNumber: boolean;
   boldTotals: boolean;
+
+  // 8. Options avancées Pizzeria
+  ticketBorder?: 'none' | 'outer_border' | 'dashed_box';
+  orderNumberFormat?: 'clean' | 'receipt' | 'both' | 'number_only' | 'prefix_only';
+  showTotalItemsCount?: boolean;
+  totalItemsCountLabel?: string;
+  totalLabelCustom?: string;
 }
 
 export const DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER: CustomerReceiptBlock[] = [
@@ -188,6 +214,7 @@ export const DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER: CustomerReceiptBlock[] = [
 
 export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   blockOrder: DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER,
+  hiddenBlocks: [],
 
   // 1. Dimensions
   paperWidth: '80mm',
@@ -198,8 +225,10 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   fontScale: 'normal',
 
   // 2. En-tête
+  showHeaderTitle: true,
   headerTitle: 'AQUADRO',
   headerSubtitle: 'Pizzeria & Fast-Food Gourmet',
+  showHeaderSubtitle: true,
   headerAlignment: 'center',
   showStoreNameFr: true,
   showStoreNameAr: true,
@@ -217,6 +246,7 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   socialsText: '@aquadro_pizza',
   showWifi: false,
   wifiText: 'Wi-Fi: Aquadro • Code: pizza2026',
+  showWelcomeMessage: true,
   headerWelcomeMessage: 'أهلاً وسهلاً بكم • Bienvenue chez nous',
   showFiscalInfo: false,
   customRc: '',
@@ -240,12 +270,15 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   showCustomerAddress: true,
 
   // 4. Articles
+  showItemTableHeader: true,
   showItemUnitPrices: true,
   showItemVariants: true,
   showItemSupplements: true,
   showItemNotes: true,
   showItemParts: true,
   showPartsIngredients: true,
+  showBaseIngredients: true,
+  ingredientsStyle: 'italic',
   itemsSeparatorStyle: 'dashed',
   currencySymbol: 'DZD',
   currencyPosition: 'after',
@@ -259,15 +292,19 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   discountLabel: 'Remise déduite',
   showTax: false,
   taxLabel: 'TVA DGI',
+  showGrandTotal: true,
   totalStyle: 'banner_dark',
   showPaymentMethod: true,
   paymentMethodLabel: 'Mode de règlement',
   showTenderedAndChange: true,
 
   // 6. Pied & QR
+  showFooterLines: true,
   footerLine1: 'Merci pour votre visite !',
   footerLine2: 'À bientôt • Aquadro POS Gourmet',
   footerLine3: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
+  footerLine4: 'Service client disponible 7j/7',
+  showFooterPolicy: true,
   footerPolicy: 'Les réclamations sont acceptées dans un délai de 30 min',
   footerAlignment: 'center',
   showQrCode: false,
@@ -276,6 +313,8 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   qrCodeSize: 90,
   showBarcode: false,
   barcodeText: '',
+  showThankYouMessageAr: true,
+  thankYouMessageAr: 'شكراً لزيارتكم ونسعد بخدمتكم دائماً',
 
   // 7. Typographie
   baseFontSize: 11,
@@ -283,6 +322,10 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   headerSubtitleFontSize: 10,
   orderNumberFontSize: 20,
   itemTitleFontSize: 11,
+  supplementsFontSize: 12, // Net et bien lisible par défaut
+  boldSupplements: true,
+  supplementsHighlight: 'standard',
+  supplementsPriceDisplay: true,
   totalPriceFontSize: 14,
   notesFontSize: 9.5,
   footerFontSize: 9.5,
@@ -290,6 +333,15 @@ export const DEFAULT_RECEIPT_TEMPLATE_CONFIG: ReceiptTemplateConfig = {
   boldItemNames: true,
   boldOrderNumber: true,
   boldTotals: true,
+
+  // 8. Options avancées Pizzeria
+  ticketBorder: 'none',
+  orderNumberFormat: 'clean',
+  showTotalItemsCount: true,
+  totalItemsCountLabel: "Nombre d'articles",
+  totalLabelCustom: 'TOTAL À PAYER :',
+  showWatermark: true,
+  showCutLine: true,
 };
 
 export type KitchenTicketBlock =
@@ -302,6 +354,7 @@ export type KitchenTicketBlock =
 
 export interface KitchenTicketTemplateConfig {
   blockOrder: KitchenTicketBlock[];
+  hiddenBlocks?: KitchenTicketBlock[]; // Blocs masqués ou supprimés du bon cuisine
 
   headerTitle: string;
   headerAlignment: 'center' | 'left' | 'right';
@@ -319,6 +372,7 @@ export interface KitchenTicketTemplateConfig {
   showMultiPartPizzas: boolean;
   showSupplements: boolean;
   supplementsHighlight: 'boxed' | 'underline' | 'bold_only';
+  boldSupplements?: boolean;
   showCookingNotes: boolean;
   notesHighlight: 'boxed' | 'italic' | 'colored_badge';
   itemSeparatorStyle: 'solid' | 'dashed' | 'double' | 'none';
@@ -330,7 +384,7 @@ export interface KitchenTicketTemplateConfig {
   orderTypeFontSize: number;
   itemQuantityFontSize: number;
   itemTitleFontSize: number;
-  supplementsFontSize: number;
+  supplementsFontSize: number; // 9 à 28px
   cookingNotesFontSize: number;
   serviceInfoFontSize: number;
 
@@ -340,6 +394,18 @@ export interface KitchenTicketTemplateConfig {
 
   paperWidth: '58mm' | '80mm';
   bottomSpacingLines: number;
+
+  // Options avancées Chef & Pizzaiolo
+  chefHeaderStyle?: 'box' | 'banner_dark' | 'double_line' | 'minimal' | 'banner' | 'clean' | 'bordered';
+  showTableNumberProminent?: boolean;
+  tableNumberFontSize?: number;
+  tableNumberLabel?: string;
+  showOrderTimeElapsed?: boolean;
+  showReprintIndicator?: boolean;
+  showGeneralOrderNotes?: boolean;
+  generalNotesFontSize?: number;
+  showBaseIngredientsInKitchen?: boolean;
+  kitchenTicketBorder?: 'none' | 'outer_border' | 'dashed_box';
 }
 
 export const DEFAULT_KITCHEN_TICKET_BLOCK_ORDER: KitchenTicketBlock[] = [
@@ -353,6 +419,7 @@ export const DEFAULT_KITCHEN_TICKET_BLOCK_ORDER: KitchenTicketBlock[] = [
 
 export const DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG: KitchenTicketTemplateConfig = {
   blockOrder: DEFAULT_KITCHEN_TICKET_BLOCK_ORDER,
+  hiddenBlocks: ['footer'], // حذف تذييل البون الفارغ افتراضياً
   headerTitle: 'BON DE CUISINE • PIZZAIOLO',
   headerAlignment: 'center',
   showTicketTitle: true,
@@ -369,6 +436,7 @@ export const DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG: KitchenTicketTemplateConfig
   showMultiPartPizzas: true,
   showSupplements: true,
   supplementsHighlight: 'boxed',
+  boldSupplements: true,
   showCookingNotes: true,
   notesHighlight: 'boxed',
   itemSeparatorStyle: 'solid',
@@ -379,7 +447,7 @@ export const DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG: KitchenTicketTemplateConfig
   orderTypeFontSize: 12,
   itemQuantityFontSize: 16,
   itemTitleFontSize: 13.5,
-  supplementsFontSize: 10.5,
+  supplementsFontSize: 12.5,
   cookingNotesFontSize: 9.5,
   serviceInfoFontSize: 9.5,
 
@@ -388,7 +456,19 @@ export const DEFAULT_KITCHEN_TICKET_TEMPLATE_CONFIG: KitchenTicketTemplateConfig
   uppercaseItemNames: true,
 
   paperWidth: '80mm',
-  bottomSpacingLines: 1
+  bottomSpacingLines: 1,
+
+  // Options avancées Chef & Pizzaiolo
+  chefHeaderStyle: 'banner_dark',
+  showTableNumberProminent: false,
+  tableNumberFontSize: 24,
+  tableNumberLabel: 'TABLE',
+  showOrderTimeElapsed: true,
+  showReprintIndicator: true,
+  showGeneralOrderNotes: true,
+  generalNotesFontSize: 11,
+  showBaseIngredientsInKitchen: true,
+  kitchenTicketBorder: 'none'
 };
 
 export class PrinterService {
@@ -410,27 +490,22 @@ export class PrinterService {
         const raw = localStorage.getItem('aquadro_receipt_template_config');
         if (raw) {
           const parsed = JSON.parse(raw);
-          const rawBlockOrder: CustomerReceiptBlock[] = parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
-            ? parsed.blockOrder
-            : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
+          const rawBlockOrder: CustomerReceiptBlock[] = parsed.blockOrder && Array.isArray(parsed.blockOrder)
+            ? [...parsed.blockOrder]
+            : [...DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER];
 
-          // Assurer la présence de tous les blocs par défaut (ex: 'payment' si l'utilisateur avait une version antérieure)
-          const blockOrder = [...rawBlockOrder];
-          DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.forEach(b => {
-            if (!blockOrder.includes(b)) {
-              const footerIdx = blockOrder.indexOf('footer');
-              if (footerIdx !== -1) {
-                blockOrder.splice(footerIdx, 0, b);
-              } else {
-                blockOrder.push(b);
-              }
-            }
-          });
+          // Auto-migration for legacy templates without 'payment' block when hiddenBlocks was not yet introduced
+          if (parsed.hiddenBlocks === undefined && !rawBlockOrder.includes('payment')) {
+            const fIdx = rawBlockOrder.indexOf('footer');
+            if (fIdx !== -1) rawBlockOrder.splice(fIdx, 0, 'payment');
+            else rawBlockOrder.push('payment');
+          }
 
           return {
             ...DEFAULT_RECEIPT_TEMPLATE_CONFIG,
             ...parsed,
-            blockOrder
+            blockOrder: rawBlockOrder,
+            hiddenBlocks: Array.isArray(parsed.hiddenBlocks) ? parsed.hiddenBlocks : []
           };
         }
       } catch (e) {}
@@ -467,7 +542,8 @@ export class PrinterService {
             ...parsed,
             blockOrder: parsed.blockOrder && Array.isArray(parsed.blockOrder) && parsed.blockOrder.length > 0
               ? parsed.blockOrder
-              : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER
+              : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER,
+            hiddenBlocks: Array.isArray(parsed.hiddenBlocks) ? parsed.hiddenBlocks : []
           };
         }
       } catch (e) {}
@@ -839,21 +915,16 @@ export class PrinterService {
       ? tpl.blockOrder
       : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
 
-    const blocks = [...rawBlocks];
-    DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.forEach(b => {
-      if (!blocks.includes(b)) {
-        const footerIdx = blocks.indexOf('footer');
-        if (footerIdx !== -1) {
-          blocks.splice(footerIdx, 0, b);
-        } else {
-          blocks.push(b);
-        }
-      }
-    });
+    const hiddenSet = new Set(tpl.hiddenBlocks || []);
+    const blocks = rawBlocks.filter(b => !hiddenSet.has(b));
 
     const renderBlock = (block: CustomerReceiptBlock): string => {
       switch (block) {
         case 'header': {
+          if (tpl.hiddenBlocks?.includes('header')) return '';
+          const showTitle = tpl.showHeaderTitle !== false && !!tpl.headerTitle;
+          const showSub = tpl.showHeaderSubtitle !== false && !!tpl.headerSubtitle;
+          const showWelcome = tpl.showWelcomeMessage !== false && !!tpl.headerWelcomeMessage;
           const storeAr = tpl.customStoreNameAr || data.storeNameAr;
           const storeArHtml = tpl.showStoreNameAr && storeAr ? `<div style="font-size: 13px; font-weight: 900; margin-top: 1px; direction: rtl; font-family: 'Cairo', 'Amiri', Tahoma, sans-serif;">${storeAr}</div>` : '';
           const hasFiscal = tpl.showFiscalInfo && (tpl.customRc || tpl.customNif || tpl.customNis || tpl.customAi);
@@ -871,11 +942,11 @@ export class PrinterService {
           return `
             <div style="text-align: ${tpl.headerAlignment || 'center'}; margin-bottom: 8px;">
               ${logoHtml}
-              ${tpl.headerTitle ? `<div style="font-size: ${tpl.headerTitleFontSize || 19}px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;">${tpl.headerTitle}</div>` : ''}
-              ${tpl.headerSubtitle ? `<div style="font-size: ${tpl.headerSubtitleFontSize || 10.5}px; font-weight: 600; color: #333; margin-top: 1px;">${tpl.headerSubtitle}</div>` : ''}
+              ${showTitle ? `<div style="font-size: ${tpl.headerTitleFontSize || 19}px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;">${tpl.headerTitle}</div>` : ''}
+              ${showSub ? `<div style="font-size: ${tpl.headerSubtitleFontSize || 10.5}px; font-weight: 600; color: #333; margin-top: 1px;">${tpl.headerSubtitle}</div>` : ''}
               ${storeArHtml}
               ${tpl.showStoreNameFr && storeFr && !storeFr.toUpperCase().includes((tpl.headerTitle || 'AQUADRO').toUpperCase()) ? `<div style="font-size: 11px; font-weight: bold; margin-top: 1px;">${storeFr}</div>` : ''}
-              ${tpl.headerWelcomeMessage ? `<div style="font-size: 9.5px; font-style: italic; color: #333; margin-top: 2px;">${tpl.headerWelcomeMessage}</div>` : ''}
+              ${showWelcome ? `<div style="font-size: 9.5px; font-style: italic; color: #333; margin-top: 2px;">${tpl.headerWelcomeMessage}</div>` : ''}
               ${tpl.showPhone && phoneCombined ? `<div style="font-size: 10px; margin-top: 2px;">Tél : <strong>${phoneCombined}</strong></div>` : ''}
               ${tpl.showAddress && address ? `<div style="font-size: 9.5px; margin-top: 1px;">${address}</div>` : ''}
               ${tpl.showSocials && tpl.socialsText ? `<div style="font-size: 9.5px; margin-top: 1px; color: #333;">${tpl.socialsText}</div>` : ''}
@@ -886,6 +957,7 @@ export class PrinterService {
         }
 
         case 'order_banner': {
+          if (tpl.hiddenBlocks?.includes('order_banner')) return '';
           if (!tpl.showOrderNumber && !tpl.showOrderType) return '';
           const prefix = tpl.orderNumberPrefix || 'COMMANDE #';
           const style = tpl.orderNumberStyle || 'banner';
@@ -903,16 +975,21 @@ export class PrinterService {
             innerNumStyle = `display: inline-block; border: 1.5px solid #000; padding: 2px 14px; border-radius: 20px; font-size: ${tpl.orderNumberFontSize || 18}px; font-weight: 900;`;
           }
 
+          const numDisplay = tpl.orderNumberFormat === 'number_only'
+            ? orderNumClean
+            : (tpl.orderNumberFormat === 'prefix_only' ? prefix : `${prefix}${orderNumClean}`);
+
           return `
             <div style="${boxStyle}">
-              ${tpl.showOrderNumber ? `<div style="${innerNumStyle}">${prefix}${orderNumClean}</div>` : ''}
+              ${tpl.showOrderNumber ? `<div style="${innerNumStyle}">${numDisplay}</div>` : ''}
               ${tpl.showOrderType ? `<div style="font-size: 11.5px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 2px; ${style === 'banner' ? 'color: #fff;' : ''}">${orderTypeLabel}</div>` : ''}
             </div>
           `;
         }
 
         case 'order_info': {
-          if (!tpl.showDateTime && !(tpl.showCashier && data.cashierName) && !(tpl.showCustomer && orderTypeLabel === 'LIVRAISON' && data.customerName)) return '';
+          if (tpl.hiddenBlocks?.includes('order_info')) return '';
+          if (!tpl.showDateTime && !(tpl.showCashier && data.cashierName) && !(tpl.showCustomer && (orderTypeLabel === 'LIVRAISON' || data.customerName))) return '';
 
           let dateDisplay = data.dateTime;
           if (tpl.dateTimeFormat === 'date_only') {
@@ -931,7 +1008,7 @@ export class PrinterService {
               ` : ''}
               ${tpl.showCashier && data.cashierName ? `<div>${tpl.cashierLabel || 'Caissier'} : <strong>${data.cashierName}</strong></div>` : ''}
               ${tpl.showTableNumber && data.tableNumber ? `<div>Table : <strong>${data.tableNumber}</strong></div>` : ''}
-              ${tpl.showCustomer && orderTypeLabel === 'LIVRAISON' && data.customerName ? `
+              ${tpl.showCustomer && data.customerName ? `
                 <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #000;">
                   <div>Client : <strong>${data.customerName}</strong> ${data.customerPhone ? `(${data.customerPhone})` : ''}</div>
                   ${data.customerAddress ? `<div>Adresse : ${data.customerAddress}</div>` : ''}
@@ -942,20 +1019,37 @@ export class PrinterService {
         }
 
         case 'items': {
+          if (tpl.hiddenBlocks?.includes('items')) return '';
           const sepBorder = getSepBorder();
+          const suppFontSize = tpl.supplementsFontSize || 12;
+          const isSuppBold = tpl.boldSupplements !== false;
+
+          let suppHighlightCss = '';
+          if (tpl.supplementsHighlight === 'boxed') {
+            suppHighlightCss = 'border: 1px dashed #000; padding: 1px 5px; border-radius: 3px; display: inline-block;';
+          } else if (tpl.supplementsHighlight === 'badge') {
+            suppHighlightCss = 'border: 1.5px solid #000; padding: 1px 6px; border-radius: 4px; display: inline-block; background: #fff;';
+          } else if (tpl.supplementsHighlight === 'underline') {
+            suppHighlightCss = 'text-decoration: underline;';
+          }
+
+          const suppStyleCss = `font-size: ${suppFontSize}px; color: #000; font-weight: ${isSuppBold ? 900 : 700}; margin-left: 14px; margin-top: 2px; ${suppHighlightCss}`;
+
           return `
             <div style="border-bottom: ${sepBorder}; padding-bottom: 6px; margin-bottom: 8px;">
-              <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 5px;">
-                <span>Article</span>
-                <span>Total</span>
-              </div>
+              ${tpl.showItemTableHeader !== false ? `
+                <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 5px;">
+                  <span>Article</span>
+                  <span>Total</span>
+                </div>
+              ` : ''}
               ${data.items.map(item => {
                 const suppNames = item.supplements && item.supplements.length > 0
                   ? item.supplements.map(s => {
                       const q = (s as any).quantity || 1;
                       const qStr = q > 1 ? `${q}x ` : '';
                       const name = typeof s === 'string' ? s : s.name_fr;
-                      const priceStr = typeof s === 'string' ? '' : ` (+${formatMoney(s.price * q)})`;
+                      const priceStr = (typeof s === 'string' || tpl.supplementsPriceDisplay === false) ? '' : ` (+${formatMoney(s.price * q)})`;
                       return `${qStr}${name}${priceStr}`;
                     }).join(', ')
                   : '';
@@ -970,14 +1064,21 @@ export class PrinterService {
                         ${formatMoney(item.total)}
                       </div>
                     </div>
-                    ${tpl.showItemUnitPrices && unitPriceStr ? `<div style="font-size: 9px; color: #444; margin-left: 14px;">${unitPriceStr}</div>` : ''}
+                    ${tpl.showItemUnitPrices && unitPriceStr ? `<div style="font-size: 9px; color: #000; margin-left: 14px;">${unitPriceStr}</div>` : ''}
                     ${tpl.showItemParts && item.multiParts && item.multiParts.parts ? `
-                      <div style="font-size: 9px; color: #444; margin-left: 14px; margin-top: 1px;">
-                        ${item.multiParts.parts.map((p, idx) => `<div>• Moitié ${idx + 1} : ${p.name}</div>`).join('')}
+                      <div style="font-size: 9.5px; color: #000; margin-left: 14px; margin-top: 1px;">
+                        ${item.multiParts.parts.map((p, idx) => `<div>• Moitié ${idx + 1} : <strong>${p.name}</strong></div>`).join('')}
                       </div>
                     ` : ''}
-                    ${tpl.showItemSupplements && suppNames ? `<div style="font-size: 9px; color: #222; margin-left: 14px; margin-top: 1px;">+ Supplément : ${suppNames}</div>` : ''}
-                    ${tpl.showItemNotes && item.notes ? `<div style="font-size: ${tpl.notesFontSize || 9.5}px; font-style: italic; color: #444; margin-left: 14px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
+                    ${tpl.showItemSupplements && suppNames ? `
+                      <div style="${suppStyleCss}">
+                        + Supplément : ${suppNames}
+                      </div>
+                    ` : ''}
+                    ${tpl.showBaseIngredients && (item as any).ingredients && (item as any).ingredients.length > 0 ? `
+                      <div style="font-size: 8.5px; color: #333; margin-left: 14px; margin-top: 1px;">Base : ${(item as any).ingredients.join(', ')}</div>
+                    ` : ''}
+                    ${tpl.showItemNotes && item.notes ? `<div style="font-size: ${tpl.notesFontSize || 9.5}px; font-style: italic; color: #000; margin-left: 14px; margin-top: 1px;">Note : ${item.notes}</div>` : ''}
                   </div>
                 `;
               }).join('')}
@@ -986,14 +1087,22 @@ export class PrinterService {
         }
 
         case 'subtotals': {
+          if (tpl.hiddenBlocks?.includes('subtotals')) return '';
           const hasSubtotal = tpl.showSubtotal && (data.subtotal || data.subtotalHT);
           const hasDelivery = tpl.showDeliveryFee && data.deliveryFee && data.deliveryFee > 0;
           const hasDiscount = tpl.showDiscount && data.discountTotal && data.discountTotal > 0;
           const hasTax = tpl.showTax && data.taxAmount && data.taxAmount > 0;
+          const hasCount = tpl.showTotalItemsCount;
 
-          if (!hasSubtotal && !hasDelivery && !hasDiscount && !hasTax) return '';
+          if (!hasSubtotal && !hasDelivery && !hasDiscount && !hasTax && !hasCount) return '';
           return `
             <div style="font-size: 10px; margin-bottom: 6px;">
+              ${hasCount ? `
+                <div style="display: flex; justify-content: space-between; padding: 1px 0; color: #555;">
+                  <span>${tpl.totalItemsCountLabel || 'Total articles'} :</span>
+                  <strong>${data.items.reduce((acc, it) => acc + (it.quantity || 1), 0)}</strong>
+                </div>
+              ` : ''}
               ${hasSubtotal ? `
                 <div style="display: flex; justify-content: space-between; padding: 1px 0;">
                   <span>${tpl.subtotalLabel || 'Sous-total'} :</span>
@@ -1023,11 +1132,13 @@ export class PrinterService {
         }
 
         case 'total': {
+          if (tpl.hiddenBlocks?.includes('total') || tpl.showGrandTotal === false) return '';
           const totalStyle = tpl.totalStyle || 'standard';
+          const label = tpl.totalLabelCustom || 'TOTAL À PAYER :';
           if (totalStyle === 'banner_dark') {
             return `
               <div style="background: #000; color: #fff; padding: 6px 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: ${tpl.totalPriceFontSize || 15}px; font-weight: ${tpl.boldTotals !== false ? 900 : 'bold'}; border-radius: 3px;">
-                <span>TOTAL À PAYER :</span>
+                <span>${label}</span>
                 <span>${formatMoney(totalTTC)}</span>
               </div>
             `;
@@ -1035,21 +1146,21 @@ export class PrinterService {
           if (totalStyle === 'double_bordered') {
             return `
               <div style="border-top: 3px double #000; border-bottom: 3px double #000; padding: 5px 0; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: ${tpl.totalPriceFontSize || 14}px; font-weight: ${tpl.boldTotals !== false ? 900 : 'bold'};">
-                <span>TOTAL À PAYER :</span>
+                <span>${label}</span>
                 <span>${formatMoney(totalTTC)}</span>
               </div>
             `;
           }
           return `
             <div style="border-top: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 5px 0; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; font-size: ${tpl.totalPriceFontSize || 14}px; font-weight: ${tpl.boldTotals !== false ? 900 : 'bold'};">
-              <span>TOTAL À PAYER :</span>
+              <span>${label}</span>
               <span>${formatMoney(totalTTC)}</span>
             </div>
           `;
         }
 
         case 'payment': {
-          if (!tpl.showPaymentMethod) return '';
+          if (tpl.hiddenBlocks?.includes('payment') || !tpl.showPaymentMethod) return '';
           const label = tpl.paymentMethodLabel || 'Mode de règlement';
           return `
             <div style="font-size: 9.5px; line-height: 1.35; margin-bottom: 6px;">
@@ -1074,7 +1185,11 @@ export class PrinterService {
         }
 
         case 'footer': {
-          if (!tpl.footerLine1 && !tpl.footerLine2 && !tpl.footerLine3 && !tpl.footerPolicy && !tpl.showQrCode && !tpl.showBarcode) return '';
+          if (tpl.hiddenBlocks?.includes('footer')) return '';
+          const showLines = tpl.showFooterLines !== false;
+          const showPolicy = tpl.showFooterPolicy !== false && !!tpl.footerPolicy;
+          const showThanksAr = tpl.showThankYouMessageAr !== false && !!(tpl.thankYouMessageAr || tpl.footerLine3);
+          if (!showLines && !showThanksAr && !showPolicy && !tpl.showQrCode && !tpl.showBarcode && !tpl.showCutLine) return '';
 
           const qrSize = tpl.qrCodeSize || 64;
           const qrHtml = tpl.showQrCode ? `
@@ -1123,14 +1238,21 @@ export class PrinterService {
 
           return `
             <div style="text-align: ${tpl.footerAlignment || 'center'}; border-top: 1px dashed #000; padding-top: 5px; font-size: ${tpl.footerFontSize || 9.5}px;">
-              ${tpl.footerLine1 ? `<div style="font-weight: bold;">${tpl.footerLine1}</div>` : ''}
-              ${tpl.footerLine2 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 2px;">${tpl.footerLine2}</div>` : ''}
-              ${tpl.footerLine3 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 1px;">${tpl.footerLine3}</div>` : ''}
-              ${tpl.footerPolicy ? `<div style="margin-top: 4px; font-size: ${(tpl.footerFontSize || 9.5) - 1.5}px; color: #333; font-style: italic; line-height: 1.25;">${tpl.footerPolicy}</div>` : ''}
+              ${showLines && tpl.footerLine1 ? `<div style="font-weight: bold;">${tpl.footerLine1}</div>` : ''}
+              ${showLines && tpl.footerLine2 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 2px;">${tpl.footerLine2}</div>` : ''}
+              ${showLines && tpl.footerLine3 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 1px;">${tpl.footerLine3}</div>` : ''}
+              ${showLines && tpl.footerLine4 ? `<div style="font-size: ${(tpl.footerFontSize || 9.5) - 1}px; color: #444; margin-top: 1px;">${tpl.footerLine4}</div>` : ''}
+              ${showThanksAr ? `<div style="font-size: 11px; font-weight: bold; margin-top: 3px; direction: rtl; font-family: 'Cairo', 'Amiri', Tahoma, sans-serif;">${tpl.thankYouMessageAr || tpl.footerLine3}</div>` : ''}
+              ${showPolicy ? `<div style="margin-top: 4px; font-size: ${(tpl.footerFontSize || 9.5) - 1.5}px; color: #333; font-style: italic; line-height: 1.25;">${tpl.footerPolicy}</div>` : ''}
               ${qrHtml}
               ${tpl.showBarcode ? `
                 <div style="margin-top: 5px; font-family: monospace; font-size: 8.5px; letter-spacing: 2px;">
                   * ${tpl.barcodeText || receiptNumClean} *
+                </div>
+              ` : ''}
+              ${tpl.showCutLine ? `
+                <div style="border-top: 1px dashed #888; margin-top: 8px; text-align: center; font-size: 8px; color: #888; letter-spacing: 2px;">
+                  ✂ -------------------------------- ✂
                 </div>
               ` : ''}
             </div>
@@ -1305,7 +1427,12 @@ export class PrinterService {
   }
 
   // Envoyer la commande d'éjection du tiroir-caisse RJ11
-  public async kickCashDrawer(reason: string = 'Ouverture manuelle', openedBy?: string, role?: string): Promise<boolean> {
+  public async kickCashDrawer(reason: string = 'Ouverture manuelle', openedBy?: string, role?: string, force = false): Promise<boolean> {
+    if (!force && !drawerLogService.isDrawerEnabled()) {
+      console.log('[Tiroir] Tiroir-caisse désactivé, impulsion ignorée.');
+      return false;
+    }
+
     try {
       await drawerLogService.logOpening(reason, openedBy, role);
     } catch (e) {}
@@ -1404,7 +1531,7 @@ export class PrinterService {
   }
 
   // Imprimer le ticket
-  public async printReceipt(data: ReceiptPrintData, triggerBrowserPrint = true): Promise<void> {
+  public async printReceipt(data: ReceiptPrintData, triggerBrowserPrint = false): Promise<void> {
     this.archiveReceipt(data);
     const config = this.getConfig();
 
@@ -1447,8 +1574,8 @@ export class PrinterService {
       }
     }
 
-    // Déclencher le spouleur / dialogue système si l'impression matérielle directe n'a pas abouti OU si triggerBrowserPrint est demandé
-    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
+    // Ne déclencher le spouleur navigateur QUE si l'impression matérielle directe n'a pas réussi ET que triggerBrowserPrint est demandé
+    if (!nativeSuccess && triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -1463,6 +1590,7 @@ export class PrinterService {
   public generateKitchenTicketText(data: ReceiptPrintData): string {
     const is80 = (data.paperWidth || this.getConfig().paperWidth) !== '58mm';
     const cols = is80 ? 44 : 32;
+    const tpl = this.getKitchenTemplateConfig();
 
     const center = (str: string) => {
       const pad = Math.max(0, Math.floor((cols - str.length) / 2));
@@ -1482,7 +1610,9 @@ export class PrinterService {
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
     out.push(separator);
-    out.push(center('BON DE CUISINE • PIZZAIOLO'));
+    if (!tpl.hiddenBlocks?.includes('header') && tpl.showTicketTitle && tpl.headerTitle?.trim()) {
+      out.push(center(tpl.headerTitle.trim()));
+    }
     out.push(center(`COMMANDE N° ${orderNumClean}`));
     out.push(center(`>>> ${orderTypeLabel} <<<`));
     out.push(separator);
@@ -1536,30 +1666,46 @@ export class PrinterService {
     const orderNumClean = this.getCleanOrderNumber(data.dailyOrderNumber, data.receiptNumber);
     const orderTypeLabel = this.getOrderTypeLabel(data.orderType);
 
-    const blocks = (tpl.blockOrder && tpl.blockOrder.length > 0)
+    const rawKitchenBlocks = (tpl.blockOrder && tpl.blockOrder.length > 0)
       ? tpl.blockOrder
       : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER;
+
+    const hiddenKitchenSet = new Set(tpl.hiddenBlocks || []);
+    const blocks = rawKitchenBlocks.filter(b => !hiddenKitchenSet.has(b));
 
     const baseFontSize = `${tpl.baseFontSize || 11}px`;
 
     const renderBlock = (block: KitchenTicketBlock): string => {
       switch (block) {
         case 'header':
-          if (!tpl.showTicketTitle) return '';
+          if (tpl.hiddenBlocks?.includes('header') || !tpl.showTicketTitle || !tpl.headerTitle?.trim()) return '';
+          let headerStyleCss = 'border: 1.5px solid #000; padding: 4px 3px; border-radius: 4px;';
+          if (tpl.chefHeaderStyle === 'banner') {
+            headerStyleCss = 'background: #000; color: #fff; padding: 5px 3px; border-radius: 4px;';
+          } else if (tpl.chefHeaderStyle === 'clean') {
+            headerStyleCss = 'border-bottom: 2px solid #000; padding: 3px 0;';
+          }
           return `
-            <div style="text-align: ${tpl.headerAlignment || 'center'}; border: 1.5px solid #000; padding: 4px 3px; margin-bottom: 5px; border-radius: 4px;">
+            <div style="text-align: ${tpl.headerAlignment || 'center'}; ${headerStyleCss} margin-bottom: 5px;">
               <div style="font-size: ${tpl.headerTitleFontSize || 10}px; font-weight: 800; letter-spacing: 1px;">
-                ${tpl.headerTitle || 'BON DE CUISINE • PIZZAIOLO'}
+                ${tpl.headerTitle.trim()}
               </div>
             </div>
           `;
 
         case 'order_banner':
-          if (!tpl.showOrderNumber && !tpl.showOrderType) return '';
+          if (tpl.hiddenBlocks?.includes('order_banner')) return '';
+          if (!tpl.showOrderNumber && !tpl.showOrderType && !tpl.showTableNumberProminent) return '';
           const bannerBorderStyle = tpl.orderNumberStyle === 'clean' ? 'border-bottom: 2px solid #000;' : 'border: 2px solid #000;';
           const bannerBg = tpl.orderNumberStyle === 'banner' ? 'background: #000; color: #fff;' : 'background: #fff; color: #000;';
           const bannerPadding = tpl.orderNumberStyle === 'clean' ? 'padding: 4px 0;' : 'padding: 5px 3px; border-radius: 4px;';
+          const isReprint = (data as any).isReprint || false;
           return `
+            ${tpl.showReprintIndicator && isReprint ? `
+              <div style="border: 2px solid #000; background: #000; color: #fff; text-align: center; font-weight: 900; font-size: 13px; padding: 3px; margin-bottom: 4px; border-radius: 3px;">
+                *** RÉIMPRESSION / DUPLICATA ***
+              </div>
+            ` : ''}
             <div style="text-align: center; margin-bottom: 6px; ${bannerBorderStyle} ${bannerBg} ${bannerPadding}">
               ${tpl.showOrderNumber ? `
                 <div style="font-size: ${tpl.orderNumberFontSize || 24}px; font-weight: 900; line-height: 1.1; margin: 2px 0;">
@@ -1571,10 +1717,16 @@ export class PrinterService {
                   ${orderTypeLabel}
                 </div>
               ` : ''}
+              ${tpl.showTableNumberProminent && (data.tableNumber || orderTypeLabel === 'SUR PLACE') ? `
+                <div style="font-size: ${tpl.tableNumberFontSize || 22}px; font-weight: 900; background: ${tpl.orderNumberStyle === 'banner' ? '#fff' : '#000'}; color: ${tpl.orderNumberStyle === 'banner' ? '#000' : '#fff'}; margin-top: 4px; padding: 2px 6px; border-radius: 3px; display: inline-block;">
+                  ${tpl.tableNumberLabel || 'TABLE'} : ${data.tableNumber || '1'}
+                </div>
+              ` : ''}
             </div>
           `;
 
         case 'service_info':
+          if (tpl.hiddenBlocks?.includes('service_info')) return '';
           if (!tpl.showDateTime && !tpl.showCashierOrServer && !tpl.showCustomerInfo) return '';
           return `
             <div style="font-size: ${tpl.serviceInfoFontSize || 9.5}px; margin-bottom: 6px; border-bottom: 1px dashed #000; padding-bottom: 4px;">
@@ -1592,6 +1744,7 @@ export class PrinterService {
           `;
 
         case 'items':
+          if (tpl.hiddenBlocks?.includes('items')) return '';
           let borderBottomCss = '1.5px solid #000';
           if (tpl.itemSeparatorStyle === 'dashed') borderBottomCss = '1.5px dashed #000';
           else if (tpl.itemSeparatorStyle === 'double') borderBottomCss = '3px double #000';
@@ -1613,6 +1766,8 @@ export class PrinterService {
                   suppStyle = 'text-decoration: underline; font-weight: 900;';
                 } else if (tpl.supplementsHighlight === 'bold_only') {
                   suppStyle = 'font-weight: 900;';
+                } else if ((tpl.supplementsHighlight as any) === 'badge') {
+                  suppStyle = 'border: 2px solid #000; padding: 2px 6px; display: inline-block; font-weight: 900; background: #fff;';
                 }
 
                 let notesStyle = 'font-weight: bold; margin-top: 2px;';
@@ -1646,7 +1801,7 @@ export class PrinterService {
 
                     <!-- SI MOITIE-MOITIE -->
                     ${tpl.showMultiPartPizzas && item.multiParts && item.multiParts.parts ? `
-                      <div style="margin-left: 40px; font-size: ${(tpl.baseFontSize || 11) - 1}px; color: #111; margin-top: 2px;">
+                      <div style="margin-left: 36px; font-size: ${(tpl.baseFontSize || 11) - 1}px; color: #111; margin-top: 2px;">
                         ${item.multiParts.parts.map((p, idx) => `
                           <div style="margin-top: 1px;">
                             • Moitié ${idx + 1} : <strong>${p.name}</strong>
@@ -1657,14 +1812,21 @@ export class PrinterService {
 
                     <!-- SUPPLEMENTS QUE LE CHEF DOIT AJOUTER -->
                     ${suppNames ? `
-                      <div style="margin-left: 40px; font-size: ${tpl.supplementsFontSize || 10.5}px; color: #000; margin-top: 2px; ${suppStyle}">
+                      <div style="margin-left: 36px; font-size: ${tpl.supplementsFontSize || 12.5}px; color: #000; margin-top: 2px; ${suppStyle}">
                         + AJOUTER : ${suppNames}
+                      </div>
+                    ` : ''}
+
+                    <!-- BASE INGREDIENTS POUR LE CHEF -->
+                    ${tpl.showBaseIngredientsInKitchen && (item as any).ingredients && (item as any).ingredients.length > 0 ? `
+                      <div style="margin-left: 36px; font-size: ${(tpl.baseFontSize || 11) - 1.5}px; color: #444; margin-top: 1px;">
+                        Base : ${(item as any).ingredients.join(', ')}
                       </div>
                     ` : ''}
 
                     <!-- NOTES DE CUISSON -->
                     ${tpl.showCookingNotes && item.notes ? `
-                      <div style="margin-left: 40px; font-size: ${tpl.cookingNotesFontSize || 9.5}px; ${notesStyle}">
+                      <div style="margin-left: 36px; font-size: ${tpl.cookingNotesFontSize || 9.5}px; ${notesStyle}">
                         * NOTE : ${item.notes}
                       </div>
                     ` : ''}
@@ -1675,6 +1837,7 @@ export class PrinterService {
           `;
 
         case 'notes':
+          if (tpl.hiddenBlocks?.includes('notes')) return '';
           if (!data.notes && !data.customerNotes) return '';
           return `
             <div style="margin-bottom: 6px; padding: 4px; border: 1.5px dashed #000; border-radius: 4px; font-size: ${tpl.cookingNotesFontSize || 10}px;">
@@ -1684,8 +1847,10 @@ export class PrinterService {
           `;
 
         case 'footer':
-          const spaces = Math.max(1, tpl.bottomSpacingLines || 1);
-          return `<div style="height: ${spaces * 10}px; border-top: 1px dashed #666; margin-top: 6px;"></div>`;
+          if (tpl.hiddenBlocks?.includes('footer')) return '';
+          const spaces = Math.max(0, tpl.bottomSpacingLines ?? 0);
+          if (spaces === 0) return '';
+          return `<div style="height: ${spaces * 8}px;"></div>`;
 
         default:
           return '';
@@ -1700,7 +1865,7 @@ export class PrinterService {
   }
 
   // Imprimer le Bon de Cuisine (Pizzaiolo) uniquement
-  public async printKitchenTicket(data: ReceiptPrintData, triggerBrowserPrint = true): Promise<void> {
+  public async printKitchenTicket(data: ReceiptPrintData, triggerBrowserPrint = false): Promise<void> {
     this.archiveReceipt(data);
     const config = this.getConfig();
 
@@ -1731,7 +1896,8 @@ export class PrinterService {
       }
     }
 
-    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
+    // Ne déclencher le spouleur navigateur QUE si l'impression matérielle directe n'a pas réussi ET que triggerBrowserPrint est demandé
+    if (!nativeSuccess && triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);
@@ -1782,7 +1948,8 @@ export class PrinterService {
       }
     }
 
-    if ((!nativeSuccess || triggerBrowserPrint) && typeof window !== 'undefined') {
+    // Ne déclencher le spouleur navigateur QUE si l'impression matérielle directe n'a pas réussi ET que triggerBrowserPrint est demandé
+    if (!nativeSuccess && triggerBrowserPrint && typeof window !== 'undefined') {
       setTimeout(() => {
         window.print();
       }, 50);

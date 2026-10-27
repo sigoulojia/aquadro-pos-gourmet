@@ -12,13 +12,15 @@ import { printerService } from "../../services/printer.service";
 import { salesService } from "../../services/sales.service";
 import { supplementService, PizzaSupplement } from "../../services/supplement.service";
 import { recipeService, ProductIngredientStatus } from "../../services/recipe.service";
+import { drawerLogService } from "../../services/drawerLog.service";
+import { customerService } from "../../services/customer.service";
 import { ReceiptModal } from "../common/ReceiptModal";
 import { PizzaCustomizerModal } from "./PizzaCustomizerModal";
 import { MultiPartPizzaModal } from "./MultiPartPizzaModal";
 import { SupplementsManagerModal } from "../products/SupplementsManagerModal";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "../common/Toast";
-import { Product, PaymentMethod, CashSession, Sale } from "../../types/database";
+import { Product, PaymentMethod, CashSession, Sale, Customer } from "../../types/database";
 import { CurrencyUtil } from "../../core/currency/currency";
 import {
   Search,
@@ -45,6 +47,7 @@ import {
   Phone,
   MapPin,
   User,
+  UserPlus,
   AlertTriangle,
   Send
 } from "lucide-react";
@@ -119,8 +122,28 @@ export const PosView: React.FC = () => {
   const [outOfStockRequested, setOutOfStockRequested] = useState<boolean>(false);
   const [isRestockingFromPos, setIsRestockingFromPos] = useState<boolean>(false);
 
+  // Gestion des Clients pour l'encaissement et le compte client
+  const [customersList, setCustomersList] = useState<Customer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showNewCustomerModal, setShowNewCustomerModal] = useState<boolean>(false);
+  const [newCustName, setNewCustName] = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustWilaya, setNewCustWilaya] = useState("16 - Alger");
+  const [newCustNotes, setNewCustNotes] = useState("");
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+
+  const loadCustomers = async () => {
+    try {
+      const list = await customerService.getCustomers();
+      setCustomersList(list);
+    } catch (err) {
+      console.warn("Erreur chargement clients:", err);
+    }
+  };
+
   useEffect(() => {
     loadProducts();
+    loadCustomers();
     caisseService.getActiveSession().then(setActiveSession).catch(() => {});
     const last = printerService.getLastReceipt();
     if (last) setLastReceipt(last);
@@ -129,7 +152,43 @@ export const PosView: React.FC = () => {
         if (rows && rows.length > 0) setCurrentStore(rows[0]);
       })
       .catch(() => {});
+
+    const onCustomersUpdated = () => {
+      loadCustomers();
+    };
+    window.addEventListener("customers_updated", onCustomersUpdated);
+    return () => {
+      window.removeEventListener("customers_updated", onCustomersUpdated);
+    };
   }, []);
+
+  const handleQuickCreateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustName.trim()) {
+      showToast("Veuillez saisir le nom du client", "warning");
+      return;
+    }
+    setIsSavingCustomer(true);
+    try {
+      const created = await customerService.createCustomer({
+        name: newCustName.trim(),
+        phone: newCustPhone.trim() || undefined,
+        wilaya: newCustWilaya.trim() || undefined,
+        notes: newCustNotes.trim() || undefined
+      });
+      setCustomersList(prev => [created, ...prev]);
+      setSelectedCustomer(created);
+      setShowNewCustomerModal(false);
+      setNewCustName("");
+      setNewCustPhone("");
+      setNewCustNotes("");
+      showToast(`Client "${created.name}" créé et associé avec succès !`, "success");
+    } catch (err: any) {
+      showToast(`Erreur création client : ${err?.message || err}`, "error");
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
 
   const loadProducts = async () => {
     try {
@@ -355,12 +414,17 @@ export const PosView: React.FC = () => {
     setShowPayModal(true);
   };
 
-  // Finaliser la vente, Déduire le stock des suppléments & Impression Double Tickets
+  // Finaliser la vente, Déduire le stock des suppléments & Boîte de dialogue d'impression
   const handleFinalizeSale = async () => {
     if (cart.length === 0 || isProcessing) return;
 
     if (paymentMethod === "CASH" && tenderedNumeric < totalAmount) {
       showToast("Le montant reçu est inférieur au total", "warning");
+      return;
+    }
+
+    if (paymentMethod === "CREDIT" && !selectedCustomer) {
+      showToast("Veuillez sélectionner un client enregistré pour un paiement à crédit (البيع بالدين / الحساب)", "warning");
       return;
     }
 
@@ -375,12 +439,14 @@ export const PosView: React.FC = () => {
           ? `Sur Place - ${tableNumber}`
           : orderType === "A_EMPORTER"
           ? "À Emporter"
-          : `Livraison - ${deliveryCustomerName || "Client"} (${deliveryPhone || "Sans tél"}) - ${deliveryAddress || "Sans adresse"}`;
+          : `Livraison - ${selectedCustomer?.name || deliveryCustomerName || "Client"} (${selectedCustomer?.phone || deliveryPhone || "Sans tél"}) - ${deliveryAddress || "Sans adresse"}`;
 
       const sale: Sale = await checkoutService.processCheckout({
         cashierId,
         cashierName,
         sessionId: activeSession?.id,
+        customerId: selectedCustomer?.id,
+        customerName: selectedCustomer?.name || (orderType === "LIVRAISON" ? deliveryCustomerName : undefined),
         items: [
           ...cart.map(item => ({
             productId: item.productId,
@@ -409,6 +475,15 @@ export const PosView: React.FC = () => {
         ],
         notes: orderTypeLabel
       });
+
+      // Gestion du crédit et des points fidélité si un client est sélectionné
+      if (selectedCustomer) {
+        if (paymentMethod === "CREDIT") {
+          await customerService.addDebt(selectedCustomer.id, totalAmount);
+        }
+        const pts = Math.max(1, Math.floor(totalAmount / 100));
+        await customerService.addLoyaltyPoints(selectedCustomer.id, pts);
+      }
 
       // Déduction automatique du stock des suppléments vendus (en tenant compte des portions 2x, 3x)
       const supplementsToDeduct: Array<{ supplementId: string; quantity: number }> = [];
@@ -464,8 +539,8 @@ export const PosView: React.FC = () => {
         orderType,
         tableNumber: orderType === "SUR_PLACE" ? tableNumber : undefined,
         deliveryFee: activeDeliveryFee,
-        customerName: orderType === "LIVRAISON" ? deliveryCustomerName : undefined,
-        customerPhone: orderType === "LIVRAISON" ? deliveryPhone : undefined,
+        customerName: selectedCustomer ? selectedCustomer.name : (orderType === "LIVRAISON" ? deliveryCustomerName : undefined),
+        customerPhone: selectedCustomer ? selectedCustomer.phone : (orderType === "LIVRAISON" ? deliveryPhone : undefined),
         customerAddress: orderType === "LIVRAISON" ? deliveryAddress : undefined,
         driverName: orderType === "LIVRAISON" ? deliveryDriver : undefined,
         storeName: currentStore?.name_fr || currentStore?.name || "PIZZERIA GOURMET",
@@ -527,7 +602,7 @@ export const PosView: React.FC = () => {
           };
         })),
         totalTTC: totalAmount,
-        paymentMethod: paymentMethod === "CASH" ? "CASH" : "CARD",
+        paymentMethod: paymentMethod === "CASH" ? "CASH" : paymentMethod === "CREDIT" ? "CREDIT" : "CARD",
         tenderedAmount: paymentMethod === "CASH" ? tenderedNumeric : totalAmount,
         changeGiven: changeGiven,
         taxAmount: 0,
@@ -537,6 +612,7 @@ export const PosView: React.FC = () => {
       printerService.archiveReceipt(receiptData);
       setLastReceipt(receiptData);
       setShowPayModal(false);
+      setSelectedCustomer(null);
       setCart([]);
       setShowReceiptModal(true);
       
@@ -548,8 +624,8 @@ export const PosView: React.FC = () => {
         console.warn("Could not reload ingredient status", reloadErr);
       }
 
-      // Ouverture automatique du tiroir-caisse pour les règlements en espèces
-      if (paymentMethod === "CASH") {
+      // Ouverture automatique du tiroir-caisse UNIQUEMENT pour les espèces et SI le tiroir est activé
+      if (paymentMethod === "CASH" && drawerLogService.isDrawerEnabled()) {
         try {
           await printerService.kickCashDrawer(`Encaissement Espèces Commande #${validReceiptNum}`, user?.name || "Caissier", user?.role);
         } catch (drawerErr) {
@@ -557,19 +633,7 @@ export const PosView: React.FC = () => {
         }
       }
 
-      // Impression automatique si activée dans les paramètres
-      const printerCfg = printerService.getConfig();
-      if (printerCfg.autoPrint !== false) {
-        try {
-          await printerService.printBothTickets(receiptData, true);
-          showToast("تم الدفع بنجاح وإرسال التيكت للطباعة !", "success");
-        } catch (printErr) {
-          console.warn("Impression directe:", printErr);
-          showToast("تم تسجيل الطلب وتجهيز التيكت للمعاينة والطباعة", "success");
-        }
-      } else {
-        showToast("تم تسجيل الطلب وتجهيز التيكت", "success");
-      }
+      showToast("تم تأكيد الطلب بنجاح. يرجى اختيار الإجراء المطلوب للطباعة", "success");
     } catch (err: any) {
       showToast(`Erreur d'encaissement : ${err?.message || err}`, "error");
     } finally {
@@ -1108,13 +1172,13 @@ export const PosView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal de Règlement Simple */}
+      {/* Modal de Règlement Complet avec Attribution Client */}
       {showPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 select-none backdrop-blur-xs">
-          <div className="bg-white border border-stone-200 w-full max-w-sm rounded-xl shadow-2xl overflow-hidden flex flex-col text-xs text-stone-800">
+          <div className="bg-white border border-stone-200 w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col text-xs text-stone-800 max-h-[90vh]">
             <div className="px-4 py-3 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-extrabold text-stone-800">Règlement de la Commande</h3>
+                <h3 className="text-sm font-extrabold text-stone-800">Règlement de la Commande (الدفع)</h3>
                 <p className="text-[11px] text-stone-500">
                   {orderType === "SUR_PLACE" ? `Sur Place (${tableNumber})` : orderType === "A_EMPORTER" ? "À Emporter" : "Livraison"} • {totalItemsCount} article{totalItemsCount > 1 ? "s" : ""}
                 </p>
@@ -1127,31 +1191,92 @@ export const PosView: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 overflow-y-auto">
+              {/* Affichage du Montant Total */}
               <div className="bg-stone-50/70 p-3 rounded-lg border border-stone-200 text-center">
-                <span className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">Montant Total</span>
+                <span className="text-[10px] text-stone-500 font-semibold uppercase tracking-wider">Montant Total à Payer</span>
                 <p className="text-2xl font-black text-[#E87524] font-mono mt-0.5">
                   {CurrencyUtil.formatDZD(totalAmount)}
                 </p>
               </div>
 
+              {/* Sélection / Attribution du Client */}
+              <div className="bg-stone-50 p-2.5 rounded-lg border border-stone-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-stone-700 text-xs flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-stone-500" />
+                    <span>Client associé (زبون الفاتورة)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewCustomerModal(true)}
+                    className="text-[11px] text-[#E87524] hover:text-[#D46317] font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    <span>+ Nouveau Client</span>
+                  </button>
+                </div>
+
+                <select
+                  value={selectedCustomer?.id || ""}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (!val) {
+                      setSelectedCustomer(null);
+                      if (paymentMethod === "CREDIT") setPaymentMethod("CASH");
+                    } else {
+                      const found = customersList.find(c => c.id === val);
+                      setSelectedCustomer(found || null);
+                    }
+                  }}
+                  className="w-full text-xs font-semibold py-1.5 px-2 bg-white border border-stone-200 rounded text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none cursor-pointer"
+                >
+                  <option value="">-- Client Passager / Comptoir (زبون غير مسجل) --</option>
+                  {customersList.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.phone ? `(${c.phone})` : ""} {c.current_debt > 0 ? `— Dette: ${c.current_debt} DZD` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedCustomer && (
+                  <div className="bg-white p-2 rounded border border-orange-200 text-[11px] flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-stone-800">{selectedCustomer.name}</span>
+                      {selectedCustomer.phone && <span className="text-stone-500 ml-1.5">📞 {selectedCustomer.phone}</span>}
+                    </div>
+                    <div className="text-right flex items-center gap-1.5">
+                      {selectedCustomer.current_debt > 0 ? (
+                        <span className="text-rose-600 font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                          Dette: {CurrencyUtil.formatDZD(selectedCustomer.current_debt)}
+                        </span>
+                      ) : (
+                        <span className="text-emerald-600 font-semibold">Dette: 0 DZD</span>
+                      )}
+                      <span className="text-amber-700 font-medium">⭐ {selectedCustomer.loyalty_points || 0} pts</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Moyen de Paiement */}
               <div>
                 <label className="block font-bold text-stone-700 mb-1 text-xs">Moyen de paiement</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
                       setPaymentMethod("CASH");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-2.5 rounded-lg border flex items-center justify-center gap-1.5 font-bold text-xs transition-all cursor-pointer ${
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
                       paymentMethod === "CASH"
-                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524]"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
                     }`}
                   >
                     <Banknote className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Espèces (Cash)</span>
+                    <span>Espèces</span>
                   </button>
 
                   <button
@@ -1160,18 +1285,41 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("EDAHABIA");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-2.5 rounded-lg border flex items-center justify-center gap-1.5 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod !== "CASH"
-                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524]"
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
+                      paymentMethod === "EDAHABIA" || paymentMethod === "CIB"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
                     }`}
                   >
                     <CreditCard className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Carte CIB / Dahabia</span>
+                    <span>Carte CIB/Dahabia</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedCustomer) {
+                        showToast("Veuillez d'abord sélectionner un client enregistré pour la vente à crédit", "warning");
+                        return;
+                      }
+                      setPaymentMethod("CREDIT");
+                      setTenderedInput(totalAmount.toString());
+                    }}
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
+                      paymentMethod === "CREDIT"
+                        ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
+                        : selectedCustomer
+                        ? "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
+                        : "bg-stone-100 border-stone-200 text-stone-400 opacity-60 cursor-not-allowed"
+                    }`}
+                  >
+                    <Receipt className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Crédit (دين)</span>
                   </button>
                 </div>
               </div>
 
+              {/* Détails Espèces */}
               {paymentMethod === "CASH" && (
                 <div className="space-y-2 bg-stone-50 p-2.5 rounded-lg border border-stone-200">
                   <div className="flex justify-between items-center mb-0.5">
@@ -1206,6 +1354,19 @@ export const PosView: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Détails Crédit Client */}
+              {paymentMethod === "CREDIT" && selectedCustomer && (
+                <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-200 space-y-1 text-[11px] text-purple-900">
+                  <p className="font-bold">⚠️ Vente au carnet (Crédit)</p>
+                  <p>
+                    Le montant de <strong>{CurrencyUtil.formatDZD(totalAmount)}</strong> sera enregistré sur le compte de <strong>{selectedCustomer.name}</strong>.
+                  </p>
+                  <p className="text-purple-700">
+                    Nouvelle dette prévisionnelle : <strong>{CurrencyUtil.formatDZD(selectedCustomer.current_debt + totalAmount)}</strong>
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="p-3 border-t border-stone-200 bg-stone-50 flex items-center justify-between gap-2">
@@ -1220,13 +1381,109 @@ export const PosView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleFinalizeSale}
-                disabled={isProcessing || (paymentMethod === "CASH" && tenderedNumeric < totalAmount)}
+                disabled={isProcessing || (paymentMethod === "CASH" && tenderedNumeric < totalAmount) || (paymentMethod === "CREDIT" && !selectedCustomer)}
                 className="flex-1 py-2 rounded-lg bg-[#E87524] hover:bg-[#D46317] text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
               >
                 <CheckCircle className="w-3.5 h-3.5" />
-                <span>{isProcessing ? "Validation..." : "Valider & Imprimer 2 Tickets"}</span>
+                <span>{isProcessing ? "Traitement..." : "تأكيد الطلب (Valider)"}</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ajout Rapide Nouveau Client */}
+      {showNewCustomerModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 select-none backdrop-blur-xs">
+          <div className="bg-white border border-stone-200 w-full max-w-sm rounded-xl shadow-2xl overflow-hidden flex flex-col text-xs text-stone-800">
+            <div className="px-4 py-3 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-[#E87524]" />
+                <h3 className="text-sm font-extrabold text-stone-800">Nouveau Client (إضافة زبون)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewCustomerModal(false)}
+                className="text-stone-400 hover:text-stone-600 p-1 rounded hover:bg-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateCustomer} className="p-4 space-y-3">
+              <div>
+                <label className="block font-bold text-stone-700 mb-1 text-xs">
+                  Nom & Prénom / Raison Sociale *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newCustName}
+                  onChange={e => setNewCustName(e.target.value)}
+                  placeholder="Ex: Mohamed Benali"
+                  className="w-full text-xs py-2 px-2.5 bg-white border border-stone-200 rounded-lg text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 mb-1 text-xs">
+                  Numéro de Téléphone
+                </label>
+                <input
+                  type="tel"
+                  value={newCustPhone}
+                  onChange={e => setNewCustPhone(e.target.value)}
+                  placeholder="Ex: 0550 12 34 56"
+                  className="w-full text-xs py-2 px-2.5 bg-white border border-stone-200 rounded-lg text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1 text-xs">
+                    Wilaya
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustWilaya}
+                    onChange={e => setNewCustWilaya(e.target.value)}
+                    placeholder="16 - Alger"
+                    className="w-full text-xs py-2 px-2.5 bg-white border border-stone-200 rounded-lg text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1 text-xs">
+                    Remarques / Notes
+                  </label>
+                  <input
+                    type="text"
+                    value={newCustNotes}
+                    onChange={e => setNewCustNotes(e.target.value)}
+                    placeholder="Habitué, Bureau 3..."
+                    className="w-full text-xs py-2 px-2.5 bg-white border border-stone-200 rounded-lg text-stone-800 focus:ring-1 focus:ring-[#E87524] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-stone-200 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewCustomerModal(false)}
+                  className="px-3 py-2 rounded-lg border border-stone-200 bg-white font-bold text-xs text-stone-600 hover:bg-stone-100 transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCustomer || !newCustName.trim()}
+                  className="flex-1 py-2 rounded-lg bg-[#E87524] hover:bg-[#D46317] text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-40 cursor-pointer"
+                >
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  <span>{isSavingCustomer ? "Enregistrement..." : "Enregistrer & Sélectionner"}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

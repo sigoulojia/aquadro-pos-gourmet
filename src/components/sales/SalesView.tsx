@@ -80,9 +80,20 @@ export const SalesView: React.FC = () => {
     e.preventDefault();
     if (!selectedSale) return;
 
-    const pinCheck = await authService.verifyManagerOrOwnerPin(managerPin);
-    if (!pinCheck.valid || !pinCheck.user) {
-      showToast('Code PIN Responsable invalide ou non autorisé.', 'error');
+    // Autoriser avec PIN Caissier, Manager ou Propriétaire, ou utiliser l'utilisateur connecté
+    let authUser = user;
+    if (managerPin && managerPin.trim().length >= 4) {
+      const pinCheck = await authService.verifyRefundAuthorizationPin(managerPin.trim());
+      if (pinCheck.valid && pinCheck.user) {
+        authUser = pinCheck.user;
+      } else {
+        showToast('Code PIN invalide ou non autorisé.', 'error');
+        return;
+      }
+    } else if (user) {
+      authUser = user;
+    } else {
+      showToast('Code PIN requis pour autoriser le remboursement.', 'warning');
       return;
     }
 
@@ -106,11 +117,11 @@ export const SalesView: React.FC = () => {
     try {
       const refund = await salesService.processRefund({
         saleId: selectedSale.id,
-        cashierId: pinCheck.user.id,
-        cashierName: pinCheck.user.name,
+        cashierId: authUser.id,
+        cashierName: authUser.name,
         itemsToRefund: itemsToProcess,
         reason: refundReason.trim(),
-        managerPin
+        managerPin: managerPin || authUser.id
       });
 
       showToast(`Avoir ${refund.receipt_number} validé avec succès (${CurrencyUtil.formatDZD(refund.refund_amount)})`, 'success');
@@ -330,10 +341,10 @@ export const SalesView: React.FC = () => {
                         >
                           <Printer className="w-3.5 h-3.5" />
                         </button>
-                        {isOwnerOrManager && s.status !== 'REFUNDED' && (
+                        {s.status !== 'REFUNDED' && (
                           <button
                             onClick={() => handleOpenRefund(s)}
-                            className="p-1 hover:bg-[#FFF8EF] rounded text-gray-400 hover:text-amber-600"
+                            className="p-1 hover:bg-[#FFF8EF] rounded text-gray-400 hover:text-amber-600 cursor-pointer"
                             title="Remboursement / Retour"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -527,12 +538,11 @@ export const SalesView: React.FC = () => {
               <div className="pt-2 border-t border-gray-100">
                 <label className="text-[11px] font-bold text-gray-900 flex items-center space-x-1 mb-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#E87524]" />
-                  <span>Validation par Code PIN Responsable *</span>
+                  <span>Validation par Code PIN (Caissier ou Responsable) {user ? '(ou confirmez ci-dessous)' : '*'}</span>
                 </label>
                 <input
                   type="password"
-                  required
-                  placeholder="••••"
+                  placeholder={user ? "Saisir PIN pour confirmer (optionnel si déjà connecté)" : "••••"}
                   value={managerPin}
                   onChange={e => setManagerPin(e.target.value)}
                   className="w-full bg-white border border-[#E9DCCB] rounded px-2.5 py-1.5 font-mono text-sm tracking-widest text-center text-gray-900 focus:outline-none focus:border-blue-600"

@@ -121,6 +121,16 @@ const NavbarComponent: React.FC<NavbarProps> = ({ onToggleAI, isAIOpen, onNaviga
         }
       })
       .catch(() => {});
+
+    const handleDrawerSetting = () => {
+      setIsManualDrawerAllowed(drawerLogService.isDrawerEnabled());
+    };
+    window.addEventListener('drawer_setting_changed', handleDrawerSetting);
+    window.addEventListener('storage', handleDrawerSetting);
+    return () => {
+      window.removeEventListener('drawer_setting_changed', handleDrawerSetting);
+      window.removeEventListener('storage', handleDrawerSetting);
+    };
   }, []);
 
 

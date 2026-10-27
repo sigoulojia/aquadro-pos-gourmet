@@ -194,6 +194,20 @@ export class AuthService {
     return res.valid && res.user ? res.user : null;
   }
 
+  // Vérifier si un PIN saisi appartient à un Caissier, Manager ou Propriétaire (pour autoriser le remboursement)
+  public async verifyRefundAuthorizationPin(inputPin: string): Promise<{ valid: boolean; user?: User }> {
+    try {
+      const response: { token: string; user: User } = await invoke('authenticate_user', { pin: inputPin });
+      if (['owner', 'manager', 'cashier'].includes(response.user.role)) {
+        await invoke('logout_user', { token: response.token });
+        return { valid: true, user: response.user };
+      }
+      return { valid: false };
+    } catch (e) {
+      return { valid: false };
+    }
+  }
+
   // Créer un utilisateur avec code PIN sécurisé (Le hachage se fait en Rust)
   public async createUser(data: {
     name: string;
@@ -240,8 +254,8 @@ export class AuthService {
     if (user.role === 'manager') {
       return !['users.manage', 'fiscal.settings', 'backup.restore', 'products.view_cost'].includes(permission);
     }
-    // Caissier : POS, vente, consultation des ventes et clients
-    return ['pos.checkout', 'pos.search', 'sales.view', 'customers.view'].includes(permission);
+    // Caissier : POS, vente, consultation des ventes, clients et remboursements
+    return ['pos.checkout', 'pos.search', 'sales.view', 'customers.view', 'sales.refund'].includes(permission);
   }
 }
 

@@ -326,6 +326,28 @@ export class SupplementService {
     }
   }
 
+  // Réintégration du stock des suppléments lors d'un remboursement
+  public async restoreSupplementStock(supplementsWithQty: Array<{ supplementId: string; quantity: number }>): Promise<void> {
+    if (!supplementsWithQty || supplementsWithQty.length === 0) return;
+    await this.ensureTable();
+    for (const item of supplementsWithQty) {
+      try {
+        await db.execute(
+          'UPDATE pizza_supplements SET current_stock = current_stock + ? WHERE id = ?',
+          [item.quantity, item.supplementId]
+        );
+      } catch (err) {
+        console.warn('[SupplementService] Erreur restitution stock supplément:', err);
+      }
+    }
+    const all = await this.getSupplements(true);
+    this.supplementsCache = all;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(all));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
+  }
+
   // Suppression définitive d'un supplément (SQLite + Cache + LocalStorage)
   public async deleteSupplement(id: string): Promise<void> {
     await this.ensureTable();

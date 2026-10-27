@@ -168,11 +168,11 @@ export const SettingsView: React.FC = () => {
 
   const handleToggleManualDrawer = (checked: boolean) => {
     setAllowManualDrawer(checked);
-    drawerLogService.setManualDrawerAllowed(checked);
+    drawerLogService.setDrawerEnabled(checked);
     showToast(
       checked
-        ? "Bouton d'ouverture manuelle du tiroir activé (Réservé à l'Administration)"
-        : "Bouton d'ouverture manuelle masqué pour tous les utilisateurs",
+        ? "درج النقود مفعّل: يظهر الزر في الشريط العلوي ويفتح تلقائياً عند الدفع نقداً"
+        : "تم تعطيل درج النقود: الزر مخفي ولن يفتح تلقائياً عند الدفع",
       'info'
     );
   };
@@ -185,7 +185,7 @@ export const SettingsView: React.FC = () => {
 
   const handleTestDrawer = async () => {
     try {
-      await printerService.kickCashDrawer('Test Matériel (Paramètres)', user?.name || 'Admin', user?.role);
+      await printerService.kickCashDrawer('Test Matériel (Paramètres)', user?.name || 'Admin', user?.role, true);
       showToast('Signal impulsion RJ11 envoyé au tiroir-caisse avec succès', 'success');
       await loadDrawerLogs();
     } catch (err: any) {
@@ -995,14 +995,17 @@ export const SettingsView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Option d'activation/désactivation du bouton manuel pour l'Admin */}
+              {/* Option d'activation/désactivation du tiroir-caisse */}
               <div className="p-3 border border-[#E9DCCB] rounded bg-white flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-gray-800 text-xs">
-                    Afficher le Bouton d'Ouverture Manuelle dans la Barre Supérieure
+                  <div className="font-bold text-gray-800 text-xs flex items-center gap-2">
+                    <span>تفعيل درج النقود (Activer le tiroir-caisse RJ11)</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${allowManualDrawer ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                      {allowManualDrawer ? 'مفعّل (Activé)' : 'معطّل (Désactivé)'}
+                    </span>
                   </div>
-                  <div className="text-[11px] text-gray-500 max-w-xl">
-                    Le caissier n'a <strong>JAMAIS</strong> accès à ce bouton manuel. Le tiroir s'ouvre pour lui exclusivement lors de la validation d'une vente en <strong>espèces</strong>. En désactivant cette case, le bouton manuel sera également masqué pour l'administrateur.
+                  <div className="text-[11px] text-gray-500 max-w-xl mt-0.5">
+                    عند تفعيل هذا الخيار: يظهر زر فتح الدرج في الشريط العلوي ويفتح تلقائياً عند الدفع نقداً. <strong>عند إلغاء التحديد (تعطيل الدرج):</strong> يختفي الزر من كل الواجهات ولا يفتح الدرج أبداً عند عمليات الدفع.
                   </div>
                 </div>
                 <input

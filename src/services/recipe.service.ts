@@ -420,6 +420,22 @@ export class RecipeService {
     }
   }
 
+  // Réintégrer les ingrédients en stock lors d'un remboursement / annulation
+  public async restoreRecipeIngredientsForRefund(productId: string, quantityRefunded: number): Promise<void> {
+    if (!productId || quantityRefunded <= 0) return;
+    const recipeItems = await db.select<RecipeItem>(
+      'SELECT * FROM recipe_items WHERE product_id = ?',
+      [productId]
+    );
+
+    for (const item of recipeItems) {
+      const totalToRestore = item.quantity_required * quantityRefunded;
+      if (totalToRestore > 0) {
+        await this.adjustStock(item.ingredient_id, totalToRestore, `Remboursement / Retour x${quantityRefunded} (${productId})`);
+      }
+    }
+  }
+
   // Vérifier la conformité des stocks d'ingrédients pour un produit
   public async checkProductIngredientStatus(product: Product): Promise<ProductIngredientStatus> {
     const recipeDetails = await this.getRecipeForProduct(product.id);

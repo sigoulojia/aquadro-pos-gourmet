@@ -49,7 +49,9 @@ import {
   Bold,
   Maximize2,
   Minus,
-  Plus
+  Plus,
+  Trash2,
+  PlusCircle
 } from 'lucide-react';
 
 interface TicketDesignerSectionProps {
@@ -277,6 +279,121 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
     currentOrder[targetIndex] = temp;
 
     updateKitchenField('blockOrder', currentOrder);
+  };
+
+  // Toggle visibility of a customer block (show/hide)
+  const toggleCustomerBlockVisibility = (blockId: CustomerReceiptBlock) => {
+    const currentHidden = new Set(customerConfig.hiddenBlocks || []);
+    if (currentHidden.has(blockId)) {
+      currentHidden.delete(blockId);
+      onShowToast(`تم تفعيل إظهار قسم: ${CUSTOMER_BLOCK_META[blockId]?.titleAr || blockId}`, 'success');
+    } else {
+      currentHidden.add(blockId);
+      onShowToast(`تم إخفاء قسم: ${CUSTOMER_BLOCK_META[blockId]?.titleAr || blockId}`, 'info');
+    }
+    updateCustomerField('hiddenBlocks', Array.from(currentHidden));
+  };
+
+  // Remove a block completely from Customer ticket
+  const removeCustomerBlock = (blockId: CustomerReceiptBlock) => {
+    const currentOrder = customerConfig.blockOrder && customerConfig.blockOrder.length > 0
+      ? customerConfig.blockOrder.filter(b => b !== blockId)
+      : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.filter(b => b !== blockId);
+    const currentHidden = new Set(customerConfig.hiddenBlocks || []);
+    currentHidden.add(blockId);
+    setCustomerConfig(prev => ({
+      ...prev,
+      blockOrder: currentOrder,
+      hiddenBlocks: Array.from(currentHidden)
+    }));
+    setHasChanges(true);
+    onShowToast(`تم حذف قسم "${CUSTOMER_BLOCK_META[blockId]?.titleAr || blockId}" من التيكيت. يمكنك إعادته في أي وقت.`, 'warning');
+  };
+
+  // Add a deleted block back to Customer ticket
+  const addCustomerBlock = (blockId: CustomerReceiptBlock) => {
+    const currentOrder = customerConfig.blockOrder && customerConfig.blockOrder.length > 0
+      ? [...customerConfig.blockOrder]
+      : [...DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER];
+    if (!currentOrder.includes(blockId)) {
+      currentOrder.push(blockId);
+    }
+    const currentHidden = new Set(customerConfig.hiddenBlocks || []);
+    currentHidden.delete(blockId);
+    setCustomerConfig(prev => ({
+      ...prev,
+      blockOrder: currentOrder,
+      hiddenBlocks: Array.from(currentHidden)
+    }));
+    setHasChanges(true);
+    onShowToast(`تمت إضافة قسم "${CUSTOMER_BLOCK_META[blockId]?.titleAr || blockId}" إلى التيكيت بنجاح !`, 'success');
+  };
+
+  // Reset Customer blocks order
+  const resetCustomerBlocks = () => {
+    setCustomerConfig(prev => ({
+      ...prev,
+      blockOrder: [...DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER],
+      hiddenBlocks: []
+    }));
+    setHasChanges(true);
+    onShowToast('تمت استعادة الترتيب الافتراضي لجميع أقسام تيكيت الزبون.', 'info');
+  };
+
+  // Kitchen block helpers
+  const toggleKitchenBlockVisibility = (blockId: KitchenTicketBlock) => {
+    const currentHidden = new Set(kitchenConfig.hiddenBlocks || []);
+    if (currentHidden.has(blockId)) {
+      currentHidden.delete(blockId);
+      onShowToast(`تم تفعيل إظهار قسم: ${KITCHEN_BLOCK_META[blockId]?.titleAr || blockId}`, 'success');
+    } else {
+      currentHidden.add(blockId);
+      onShowToast(`تم إخفاء قسم: ${KITCHEN_BLOCK_META[blockId]?.titleAr || blockId}`, 'info');
+    }
+    updateKitchenField('hiddenBlocks', Array.from(currentHidden));
+  };
+
+  const removeKitchenBlock = (blockId: KitchenTicketBlock) => {
+    const currentOrder = kitchenConfig.blockOrder && kitchenConfig.blockOrder.length > 0
+      ? kitchenConfig.blockOrder.filter(b => b !== blockId)
+      : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER.filter(b => b !== blockId);
+    const currentHidden = new Set(kitchenConfig.hiddenBlocks || []);
+    currentHidden.add(blockId);
+    setKitchenConfig(prev => ({
+      ...prev,
+      blockOrder: currentOrder,
+      hiddenBlocks: Array.from(currentHidden)
+    }));
+    setHasChanges(true);
+    onShowToast(`تم حذف قسم "${KITCHEN_BLOCK_META[blockId]?.titleAr || blockId}" من بون المطبخ.`, 'warning');
+  };
+
+  const addKitchenBlock = (blockId: KitchenTicketBlock) => {
+    const currentOrder = kitchenConfig.blockOrder && kitchenConfig.blockOrder.length > 0
+      ? [...kitchenConfig.blockOrder]
+      : [...DEFAULT_KITCHEN_TICKET_BLOCK_ORDER];
+    if (!currentOrder.includes(blockId)) {
+      currentOrder.push(blockId);
+    }
+    const currentHidden = new Set(kitchenConfig.hiddenBlocks || []);
+    currentHidden.delete(blockId);
+    setKitchenConfig(prev => ({
+      ...prev,
+      blockOrder: currentOrder,
+      hiddenBlocks: Array.from(currentHidden)
+    }));
+    setHasChanges(true);
+    onShowToast(`تمت إضافة قسم "${KITCHEN_BLOCK_META[blockId]?.titleAr || blockId}" إلى بون المطبخ بنجاح !`, 'success');
+  };
+
+  const resetKitchenBlocks = () => {
+    setKitchenConfig(prev => ({
+      ...prev,
+      blockOrder: [...DEFAULT_KITCHEN_TICKET_BLOCK_ORDER],
+      hiddenBlocks: []
+    }));
+    setHasChanges(true);
+    onShowToast('تمت استعادة الترتيب الافتراضي لجميع أقسام بون المطبخ.', 'info');
   };
 
   // Sauvegarde globale des 2 modèles
@@ -516,11 +633,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
           <button
             type="button"
             onClick={handleSaveAll}
-            className={`px-5 py-2 rounded-xl text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm ${
-              hasChanges
+            className={`px-5 py-2 rounded-xl text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm ${hasChanges
                 ? 'bg-emerald-600 hover:bg-emerald-700 ring-3 ring-emerald-500/30 animate-pulse'
                 : 'bg-[#E87524] hover:bg-[#D46317]'
-            }`}
+              }`}
           >
             <Check className="w-4 h-4" />
             <span>حفظ كل التغييرات</span>
@@ -536,11 +652,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
           <button
             type="button"
             onClick={() => setActiveTab('customer')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
-              activeTab === 'customer'
+            className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'customer'
                 ? 'bg-white text-[#292522] shadow-sm border border-[#E9DCCB] ring-2 ring-[#E87524]/20'
                 : 'text-stone-600 hover:text-stone-900 hover:bg-white/50'
-            }`}
+              }`}
           >
             <Receipt className={`w-4 h-4 ${activeTab === 'customer' ? 'text-[#E87524]' : 'text-stone-400'}`} />
             <span>🧾 تيكيت الزبون (Ticket Client)</span>
@@ -549,11 +664,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
           <button
             type="button"
             onClick={() => setActiveTab('kitchen')}
-            className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
-              activeTab === 'kitchen'
+            className={`px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${activeTab === 'kitchen'
                 ? 'bg-white text-[#292522] shadow-sm border border-[#E9DCCB] ring-2 ring-[#E87524]/20'
                 : 'text-stone-600 hover:text-stone-900 hover:bg-white/50'
-            }`}
+              }`}
           >
             <ChefHat className={`w-4 h-4 ${activeTab === 'kitchen' ? 'text-[#E87524]' : 'text-stone-400'}`} />
             <span>👨‍🍳 تيكيت الطباخ (Bon Cuisine • Pizzaiolo)</span>
@@ -576,11 +690,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                 key={sub.id}
                 type="button"
                 onClick={() => setActiveSubTab(sub.id as any)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                  isSubActive
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${isSubActive
                     ? 'bg-[#E87524] text-white shadow-2xs'
                     : 'bg-white/70 hover:bg-white text-stone-600 border border-[#E9DCCB]/60'
-                }`}
+                  }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{sub.labelAr}</span>
@@ -680,11 +793,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                       if (activeTab === 'customer') updateCustomerField('paperWidth', '80mm');
                       else updateKitchenField('paperWidth', '80mm');
                     }}
-                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                      (activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '80mm'
+                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${(activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '80mm'
                         ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
                         : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
-                    }`}
+                      }`}
                   >
                     <div>
                       <span className="block font-black text-sm">80 mm (ورق عريض قياسي)</span>
@@ -699,11 +811,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                       if (activeTab === 'customer') updateCustomerField('paperWidth', '58mm');
                       else updateKitchenField('paperWidth', '58mm');
                     }}
-                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                      (activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '58mm'
+                    className={`py-3 px-4 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${(activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '58mm'
                         ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
                         : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
-                    }`}
+                      }`}
                   >
                     <div>
                       <span className="block font-black text-sm">58 mm (ورق مضغوط صغير)</span>
@@ -757,11 +868,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                         key={d.id}
                         type="button"
                         onClick={() => updateCustomerField('lineHeight', d.id as any)}
-                        className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
-                          (customerConfig.lineHeight || 'normal') === d.id
+                        className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${(customerConfig.lineHeight || 'normal') === d.id
                             ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                             : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
-                        }`}
+                          }`}
                       >
                         <span className="text-xs font-bold block">{d.titleAr}</span>
                         <span className="text-[9px] text-stone-400">{d.desc}</span>
@@ -782,11 +892,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                         key={lines}
                         type="button"
                         onClick={() => updateCustomerField('feedTopLines', lines)}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                          (customerConfig.feedTopLines || 0) === lines
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${(customerConfig.feedTopLines || 0) === lines
                             ? 'bg-[#E87524] text-white border-[#E87524]'
                             : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                        }`}
+                          }`}
                       >
                         {lines === 0 ? 'بدون' : `${lines} أسطر`}
                       </button>
@@ -806,11 +915,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           if (activeTab === 'customer') updateCustomerField('feedBottomLines', lines);
                           else updateKitchenField('bottomSpacingLines', lines);
                         }}
-                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                          (activeTab === 'customer' ? (customerConfig.feedBottomLines ?? 2) : (kitchenConfig.bottomSpacingLines ?? 2)) === lines
+                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${(activeTab === 'customer' ? (customerConfig.feedBottomLines ?? 2) : (kitchenConfig.bottomSpacingLines ?? 2)) === lines
                             ? 'bg-[#E87524] text-white border-[#E87524]'
                             : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                        }`}
+                          }`}
                       >
                         {lines} أسطر
                       </button>
@@ -821,135 +929,330 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
             </div>
           )}
           {activeSubTab === 'blocks' && (
-            <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-[#E9DCCB]/60 pb-3">
+            <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-6">
+              <div className="flex flex-wrap items-center justify-between border-b border-[#E9DCCB]/60 pb-3 gap-2">
                 <div className="flex items-center gap-2">
                   <MoveVertical className="w-4 h-4 text-[#E87524]" />
                   <h3 className="font-bold text-[#292522] text-sm">
                     {activeTab === 'customer'
-                      ? 'ترتيب ومواضع أقسام تيكيت الزبون (Disposition des Blocs)'
-                      : 'ترتيب ومواضع أقسام بون الطباخ (Disposition des Blocs Cuisine)'}
+                      ? 'إدارة أقسام تيكيت الزبون (إضافة، حذف وترتيب الأقسام)'
+                      : 'إدارة أقسام بون المطبخ (إضافة، حذف وترتيب الأقسام)'}
                   </h3>
                 </div>
-                <span className="text-[11px] text-stone-500 font-medium">
-                  استخدم الأسهم ⬆ ⬇ لتغيير موضع أي قسم في الورقة
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={activeTab === 'customer' ? resetCustomerBlocks : resetKitchenBlocks}
+                    className="px-2.5 py-1 text-xs font-bold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="استعادة الترتيب وجميع الأقسام الافتراضية"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>استعادة الافتراضي</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2.5">
-                {activeTab === 'customer' ? (
-                  // Blocs Client
-                  (customerConfig.blockOrder && customerConfig.blockOrder.length > 0
+              {activeTab === 'customer' ? (
+                // Customer Blocks Management
+                (() => {
+                  const currentBlocks = customerConfig.blockOrder && customerConfig.blockOrder.length > 0
                     ? customerConfig.blockOrder
-                    : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER
-                  ).map((blockId, index, arr) => {
-                    const meta = CUSTOMER_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
-                    return (
-                      <div
-                        key={blockId}
-                        className="p-3.5 bg-stone-50/70 hover:bg-orange-50/40 rounded-xl border border-stone-200 flex items-center justify-between gap-3 transition-colors shadow-2xs"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="w-7 h-7 rounded-lg bg-[#FFF3EB] border border-[#E87524]/30 text-[#E87524] text-xs font-black flex items-center justify-center shrink-0">
-                            #{index + 1}
+                    : DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER;
+                  const hiddenSet = new Set(customerConfig.hiddenBlocks || []);
+                  const deletedBlocks = DEFAULT_CUSTOMER_RECEIPT_BLOCK_ORDER.filter(b => !currentBlocks.includes(b));
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Active Blocks */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-stone-800 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>الأقسام المفعلة في التيكيت (قابلة للحذف والترتيب والإخفاء) :</span>
                           </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-stone-800">{meta.titleAr}</span>
-                              <span className="text-[10px] text-stone-400 font-medium">({meta.titleFr})</span>
-                            </div>
-                            <p className="text-[10px] text-stone-500 mt-0.5">{meta.desc}</p>
-                          </div>
+                          <span className="text-[11px] font-mono font-bold text-stone-400">
+                            {currentBlocks.length} قسم في التيكيت
+                          </span>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          {blockId === 'payment' && (
-                            <button
-                              type="button"
-                              onClick={() => updateCustomerField('showPaymentMethod', !customerConfig.showPaymentMethod)}
-                              className={`px-2.5 py-1 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer transition-all ${
-                                customerConfig.showPaymentMethod
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                                  : 'bg-stone-100 text-stone-400 border-stone-200 hover:bg-stone-200'
-                              }`}
-                              title={customerConfig.showPaymentMethod ? 'تعطيل ظهور طريقة الدفع' : 'تفعيل ظهور طريقة الدفع'}
+                        {currentBlocks.map((blockId, index) => {
+                          const meta = CUSTOMER_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
+                          const isHidden = hiddenSet.has(blockId);
+
+                          return (
+                            <div
+                              key={blockId}
+                              className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all shadow-2xs ${isHidden
+                                  ? 'bg-stone-100/80 border-dashed border-stone-300 opacity-60'
+                                  : 'bg-stone-50/80 hover:bg-orange-50/30 border-stone-200'
+                                }`}
                             >
-                              {customerConfig.showPaymentMethod ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-stone-400" />}
-                              <span>{customerConfig.showPaymentMethod ? 'مفعل (ظاهر)' : 'معطل (مخفي)'}</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => moveCustomerBlock(index, 'up')}
-                            disabled={index === 0}
-                            className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
-                            title="تقديم للأعلى"
-                          >
-                            <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveCustomerBlock(index, 'down')}
-                            disabled={index === arr.length - 1}
-                            className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
-                            title="تنزيل للأسفل"
-                          >
-                            <ArrowDown className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  // Blocs Cuisine
-                  (kitchenConfig.blockOrder && kitchenConfig.blockOrder.length > 0
-                    ? kitchenConfig.blockOrder
-                    : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER
-                  ).map((blockId, index, arr) => {
-                    const meta = KITCHEN_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
-                    return (
-                      <div
-                        key={blockId}
-                        className="p-3.5 bg-stone-50/70 hover:bg-orange-50/40 rounded-xl border border-stone-200 flex items-center justify-between gap-3 transition-colors shadow-2xs"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="w-7 h-7 rounded-lg bg-[#FFF3EB] border border-[#E87524]/30 text-[#E87524] text-xs font-black flex items-center justify-center shrink-0">
-                            #{index + 1}
-                          </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-stone-800">{meta.titleAr}</span>
-                              <span className="text-[10px] text-stone-400 font-medium">({meta.titleFr})</span>
+                              <div className="flex items-center gap-3">
+                                <span className={`w-7 h-7 rounded-lg text-xs font-black flex items-center justify-center shrink-0 border ${isHidden
+                                    ? 'bg-stone-200 text-stone-500 border-stone-300'
+                                    : 'bg-[#FFF3EB] border-[#E87524]/30 text-[#E87524]'
+                                  }`}>
+                                  #{index + 1}
+                                </span>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-800">{meta.titleAr}</span>
+                                    <span className="text-[10px] text-stone-400 font-medium">({meta.titleFr})</span>
+                                    {isHidden && (
+                                      <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">
+                                        مخفي من الطباعة
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-stone-500 mt-0.5">{meta.desc}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Toggle Visible/Hidden */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCustomerBlockVisibility(blockId)}
+                                  className={`p-1.5 rounded-lg border flex items-center gap-1 text-xs font-bold cursor-pointer transition-all ${!isHidden
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                      : 'bg-white text-stone-400 border-stone-300 hover:bg-stone-100'
+                                    }`}
+                                  title={isHidden ? 'إظهار هذا القسم في التيكيت' : 'إخفاء هذا القسم من التيكيت مؤقتاً'}
+                                >
+                                  {!isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                  <span className="text-[10px] hidden sm:inline">{!isHidden ? 'ظاهر' : 'مخفي'}</span>
+                                </button>
+
+                                {/* Move Up */}
+                                <button
+                                  type="button"
+                                  onClick={() => moveCustomerBlock(index, 'up')}
+                                  disabled={index === 0}
+                                  className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
+                                  title="تقديم للأعلى"
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+
+                                {/* Move Down */}
+                                <button
+                                  type="button"
+                                  onClick={() => moveCustomerBlock(index, 'down')}
+                                  disabled={index === currentBlocks.length - 1}
+                                  className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
+                                  title="تنزيل للأسفل"
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
+
+                                {/* Delete / Remove from Ticket */}
+                                <button
+                                  type="button"
+                                  onClick={() => removeCustomerBlock(blockId)}
+                                  className="p-1.5 rounded-lg bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 hover:text-rose-700 cursor-pointer shadow-2xs transition-all"
+                                  title="حذف هذا القسم بالكامل من التيكيت"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-[10px] text-stone-500 mt-0.5">{meta.desc}</p>
+                          );
+                        })}
+                      </div>
+
+                      {/* Deleted / Available Blocks to Add */}
+                      {deletedBlocks.length > 0 && (
+                        <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-200/80 space-y-3 animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between border-b border-orange-200/60 pb-2">
+                            <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                              <PlusCircle className="w-4 h-4 text-[#E87524]" />
+                              <span>أقسام محذوفة متوفرة للإضافة إلى تيكيت الزبون :</span>
+                            </span>
+                            <span className="text-[10px] text-stone-500 font-medium">
+                              اضغط على زر الإضافة لإعادة أي قسم للتيكيت
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {deletedBlocks.map(blockId => {
+                              const meta = CUSTOMER_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
+                              return (
+                                <div
+                                  key={blockId}
+                                  className="p-3 bg-white rounded-xl border border-orange-200/60 flex items-center justify-between gap-2 shadow-2xs"
+                                >
+                                  <div>
+                                    <div className="text-xs font-bold text-stone-800">{meta.titleAr}</div>
+                                    <div className="text-[10px] text-stone-400 font-medium">{meta.titleFr}</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => addCustomerBlock(blockId)}
+                                    className="px-2.5 py-1.5 bg-[#FFF3EB] hover:bg-[#FFE6D4] text-[#E87524] border border-[#E87524]/40 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>إضافة للتيكيت</span>
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
+                      )}
+                    </div>
+                  );
+                })()
+              ) : (
+                // Kitchen Blocks Management
+                (() => {
+                  const currentBlocks = kitchenConfig.blockOrder && kitchenConfig.blockOrder.length > 0
+                    ? kitchenConfig.blockOrder
+                    : DEFAULT_KITCHEN_TICKET_BLOCK_ORDER;
+                  const hiddenSet = new Set(kitchenConfig.hiddenBlocks || []);
+                  const deletedBlocks = DEFAULT_KITCHEN_TICKET_BLOCK_ORDER.filter(b => !currentBlocks.includes(b));
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => moveKitchenBlock(index, 'up')}
-                            disabled={index === 0}
-                            className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
-                            title="تقديم للأعلى"
-                          >
-                            <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveKitchenBlock(index, 'down')}
-                            disabled={index === arr.length - 1}
-                            className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
-                            title="تنزيل للأسفل"
-                          >
-                            <ArrowDown className="w-4 h-4" />
-                          </button>
+                  return (
+                    <div className="space-y-6">
+                      {/* Active Kitchen Blocks */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-stone-800 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>أقسام بون المطبخ المفعلة (قابلة للحذف والترتيب والإخفاء) :</span>
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-stone-400">
+                            {currentBlocks.length} قسم في البون
+                          </span>
                         </div>
+
+                        {currentBlocks.map((blockId, index) => {
+                          const meta = KITCHEN_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
+                          const isHidden = hiddenSet.has(blockId);
+
+                          return (
+                            <div
+                              key={blockId}
+                              className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all shadow-2xs ${isHidden
+                                  ? 'bg-stone-100/80 border-dashed border-stone-300 opacity-60'
+                                  : 'bg-stone-50/80 hover:bg-orange-50/30 border-stone-200'
+                                }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`w-7 h-7 rounded-lg text-xs font-black flex items-center justify-center shrink-0 border ${isHidden
+                                    ? 'bg-stone-200 text-stone-500 border-stone-300'
+                                    : 'bg-[#FFF3EB] border-[#E87524]/30 text-[#E87524]'
+                                  }`}>
+                                  #{index + 1}
+                                </span>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-800">{meta.titleAr}</span>
+                                    <span className="text-[10px] text-stone-400 font-medium">({meta.titleFr})</span>
+                                    {isHidden && (
+                                      <span className="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">
+                                        مخفي من الطباعة
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-stone-500 mt-0.5">{meta.desc}</p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Toggle Visible/Hidden */}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleKitchenBlockVisibility(blockId)}
+                                  className={`p-1.5 rounded-lg border flex items-center gap-1 text-xs font-bold cursor-pointer transition-all ${!isHidden
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                      : 'bg-white text-stone-400 border-stone-300 hover:bg-stone-100'
+                                    }`}
+                                  title={isHidden ? 'إظهار هذا القسم في بون المطبخ' : 'إخفاء هذا القسم مؤقتاً'}
+                                >
+                                  {!isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                  <span className="text-[10px] hidden sm:inline">{!isHidden ? 'ظاهر' : 'مخفي'}</span>
+                                </button>
+
+                                {/* Move Up */}
+                                <button
+                                  type="button"
+                                  onClick={() => moveKitchenBlock(index, 'up')}
+                                  disabled={index === 0}
+                                  className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
+                                  title="تقديم للأعلى"
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+
+                                {/* Move Down */}
+                                <button
+                                  type="button"
+                                  onClick={() => moveKitchenBlock(index, 'down')}
+                                  disabled={index === currentBlocks.length - 1}
+                                  className="p-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-stone-600 disabled:opacity-30 cursor-pointer shadow-2xs transition-all"
+                                  title="تنزيل للأسفل"
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
+
+                                {/* Delete / Remove from Kitchen Ticket */}
+                                <button
+                                  type="button"
+                                  onClick={() => removeKitchenBlock(blockId)}
+                                  className="p-1.5 rounded-lg bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 hover:text-rose-700 cursor-pointer shadow-2xs transition-all"
+                                  title="حذف هذا القسم من بون المطبخ"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })
-                )}
-              </div>
+
+                      {/* Deleted / Available Kitchen Blocks */}
+                      {deletedBlocks.length > 0 && (
+                        <div className="p-4 bg-orange-50/50 rounded-2xl border border-orange-200/80 space-y-3 animate-in fade-in duration-150">
+                          <div className="flex items-center justify-between border-b border-orange-200/60 pb-2">
+                            <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                              <PlusCircle className="w-4 h-4 text-[#E87524]" />
+                              <span>أقسام محذوفة متوفرة للإضافة إلى بون المطبخ :</span>
+                            </span>
+                            <span className="text-[10px] text-stone-500 font-medium">
+                              اضغط على زر الإضافة لإعادة أي قسم للبون
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {deletedBlocks.map(blockId => {
+                              const meta = KITCHEN_BLOCK_META[blockId] || { titleAr: blockId, titleFr: blockId, desc: '' };
+                              return (
+                                <div
+                                  key={blockId}
+                                  className="p-3 bg-white rounded-xl border border-orange-200/60 flex items-center justify-between gap-2 shadow-2xs"
+                                >
+                                  <div>
+                                    <div className="text-xs font-bold text-stone-800">{meta.titleAr}</div>
+                                    <div className="text-[10px] text-stone-400 font-medium">{meta.titleFr}</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => addKitchenBlock(blockId)}
+                                    className="px-2.5 py-1.5 bg-[#FFF3EB] hover:bg-[#FFE6D4] text-[#E87524] border border-[#E87524]/40 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-all shadow-2xs"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>إضافة للبون</span>
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
             </div>
           )}
 
@@ -957,14 +1260,14 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
           {/* SOUS-PANNEAU B : TYPOGRAPHIE & TAILLES DE POLICES GRANULAIRES           */}
           {/* ----------------------------------------------------------------------- */}
           {activeSubTab === 'typography' && (
-            <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-5">
+            <div className="bg-white rounded-2xl border border-[#E9DCCB] p-5 shadow-xs space-y-6">
               <div className="flex items-center justify-between border-b border-[#E9DCCB]/60 pb-3">
                 <div className="flex items-center gap-2">
                   <Type className="w-4 h-4 text-[#E87524]" />
                   <h3 className="font-bold text-[#292522] text-sm">
                     {activeTab === 'customer'
-                      ? 'التحكم الدقيق في أحجام خطوط تيكيت الزبون'
-                      : 'التحكم الدقيق في أحجام خطوط بون الطباخ'}
+                      ? 'التحكم الدقيق في أحجام خطوط تيكيت الزبون والإضافات'
+                      : 'التحكم الدقيق في أحجام خطوط بون الطباخ والإضافات'}
                   </h3>
                 </div>
                 <span className="text-[11px] text-stone-500 font-medium">
@@ -974,153 +1277,276 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
 
               {activeTab === 'customer' ? (
                 // Typographie Client
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <FontSizeControl
-                    labelAr="حجم الخط الأساسي للتيكيت"
-                    labelFr="Taille de Police Générale"
-                    value={customerConfig.baseFontSize || 11}
-                    min={9}
-                    max={15}
-                    onChange={v => updateCustomerField('baseFontSize', v)}
-                  />
+                <div className="space-y-4">
+                  {/* قسم خاص وبارز للتحكم في حجم خط الإضافات */}
+                  <div className="p-4 bg-gradient-to-br from-[#FFF9F2] to-[#FFF1E3] rounded-2xl border-2 border-[#E87524]/40 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-[#E87524]/20 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-[#E87524]" />
+                        <span className="text-xs font-black text-stone-800">
+                          حجم خط الإضافات والزيادات (Taille des Suppléments & Extras) :
+                        </span>
+                      </div>
+                      <span className="text-[10px] bg-[#E87524] text-white px-2 py-0.5 rounded-full font-bold">
+                        تعديل فوري للوضوح
+                      </span>
+                    </div>
 
-                  <FontSizeControl
-                    labelAr="حجم خط عنوان المحل الرئيسي"
-                    labelFr="Titre d'En-tête (Nom de Marque)"
-                    value={customerConfig.headerTitleFontSize || 19}
-                    min={13}
-                    max={28}
-                    onChange={v => updateCustomerField('headerTitleFontSize', v)}
-                  />
-
-                  <FontSizeControl
-                    labelAr="حجم خط رقم الطلب (#42)"
-                    labelFr="Numéro de Commande"
-                    value={customerConfig.orderNumberFontSize || 20}
-                    min={14}
-                    max={34}
-                    onChange={v => updateCustomerField('orderNumberFontSize', v)}
-                  />
-
-                  <FontSizeControl
-                    labelAr="حجم خط أسماء البيتزا والوجبات"
-                    labelFr="Noms des Pizzas & Articles"
-                    value={customerConfig.itemTitleFontSize || 11}
-                    min={9}
-                    max={18}
-                    onChange={v => updateCustomerField('itemTitleFontSize', v)}
-                  />
-
-                  <FontSizeControl
-                    labelAr="حجم خط المجموع الإجمالي النهائي"
-                    labelFr="Grand Total Net à Payer"
-                    value={customerConfig.totalPriceFontSize || 14}
-                    min={11}
-                    max={24}
-                    onChange={v => updateCustomerField('totalPriceFontSize', v)}
-                  />
-
-                  <FontSizeControl
-                    labelAr="حجم خط الإضافات وملاحظات الطبخ"
-                    labelFr="Suppléments & Notes d'articles"
-                    value={customerConfig.notesFontSize || 9.5}
-                    min={8}
-                    max={14}
-                    onChange={v => updateCustomerField('notesFontSize', v)}
-                  />
-
-                  <div className="sm:col-span-2">
                     <FontSizeControl
-                      labelAr="حجم خط تذييل التيكيت وعبارات الشكر"
-                      labelFr="Pied de Ticket & Messages"
-                      value={customerConfig.footerFontSize || 9.5}
+                      labelAr="تكبير أو تصغير حجم الإضافات على التيكيت"
+                      labelFr="Taille de Police des Suppléments (+ AJOUTER)"
+                      value={customerConfig.supplementsFontSize || 12}
                       min={8}
-                      max={14}
-                      onChange={v => updateCustomerField('footerFontSize', v)}
+                      max={24}
+                      step={0.5}
+                      onChange={v => updateCustomerField('supplementsFontSize', v)}
                     />
+
+                    {/* Quick Presets for supplements */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E87524]/20">
+                      <span className="text-[11px] font-bold text-stone-700">مقاسات سريعة جاهزة :</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          { sz: 9.5, label: 'صغير ومدمج (9.5px)' },
+                          { sz: 12, label: 'قياسي مناسب (12px)' },
+                          { sz: 14.5, label: 'كبير وواضح جداً (14.5px)' },
+                          { sz: 17.5, label: 'بارز وضخم للطباعة (17.5px)' }
+                        ].map(p => (
+                          <button
+                            key={p.sz}
+                            type="button"
+                            onClick={() => updateCustomerField('supplementsFontSize', p.sz)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${(customerConfig.supplementsFontSize || 12) === p.sz
+                                ? 'bg-[#E87524] text-white border-[#E87524] shadow-xs'
+                                : 'bg-white text-stone-700 border-[#E9DCCB] hover:bg-stone-50'
+                              }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Autres tailles */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <FontSizeControl
+                      labelAr="حجم الخط الأساسي للتيكيت"
+                      labelFr="Taille de Police Générale"
+                      value={customerConfig.baseFontSize || 11}
+                      min={9}
+                      max={15}
+                      onChange={v => updateCustomerField('baseFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط عنوان المحل الرئيسي"
+                      labelFr="Titre d'En-tête (Nom de Marque)"
+                      value={customerConfig.headerTitleFontSize || 19}
+                      min={13}
+                      max={28}
+                      onChange={v => updateCustomerField('headerTitleFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط رقم الطلب (#42)"
+                      labelFr="Numéro de Commande"
+                      value={customerConfig.orderNumberFontSize || 20}
+                      min={14}
+                      max={34}
+                      onChange={v => updateCustomerField('orderNumberFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط أسماء البيتزا والوجبات"
+                      labelFr="Noms des Pizzas & Articles"
+                      value={customerConfig.itemTitleFontSize || 11}
+                      min={9}
+                      max={18}
+                      onChange={v => updateCustomerField('itemTitleFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط المجموع الإجمالي النهائي"
+                      labelFr="Grand Total Net à Payer"
+                      value={customerConfig.totalPriceFontSize || 14}
+                      min={11}
+                      max={24}
+                      onChange={v => updateCustomerField('totalPriceFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط ملاحظات المواد والطبخ"
+                      labelFr="Notes & Instructions d'articles"
+                      value={customerConfig.notesFontSize || 9.5}
+                      min={8}
+                      max={16}
+                      onChange={v => updateCustomerField('notesFontSize', v)}
+                    />
+
+                    <div className="sm:col-span-2">
+                      <FontSizeControl
+                        labelAr="حجم خط تذييل التيكيت وعبارات الشكر"
+                        labelFr="Pied de Ticket & Messages"
+                        value={customerConfig.footerFontSize || 9.5}
+                        min={8}
+                        max={14}
+                        onChange={v => updateCustomerField('footerFontSize', v)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mise en valeur des suppléments */}
+                  <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 space-y-2">
+                    <label className="text-xs font-bold text-stone-800 block">
+                      شكل وتمييز الإضافات على التيكيت (Style d'Affichage des Suppléments) :
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'standard', label: 'عادي (نص واضح)', desc: '+ Supplément : Fromage' },
+                        { id: 'boxed', label: 'داخل إطار منقط (Encadré)', desc: 'محدد ومحاط بمربع' },
+                        { id: 'badge', label: 'شارة بارزة (Badge)', desc: 'إطار صلب ملفت للنظر' },
+                        { id: 'underline', label: 'تحته خط (Souligné)', desc: 'خط سفلي تحت الإضافة' }
+                      ].map(st => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => updateCustomerField('supplementsHighlight', st.id as any)}
+                          className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${(customerConfig.supplementsHighlight || 'standard') === st.id
+                              ? 'bg-[#FFF3EB] border-[#E87524] ring-2 ring-[#E87524]/20'
+                              : 'bg-white border-stone-200 hover:bg-stone-50'
+                            }`}
+                        >
+                          <span className="text-xs font-black text-stone-800 block">{st.label}</span>
+                          <span className="text-[10px] text-stone-500">{st.desc}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ) : (
-                // Typographie Cuisine (Spécifique pour distance de lecture du Chef)
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <FontSizeControl
-                    labelAr="حجم خط رقم الطلب للطباخ (بارز جداً)"
-                    labelFr="N° Commande Cuisine (Lecture à distance)"
-                    value={kitchenConfig.orderNumberFontSize || 24}
-                    min={18}
-                    max={40}
-                    onChange={v => updateKitchenField('orderNumberFontSize', v)}
-                  />
+                // Typographie Cuisine
+                <div className="space-y-4">
+                  {/* قسم خاص لحجم إضافات الطباخ */}
+                  <div className="p-4 bg-gradient-to-br from-[#FFF9F2] to-[#FFF1E3] rounded-2xl border-2 border-[#E87524]/40 space-y-3 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-[#E87524]/20 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-[#E87524]" />
+                        <span className="text-xs font-black text-stone-800">
+                          حجم خط الإضافات في بون الطباخ (+ AJOUTER) :
+                        </span>
+                      </div>
+                      <span className="text-[10px] bg-[#E87524] text-white px-2 py-0.5 rounded-full font-bold">
+                        رؤية واضحة للطباخ
+                      </span>
+                    </div>
 
-                  <FontSizeControl
-                    labelAr="حجم خط الكمية (مثال: 2x, 3x)"
-                    labelFr="Taille des Quantités (2x, 3x)"
-                    value={kitchenConfig.itemQuantityFontSize || 16}
-                    min={12}
-                    max={30}
-                    onChange={v => updateKitchenField('itemQuantityFontSize', v)}
-                  />
+                    <FontSizeControl
+                      labelAr="حجم خط الإضافات المطلوب وضعها في البيتزا"
+                      labelFr="Suppléments à Ajouter (+ AJOUTER)"
+                      value={kitchenConfig.supplementsFontSize || 12.5}
+                      min={9}
+                      max={28}
+                      step={0.5}
+                      onChange={v => updateKitchenField('supplementsFontSize', v)}
+                    />
 
-                  <FontSizeControl
-                    labelAr="حجم خط أسماء البيتزا للطهي"
-                    labelFr="Nom des Pizzas pour le Pizzaiolo"
-                    value={kitchenConfig.itemTitleFontSize || 13.5}
-                    min={11}
-                    max={22}
-                    onChange={v => updateKitchenField('itemTitleFontSize', v)}
-                  />
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E87524]/20">
+                      <span className="text-[11px] font-bold text-stone-700">مقاسات سريعة للطاهي :</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {[
+                          { sz: 10.5, label: 'مدمج (10.5px)' },
+                          { sz: 12.5, label: 'واضح (12.5px)' },
+                          { sz: 16, label: 'كبير (16px)' },
+                          { sz: 20, label: 'بارز جداً (20px)' }
+                        ].map(p => (
+                          <button
+                            key={p.sz}
+                            type="button"
+                            onClick={() => updateKitchenField('supplementsFontSize', p.sz)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${(kitchenConfig.supplementsFontSize || 12.5) === p.sz
+                                ? 'bg-[#E87524] text-white border-[#E87524] shadow-xs'
+                                : 'bg-white text-stone-700 border-[#E9DCCB] hover:bg-stone-50'
+                              }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
 
-                  <FontSizeControl
-                    labelAr="حجم خط نوع الطلب (صالة / سفري / توصيل)"
-                    labelFr="Type de Commande (SUR PLACE / EMPORTER)"
-                    value={kitchenConfig.orderTypeFontSize || 12}
-                    min={10}
-                    max={20}
-                    onChange={v => updateKitchenField('orderTypeFontSize', v)}
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <FontSizeControl
+                      labelAr="حجم خط رقم الطلب للطباخ (بارز جداً)"
+                      labelFr="N° Commande Cuisine (Lecture à distance)"
+                      value={kitchenConfig.orderNumberFontSize || 24}
+                      min={18}
+                      max={40}
+                      onChange={v => updateKitchenField('orderNumberFontSize', v)}
+                    />
 
-                  <FontSizeControl
-                    labelAr="حجم خط الإضافات المطلوب وضعها"
-                    labelFr="Suppléments à Ajouter (+ AJOUTER)"
-                    value={kitchenConfig.supplementsFontSize || 10.5}
-                    min={9}
-                    max={18}
-                    onChange={v => updateKitchenField('supplementsFontSize', v)}
-                  />
+                    <FontSizeControl
+                      labelAr="حجم خط الكمية (مثال: 2x, 3x)"
+                      labelFr="Taille des Quantités (2x, 3x)"
+                      value={kitchenConfig.itemQuantityFontSize || 16}
+                      min={12}
+                      max={30}
+                      onChange={v => updateKitchenField('itemQuantityFontSize', v)}
+                    />
 
-                  <FontSizeControl
-                    labelAr="حجم خط تعليمات وملاحظات الطبخ"
-                    labelFr="Notes de Cuisson (* NOTE : Bien cuite)"
-                    value={kitchenConfig.cookingNotesFontSize || 9.5}
-                    min={8}
-                    max={16}
-                    onChange={v => updateKitchenField('cookingNotesFontSize', v)}
-                  />
+                    <FontSizeControl
+                      labelAr="حجم خط أسماء البيتزا للطهي"
+                      labelFr="Nom des Pizzas pour le Pizzaiolo"
+                      value={kitchenConfig.itemTitleFontSize || 13.5}
+                      min={11}
+                      max={22}
+                      onChange={v => updateKitchenField('itemTitleFontSize', v)}
+                    />
 
-                  <FontSizeControl
-                    labelAr="حجم خط عنوان بون المطبخ"
-                    labelFr="Titre d'En-tête Bon Cuisine"
-                    value={kitchenConfig.headerTitleFontSize || 10}
-                    min={8}
-                    max={16}
-                    onChange={v => updateKitchenField('headerTitleFontSize', v)}
-                  />
+                    <FontSizeControl
+                      labelAr="حجم خط نوع الطلب (صالة / سفري / توصيل)"
+                      labelFr="Type de Commande (SUR PLACE / EMPORTER)"
+                      value={kitchenConfig.orderTypeFontSize || 12}
+                      min={10}
+                      max={20}
+                      onChange={v => updateKitchenField('orderTypeFontSize', v)}
+                    />
 
-                  <FontSizeControl
-                    labelAr="حجم خط معلومات الوقت والنادل"
-                    labelFr="Heure de Commande & Serveur"
-                    value={kitchenConfig.serviceInfoFontSize || 9.5}
-                    min={8}
-                    max={14}
-                    onChange={v => updateKitchenField('serviceInfoFontSize', v)}
-                  />
+                    <FontSizeControl
+                      labelAr="حجم خط تعليمات وملاحظات الطبخ"
+                      labelFr="Notes de Cuisson (* NOTE : Bien cuite)"
+                      value={kitchenConfig.cookingNotesFontSize || 9.5}
+                      min={8}
+                      max={16}
+                      onChange={v => updateKitchenField('cookingNotesFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط عنوان بون المطبخ"
+                      labelFr="Titre d'En-tête Bon Cuisine"
+                      value={kitchenConfig.headerTitleFontSize || 10}
+                      min={8}
+                      max={16}
+                      onChange={v => updateKitchenField('headerTitleFontSize', v)}
+                    />
+
+                    <FontSizeControl
+                      labelAr="حجم خط معلومات الوقت والنادل"
+                      labelFr="Heure de Commande & Serveur"
+                      value={kitchenConfig.serviceInfoFontSize || 9.5}
+                      min={8}
+                      max={14}
+                      onChange={v => updateKitchenField('serviceInfoFontSize', v)}
+                    />
+                  </div>
                 </div>
               )}
 
               {/* Toggles texte gras (Bold) */}
               <div className="pt-3 border-t border-stone-200">
-                <span className="text-xs font-bold text-stone-700 block mb-2">تغميق الخطوط (Gras / Bold) :</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <span className="text-xs font-bold text-stone-700 block mb-2">تغميق الخطوط واللون الأسود الداكن (Gras / Bold) :</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {activeTab === 'customer' ? (
                     <>
                       <label className="flex items-center justify-between p-3 bg-stone-50 hover:bg-orange-50/40 rounded-xl border border-stone-200 cursor-pointer">
@@ -1149,6 +1575,19 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           type="checkbox"
                           checked={customerConfig.boldTotals}
                           onChange={e => updateCustomerField('boldTotals', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-3 bg-amber-50/80 hover:bg-amber-100/60 rounded-xl border border-amber-300 cursor-pointer">
+                        <div>
+                          <span className="text-xs font-black text-amber-950 block">الإضافات بالخط العريض</span>
+                          <span className="text-[9px] text-amber-800">أسود داكن واضح للطباعة</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={customerConfig.boldSupplements !== false}
+                          onChange={e => updateCustomerField('boldSupplements', e.target.checked)}
                           className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
                         />
                       </label>
@@ -1181,6 +1620,19 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           type="checkbox"
                           checked={kitchenConfig.uppercaseItemNames}
                           onChange={e => updateKitchenField('uppercaseItemNames', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-3 bg-amber-50/80 hover:bg-amber-100/60 rounded-xl border border-amber-300 cursor-pointer">
+                        <div>
+                          <span className="text-xs font-black text-amber-950 block">الإضافات بالخط العريض</span>
+                          <span className="text-[9px] text-amber-800">تسهيل القراءة للطاهي</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={kitchenConfig.boldSupplements !== false}
+                          onChange={e => updateKitchenField('boldSupplements', e.target.checked)}
                           className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
                         />
                       </label>
@@ -1223,11 +1675,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={tst.id}
                           type="button"
                           onClick={() => updateCustomerField('totalStyle', tst.id as any)}
-                          className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
-                            (customerConfig.totalStyle || 'standard') === tst.id
+                          className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${(customerConfig.totalStyle || 'standard') === tst.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs ring-2 ring-[#E87524]/20'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           <span className="text-xs font-bold block">{tst.label}</span>
                           <span className="text-[10px] text-stone-400 block mt-0.5">{tst.desc}</span>
@@ -1250,11 +1701,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={st.id}
                           type="button"
                           onClick={() => updateCustomerField('orderNumberStyle', st.id as any)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            customerConfig.orderNumberStyle === st.id
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${customerConfig.orderNumberStyle === st.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {st.label}
                         </button>
@@ -1277,11 +1727,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={sep.id}
                           type="button"
                           onClick={() => updateCustomerField('itemsSeparatorStyle', sep.id as any)}
-                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            customerConfig.itemsSeparatorStyle === sep.id
+                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${customerConfig.itemsSeparatorStyle === sep.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {sep.label}
                         </button>
@@ -1306,11 +1755,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                               key={al.id}
                               type="button"
                               onClick={() => updateCustomerField('logoAlignment', al.id as any)}
-                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                                isSel
+                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${isSel
                                   ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524]'
                                   : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                              }`}
+                                }`}
                             >
                               <Icon className="w-3.5 h-3.5" />
                               <span>{al.label}</span>
@@ -1334,11 +1782,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                               key={al.id}
                               type="button"
                               onClick={() => updateCustomerField('headerAlignment', al.id as any)}
-                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                                customerConfig.headerAlignment === al.id
+                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${customerConfig.headerAlignment === al.id
                                   ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524]'
                                   : 'bg-stone-50 border-stone-200 text-stone-600'
-                              }`}
+                                }`}
                             >
                               <Icon className="w-3.5 h-3.5" />
                               <span>{al.label}</span>
@@ -1362,11 +1809,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                               key={al.id}
                               type="button"
                               onClick={() => updateCustomerField('footerAlignment', al.id as any)}
-                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                                customerConfig.footerAlignment === al.id
+                              className={`py-2 px-1 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${customerConfig.footerAlignment === al.id
                                   ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524]'
                                   : 'bg-stone-50 border-stone-200 text-stone-600'
-                              }`}
+                                }`}
                             >
                               <Icon className="w-3.5 h-3.5" />
                               <span>{al.label}</span>
@@ -1393,11 +1839,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={qst.id}
                           type="button"
                           onClick={() => updateKitchenField('itemQuantityStyle', qst.id as any)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            kitchenConfig.itemQuantityStyle === qst.id
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${kitchenConfig.itemQuantityStyle === qst.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {qst.label}
                         </button>
@@ -1418,11 +1863,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={sh.id}
                           type="button"
                           onClick={() => updateKitchenField('supplementsHighlight', sh.id as any)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            kitchenConfig.supplementsHighlight === sh.id
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${kitchenConfig.supplementsHighlight === sh.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {sh.label}
                         </button>
@@ -1443,11 +1887,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={nh.id}
                           type="button"
                           onClick={() => updateKitchenField('notesHighlight', nh.id as any)}
-                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            kitchenConfig.notesHighlight === nh.id
+                          className={`p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${kitchenConfig.notesHighlight === nh.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {nh.label}
                         </button>
@@ -1469,11 +1912,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={sep.id}
                           type="button"
                           onClick={() => updateKitchenField('itemSeparatorStyle', sep.id as any)}
-                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                            kitchenConfig.itemSeparatorStyle === sep.id
+                          className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${kitchenConfig.itemSeparatorStyle === sep.id
                               ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-2xs'
                               : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                          }`}
+                            }`}
                         >
                           {sep.label}
                         </button>
@@ -1493,11 +1935,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           key={lines}
                           type="button"
                           onClick={() => updateKitchenField('bottomSpacingLines', lines)}
-                          className={`w-8 h-8 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                            kitchenConfig.bottomSpacingLines === lines
+                          className={`w-8 h-8 rounded-lg border text-xs font-bold transition-all cursor-pointer ${kitchenConfig.bottomSpacingLines === lines
                               ? 'bg-[#E87524] text-white border-[#E87524]'
                               : 'bg-stone-50 border-stone-200 text-stone-600'
-                          }`}
+                            }`}
                         >
                           {lines}
                         </button>
@@ -1539,24 +1980,50 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[11px] font-bold text-stone-700 mb-1">اسم المحل الرئيسي (العنوان الكبير)</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-stone-700">اسم المحل الرئيسي (العنوان الكبير)</label>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <span className="text-[10px] text-stone-500">إظهار</span>
+                            <input
+                              type="checkbox"
+                              checked={customerConfig.showHeaderTitle ?? true}
+                              onChange={e => updateCustomerField('showHeaderTitle', e.target.checked)}
+                              className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                              title="إظهار/إخفاء اسم المحل الرئيسي من التيكيت"
+                            />
+                          </label>
+                        </div>
                         <input
                           type="text"
+                          disabled={customerConfig.showHeaderTitle === false}
                           value={customerConfig.headerTitle}
                           onChange={e => updateCustomerField('headerTitle', e.target.value)}
                           placeholder="AQUADRO"
-                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-black text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-black text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none disabled:opacity-40 disabled:bg-stone-100"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-stone-700 mb-1">العنوان الفرعي / التخصص (Sous-titre)</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-stone-700">العنوان الفرعي / التخصص (Sous-titre)</label>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <span className="text-[10px] text-stone-500">إظهار</span>
+                            <input
+                              type="checkbox"
+                              checked={customerConfig.showHeaderSubtitle ?? true}
+                              onChange={e => updateCustomerField('showHeaderSubtitle', e.target.checked)}
+                              className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                              title="إظهار/إخفاء العنوان الفرعي"
+                            />
+                          </label>
+                        </div>
                         <input
                           type="text"
+                          disabled={customerConfig.showHeaderSubtitle === false}
                           value={customerConfig.headerSubtitle || ''}
                           onChange={e => updateCustomerField('headerSubtitle', e.target.value)}
                           placeholder="Pizzeria & Fast-Food Gourmet"
-                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none disabled:opacity-40 disabled:bg-stone-100"
                         />
                       </div>
                     </div>
@@ -1586,13 +2053,26 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-stone-700 mb-1">رسالة الترحيب في الرأس</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-bold text-stone-700">رسالة الترحيب في الرأس</label>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <span className="text-[10px] text-stone-500">إظهار</span>
+                            <input
+                              type="checkbox"
+                              checked={customerConfig.showWelcomeMessage ?? true}
+                              onChange={e => updateCustomerField('showWelcomeMessage', e.target.checked)}
+                              className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                              title="إظهار/إخفاء رسالة الترحيب"
+                            />
+                          </label>
+                        </div>
                         <input
                           type="text"
+                          disabled={customerConfig.showWelcomeMessage === false}
                           value={customerConfig.headerWelcomeMessage || ''}
                           onChange={e => updateCustomerField('headerWelcomeMessage', e.target.value)}
                           placeholder="أهلاً وسهلاً بكم • Bienvenue chez nous"
-                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none disabled:opacity-40 disabled:bg-stone-100"
                         />
                       </div>
                     </div>
@@ -1634,11 +2114,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                                     key={al.id}
                                     type="button"
                                     onClick={() => updateCustomerField('logoAlignment', al.id as any)}
-                                    className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                                      isSelected
+                                    className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${isSelected
                                         ? 'bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs'
                                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
-                                    }`}
+                                      }`}
                                   >
                                     <Icon className="w-3.5 h-3.5" />
                                     <span>{al.label}</span>
@@ -2052,11 +2531,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                               key={sym}
                               type="button"
                               onClick={() => updateCustomerField('currencySymbol', sym)}
-                              className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                                (customerConfig.currencySymbol || 'DZD') === sym
+                              className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${(customerConfig.currencySymbol || 'DZD') === sym
                                   ? 'bg-[#E87524] text-white border-[#E87524]'
                                   : 'bg-white border-stone-200 text-stone-700'
-                              }`}
+                                }`}
                             >
                               {sym}
                             </button>
@@ -2070,22 +2548,20 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           <button
                             type="button"
                             onClick={() => updateCustomerField('currencyPosition', 'after')}
-                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                              (customerConfig.currencyPosition || 'after') === 'after'
+                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${(customerConfig.currencyPosition || 'after') === 'after'
                                 ? 'bg-[#E87524] text-white border-[#E87524]'
                                 : 'bg-white border-stone-200 text-stone-700'
-                            }`}
+                              }`}
                           >
                             بعد الرقم (1500 DZD)
                           </button>
                           <button
                             type="button"
                             onClick={() => updateCustomerField('currencyPosition', 'before')}
-                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
-                              customerConfig.currencyPosition === 'before'
+                            className={`py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${customerConfig.currencyPosition === 'before'
                                 ? 'bg-[#E87524] text-white border-[#E87524]'
                                 : 'bg-white border-stone-200 text-stone-700'
-                            }`}
+                              }`}
                           >
                             قبل الرقم (DZD 1500)
                           </button>
@@ -2174,6 +2650,21 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                           />
                         )}
                       </div>
+
+                      <div className="space-y-1 col-span-1 sm:col-span-2 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/80">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-black text-amber-950">المجموع النهائي الكبير (TOTAL TTC)</label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <span className="text-[10px] font-bold text-amber-700">إظهار المجموع الكلي</span>
+                            <input
+                              type="checkbox"
+                              checked={customerConfig.showGrandTotal ?? true}
+                              onChange={e => updateCustomerField('showGrandTotal', e.target.checked)}
+                              className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                            />
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -2213,9 +2704,8 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
                       </div>
 
                       <div className="flex items-end">
-                        <label className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
-                          !customerConfig.showPaymentMethod ? 'opacity-50 bg-stone-100 border-stone-200' : 'bg-white border-stone-200 hover:border-orange-200'
-                        }`}>
+                        <label className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${!customerConfig.showPaymentMethod ? 'opacity-50 bg-stone-100 border-stone-200' : 'bg-white border-stone-200 hover:border-orange-200'
+                          }`}>
                           <div>
                             <span className="text-[11px] font-bold text-stone-700 block">إظهار المقبوض والباقي المردود</span>
                             <span className="text-[9.5px] text-stone-400">Montant reçu & Monnaie rendue (Espèces)</span>
@@ -2319,56 +2809,247 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
 
                     {/* Lignes de remerciements & politique */}
                     <div className="space-y-2 pt-2 border-t border-stone-200/60">
-                      <span className="text-xs font-bold text-stone-700 block">رسائل الشكر وسياسة المحل :</span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-700 block">رسائل الشكر وسياسة المحل :</span>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <span className="text-[10px] font-bold text-stone-600">إظهار أسطر الشكر</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showFooterLines ?? true}
+                            onChange={e => updateCustomerField('showFooterLines', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+                      </div>
+                      <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 transition-opacity ${customerConfig.showFooterLines === false ? 'opacity-40' : ''}`}>
                         <input
                           type="text"
+                          disabled={customerConfig.showFooterLines === false}
                           value={customerConfig.footerLine1}
                           onChange={e => updateCustomerField('footerLine1', e.target.value)}
                           placeholder="Merci pour votre visite !"
-                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none disabled:bg-stone-100"
                         />
                         <input
                           type="text"
+                          disabled={customerConfig.showFooterLines === false}
                           value={customerConfig.footerLine2}
                           onChange={e => updateCustomerField('footerLine2', e.target.value)}
                           placeholder="À bientôt • Aquadro POS"
-                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none disabled:bg-stone-100"
                         />
                       </div>
                       <input
                         type="text"
+                        disabled={customerConfig.showFooterLines === false}
                         value={customerConfig.footerLine3}
                         onChange={e => updateCustomerField('footerLine3', e.target.value)}
                         placeholder="صحة وهنا - زورونا مجدداً"
-                        className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none"
+                        className={`w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none disabled:bg-stone-100 ${customerConfig.showFooterLines === false ? 'opacity-40' : ''}`}
                         dir="rtl"
                       />
                       <input
                         type="text"
+                        disabled={customerConfig.showFooterLines === false}
+                        value={customerConfig.footerLine4 || ''}
+                        onChange={e => updateCustomerField('footerLine4', e.target.value)}
+                        placeholder="السطر الرابع: خدمات التوصيل السريع متاحة يومياً"
+                        className={`w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-[#292522] focus:outline-none disabled:bg-stone-100 ${customerConfig.showFooterLines === false ? 'opacity-40' : ''}`}
+                        dir="rtl"
+                      />
+                      <input
+                        type="text"
+                        disabled={customerConfig.showFooterLines === false}
+                        value={customerConfig.thankYouMessageAr || ''}
+                        onChange={e => updateCustomerField('thankYouMessageAr', e.target.value)}
+                        placeholder="رسالة شكر بالعربية: شكراً لثقتكم وزيارتكم الكريمة"
+                        className={`w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#E87524] focus:outline-none disabled:bg-stone-100 ${customerConfig.showFooterLines === false ? 'opacity-40' : ''}`}
+                        dir="rtl"
+                      />
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[11px] font-bold text-stone-600">نص السياسة والملاحظات الإضافية :</span>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <span className="text-[10px] text-stone-500">إظهار</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showFooterPolicy ?? true}
+                            onChange={e => updateCustomerField('showFooterPolicy', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        disabled={customerConfig.showFooterPolicy === false}
                         value={customerConfig.footerPolicy || ''}
                         onChange={e => updateCustomerField('footerPolicy', e.target.value)}
                         placeholder="الشكاوى مقبولة في أجل 30 دقيقة • تذوق طيب وشكراً لوفائكم"
-                        className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-600 focus:outline-none italic"
+                        className={`w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs text-stone-600 focus:outline-none italic disabled:bg-stone-100 ${customerConfig.showFooterPolicy === false ? 'opacity-40' : ''}`}
                         dir="rtl"
                       />
+
+                      {/* Options supplémentaires pour articles et coupe */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-stone-200/60">
+                        <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                          <span className="text-[11px] font-bold text-stone-700">إظهار خط قص التيكيت ✂</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showCutLine ?? true}
+                            onChange={e => updateCustomerField('showCutLine', e.target.checked)}
+                            className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                          <span className="text-[11px] font-bold text-stone-700">إظهار إجمالي عدد القطع</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showTotalItemsCount ?? true}
+                            onChange={e => updateCustomerField('showTotalItemsCount', e.target.checked)}
+                            className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                          <span className="text-[11px] font-bold text-stone-700">مكونات البيتزا الأساسية</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showBaseIngredients ?? false}
+                            onChange={e => updateCustomerField('showBaseIngredients', e.target.checked)}
+                            className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                          <span className="text-[11px] font-bold text-stone-700">رأس جدول الأصناف</span>
+                          <input
+                            type="checkbox"
+                            checked={customerConfig.showItemTableHeader ?? true}
+                            onChange={e => updateCustomerField('showItemTableHeader', e.target.checked)}
+                            className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="pt-2">
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          تخصيص نص ملصق المجموع النهائي (Ex: TOTAL À PAYER)
+                        </label>
+                        <input
+                          type="text"
+                          value={customerConfig.totalLabelCustom || ''}
+                          onChange={e => updateCustomerField('totalLabelCustom', e.target.value)}
+                          placeholder="TOTAL À PAYER :"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
               ) : (
-                // Contenu Cuisine
+                // Contenu Cuisine Complet & Ultra-Personnalisable
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-stone-700 mb-1">
-                      عنوان شارة بون المطبخ
-                    </label>
-                    <input
-                      type="text"
-                      value={kitchenConfig.headerTitle}
-                      onChange={e => updateKitchenField('headerTitle', e.target.value)}
-                      placeholder="BON DE CUISINE • PIZZAIOLO"
-                      className="w-full px-3.5 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-stone-700">
+                          عنوان شارة بون المطبخ
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <span className="text-[10px] text-stone-500">إظهار الشارة</span>
+                          <input
+                            type="checkbox"
+                            checked={kitchenConfig.showTicketTitle}
+                            onChange={e => updateKitchenField('showTicketTitle', e.target.checked)}
+                            className="w-3.5 h-3.5 accent-[#E87524] rounded cursor-pointer"
+                            title="إظهار أو حذف شارة العنوان في بون المطبخ"
+                          />
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        disabled={!kitchenConfig.showTicketTitle}
+                        value={kitchenConfig.headerTitle}
+                        onChange={e => updateKitchenField('headerTitle', e.target.value)}
+                        placeholder="اتركه فارغاً لحذف الشارة بالكامل"
+                        className="w-full px-3.5 py-2 bg-[#FFF8EF]/50 border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:ring-2 focus:ring-[#E87524] focus:outline-none disabled:opacity-40 disabled:bg-stone-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 mb-1">
+                        نمط إطار رأس بون المطبخ
+                      </label>
+                      <select
+                        value={kitchenConfig.chefHeaderStyle || 'bordered'}
+                        onChange={e => updateKitchenField('chefHeaderStyle', e.target.value as any)}
+                        className="w-full px-3 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none cursor-pointer"
+                      >
+                        <option value="bordered">إطار كلاسيكي أنيق (Encadré Classique)</option>
+                        <option value="banner">بانر أسود داكن عريض (Bannière Noire Chef)</option>
+                        <option value="clean">خط سفلي نظيف وبسيط (Ligne Simple)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Section Numéro de table géant & Réimpression */}
+                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-3">
+                    <span className="text-xs font-bold text-stone-800 block">خيارات الطاولة وإعادة الطباعة السريعة :</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <div>
+                          <span className="text-xs font-bold text-stone-700 block">إبراز رقم الطاولة بشكل عملاق للطباخ</span>
+                          <span className="text-[10px] text-stone-400">بانر أسود عريض: TABLE 4</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={kitchenConfig.showTableNumberProminent ?? true}
+                          onChange={e => updateKitchenField('showTableNumberProminent', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-stone-200 cursor-pointer">
+                        <div>
+                          <span className="text-xs font-bold text-stone-700 block">شارة تنبيهية عند إعادة الطباعة</span>
+                          <span className="text-[10px] text-stone-400">*** RÉIMPRESSION / DUPLICATA ***</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={kitchenConfig.showReprintIndicator ?? true}
+                          onChange={e => updateKitchenField('showReprintIndicator', e.target.checked)}
+                          className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          كلمة الطاولة المطبوعة
+                        </label>
+                        <input
+                          type="text"
+                          value={kitchenConfig.tableNumberLabel || 'TABLE'}
+                          onChange={e => updateKitchenField('tableNumberLabel', e.target.value)}
+                          placeholder="TABLE / طاولة"
+                          className="w-full px-3 py-1.5 bg-white border border-[#E9DCCB] rounded-xl text-xs font-bold text-[#292522] focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          حجم خط رقم الطاولة: {kitchenConfig.tableNumberFontSize || 26}px
+                        </label>
+                        <input
+                          type="range"
+                          min="18"
+                          max="36"
+                          value={kitchenConfig.tableNumberFontSize || 26}
+                          onChange={e => updateKitchenField('tableNumberFontSize', parseInt(e.target.value, 10))}
+                          className="w-full accent-[#E87524] cursor-pointer"
+                        />
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2465,6 +3146,19 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
 
                     <label className="flex items-center justify-between p-3 bg-stone-50 hover:bg-orange-50/50 rounded-xl border border-stone-200 cursor-pointer">
                       <div>
+                        <span className="text-xs font-bold text-stone-700 block">مكونات البيتزا الأساسية للطاهي</span>
+                        <span className="text-[10px] text-stone-400">Base : Tomate, Mozzarella...</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={kitchenConfig.showBaseIngredientsInKitchen ?? true}
+                        onChange={e => updateKitchenField('showBaseIngredientsInKitchen', e.target.checked)}
+                        className="w-4 h-4 accent-[#E87524] rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-3 bg-stone-50 hover:bg-orange-50/50 rounded-xl border border-stone-200 cursor-pointer">
+                      <div>
                         <span className="text-xs font-bold text-stone-700 block">ملاحظات وتعليمات الطبخ</span>
                         <span className="text-[10px] text-stone-400">* NOTE : Bien cuite...</span>
                       </div>
@@ -2510,11 +3204,10 @@ export const TicketDesignerSection: React.FC<TicketDesignerSectionProps> = ({ on
             {/* Zone papier avec ombre réaliste */}
             <div className="p-5 bg-stone-200/80 min-h-[500px] max-h-[78vh] overflow-y-auto flex justify-center items-start">
               <div
-                className={`bg-white border border-stone-300 shadow-2xl p-4 transition-all duration-200 relative ${
-                  (activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '58mm'
+                className={`bg-white border border-stone-300 shadow-2xl p-4 transition-all duration-200 relative ${(activeTab === 'customer' ? customerConfig.paperWidth : kitchenConfig.paperWidth) === '58mm'
                     ? 'w-[230px] min-w-[220px]'
                     : 'w-[310px] min-w-[300px]'
-                }`}
+                  }`}
                 style={{
                   boxShadow: '0 12px 28px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
                 }}

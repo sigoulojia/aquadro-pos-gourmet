@@ -151,6 +151,16 @@ export class InventoryService {
         const newBatchStock = Math.max(0, b.current_stock + payload.quantityChange);
         await db.execute('UPDATE product_batches SET current_stock = ? WHERE id = ?', [newBatchStock, b.id]);
       }
+    } else if (payload.quantityChange > 0) {
+      // Si réintégration en stock sans lot précis, incrémenter le lot actif du produit
+      try {
+        const batches = await db.select<ProductBatch>('SELECT * FROM product_batches WHERE product_id = ? ORDER BY current_stock DESC LIMIT 1', [prod.id]);
+        if (batches.length > 0) {
+          const b = batches[0];
+          const newBatchStock = b.current_stock + payload.quantityChange;
+          await db.execute('UPDATE product_batches SET current_stock = ? WHERE id = ?', [newBatchStock, b.id]);
+        }
+      } catch {}
     }
 
     const movement: InventoryMovement = {
@@ -183,6 +193,11 @@ export class InventoryService {
         movement.user_id, movement.created_at
       ]
     );
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('inventory_updated'));
+      window.dispatchEvent(new Event('products_updated'));
+    }
 
     return movement;
   }

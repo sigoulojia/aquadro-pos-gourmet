@@ -98,20 +98,32 @@ export class DrawerLogService {
     return [];
   }
 
-  // Vérifier si l'Admin a autorisé l'ouverture manuelle du tiroir
-  public isManualDrawerAllowed(): boolean {
+  // Vérifier si le tiroir-caisse est activé globalement
+  public isDrawerEnabled(): boolean {
     if (typeof localStorage !== 'undefined') {
-      const val = localStorage.getItem('aquadro_allow_manual_drawer');
+      const val = localStorage.getItem('aquadro_drawer_enabled');
       if (val === 'false') return false;
+      const manual = localStorage.getItem('aquadro_allow_manual_drawer');
+      if (manual === 'false') return false;
     }
     return true;
   }
 
-  public setManualDrawerAllowed(allowed: boolean): void {
+  public setDrawerEnabled(enabled: boolean): void {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('aquadro_allow_manual_drawer', allowed ? 'true' : 'false');
+      localStorage.setItem('aquadro_drawer_enabled', enabled ? 'true' : 'false');
+      localStorage.setItem('aquadro_allow_manual_drawer', enabled ? 'true' : 'false');
       window.dispatchEvent(new Event('drawer_setting_changed'));
     }
+  }
+
+  // Vérifier si l'Admin a autorisé l'ouverture manuelle du tiroir
+  public isManualDrawerAllowed(): boolean {
+    return this.isDrawerEnabled();
+  }
+
+  public setManualDrawerAllowed(allowed: boolean): void {
+    this.setDrawerEnabled(allowed);
   }
 
   private getLocalLogs(): DrawerLogEntry[] {

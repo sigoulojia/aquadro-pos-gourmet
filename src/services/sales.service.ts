@@ -6,6 +6,8 @@ import { Sale, SaleItem, Payment, Refund, RefundItem, Product } from '../types/d
 import { inventoryService } from './inventory.service';
 import { caisseService } from './caisse.service';
 import { CurrencyUtil } from '../core/currency/currency';
+import { recipeService } from './recipe.service';
+import { supplementService } from './supplement.service';
 
 export interface ProcessRefundPayload {
   saleId: string;
@@ -172,17 +174,54 @@ export class SalesService {
 
       // Si réintégration en stock autorisée
       if (rItem.restock) {
-        await inventoryService.recordMovement({
-          productId: rItem.productId,
-          batchId: origItem.batch_id,
-          movementType: 'RETURN',
-          quantityChange: rItem.quantity,
-          reason: `Retour marchandise avoir ${refundReceipt} (Vente originale: ${sale.receipt_number})`,
-          referenceId: refundReceipt,
-          unitCostSnapshot: origItem.unit_purchase_cost_snapshot,
-          userId: payload.cashierId,
-          userName: payload.cashierName
-        });
+        // 1. Réintégration stock produit global / lot
+        try {
+          await inventoryService.recordMovement({
+            productId: rItem.productId,
+            batchId: origItem.batch_id,
+            movementType: 'RETURN',
+            quantityChange: rItem.quantity,
+            reason: `Retour marchandise avoir ${refundReceipt} (Vente originale: ${sale.receipt_number})`,
+            referenceId: refundReceipt,
+            unitCostSnapshot: origItem.unit_purchase_cost_snapshot,
+            userId: payload.cashierId,
+            userName: payload.cashierName
+          });
+        } catch (invErr) {
+          console.warn('[SalesService] Erreur réintégration stock produit:', invErr);
+        }
+
+        // 2. Réintégration stock des ingrédients de la recette (Pizzas, plats cuisinés)
+        try {
+          if (rItem.productId) {
+            await recipeService.restoreRecipeIngredientsForRefund(rItem.productId, rItem.quantity);
+          }
+        } catch (recipeErr) {
+          console.warn('[SalesService] Erreur réintégration ingrédients recette:', recipeErr);
+        }
+
+        // 3. Réintégration des suppléments si présents sur la ligne de vente
+        try {
+          let supplementsList = origItem.supplements;
+          if (typeof supplementsList === 'string' && supplementsList.trim().startsWith('[')) {
+            supplementsList = JSON.parse(supplementsList);
+          }
+          if (Array.isArray(supplementsList) && supplementsList.length > 0) {
+            const suppsToRestore: Array<{ supplementId: string; quantity: number }> = [];
+            for (const s of supplementsList) {
+              const sId = typeof s === 'string' ? s : (s.id || s.supplementId);
+              const sQty = ((s as any).quantity || 1) * rItem.quantity;
+              if (sId) {
+                suppsToRestore.push({ supplementId: sId, quantity: sQty });
+              }
+            }
+            if (suppsToRestore.length > 0) {
+              await supplementService.restoreSupplementStock(suppsToRestore);
+            }
+          }
+        } catch (suppErr) {
+          console.warn('[SalesService] Erreur réintégration suppléments:', suppErr);
+        }
       }
     }
 
@@ -254,10 +293,18 @@ export class SalesService {
         'PROCESS_REFUND',
         'SALE',
         sale.id,
-        `Remboursement avoir ${refundReceipt} de ${totalRefundAmount} DA`,
+        `Remboursement avoir ${refundReceipt} de ${totalRefundAmount} DA (${payload.reason})`,
         now
       ]
     );
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('sales_updated'));
+      window.dispatchEvent(new Event('inventory_updated'));
+      window.dispatchEvent(new Event('products_updated'));
+      window.dispatchEvent(new Event('recipes_updated'));
+      window.dispatchEvent(new Event('supplements_updated'));
+    }
 
     return refund;
   }

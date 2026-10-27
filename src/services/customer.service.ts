@@ -56,6 +56,30 @@ export class CustomerService {
       ]
     );
 
+    // Enregistrer dans les logs d'audit pour le Journal
+    try {
+      await db.execute(
+        `INSERT INTO audit_logs (id, user_id, user_name, action, entity_type, entity_id, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `audit-cust-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          'SYSTEM',
+          'Système',
+          'CUSTOMER_CREATED',
+          'CUSTOMER',
+          customer.id,
+          JSON.stringify({ name: customer.name, phone: customer.phone, credit_limit: customer.credit_limit }),
+          customer.created_at
+        ]
+      );
+    } catch (auditErr) {
+      console.warn('Could not insert audit log for customer creation:', auditErr);
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('customers_updated', { detail: { customer } }));
+    }
+
     return customer;
   }
 
@@ -74,6 +98,50 @@ export class CustomerService {
     values.push(id);
 
     await db.execute(`UPDATE customers SET ${fields.join(', ')} WHERE id = ?`, values);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('customers_updated'));
+    }
+  }
+
+  // Ajouter au solde débiteur (lors d'un achat à crédit)
+  public async addDebt(customerId: string, amount: number): Promise<void> {
+    if (amount <= 0) return;
+    const customers = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [customerId]);
+    if (customers.length === 0) return;
+    const cust = customers[0];
+    const newDebt = CurrencyUtil.add(cust.current_debt, amount);
+    await db.execute('UPDATE customers SET current_debt = ? WHERE id = ?', [newDebt, customerId]);
+
+    try {
+      await db.execute(
+        `INSERT INTO audit_logs (id, user_id, user_name, action, entity_type, entity_id, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `audit-debt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          'SYSTEM',
+          'Système',
+          'CUSTOMER_CREDIT_GRANTED',
+          'CUSTOMER',
+          customerId,
+          JSON.stringify({ name: cust.name, amountAdded: amount, newDebt }),
+          new Date().toISOString()
+        ]
+      );
+    } catch (e) {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('customers_updated', { detail: { customerId, newDebt } }));
+    }
+  }
+
+  // Ajouter des points de fidélité
+  public async addLoyaltyPoints(customerId: string, points: number): Promise<void> {
+    if (points <= 0) return;
+    await db.execute('UPDATE customers SET loyalty_points = loyalty_points + ? WHERE id = ?', [points, customerId]);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('customers_updated'));
+    }
   }
 
   // Versement d'un acompte / règlement de dette par le client
@@ -117,6 +185,28 @@ export class CustomerService {
         payment.reference || null, payment.cashier_id, payment.created_at
       ]
     );
+
+    // Audit log
+    try {
+      await db.execute(
+        `INSERT INTO audit_logs (id, user_id, user_name, action, entity_type, entity_id, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          `audit-pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          payload.cashierId || 'SYSTEM',
+          cust.name,
+          'CUSTOMER_DEBT_PAYMENT',
+          'CUSTOMER',
+          cust.id,
+          JSON.stringify({ amount: payload.amount, method: payload.paymentMethod, remainingDebt: newDebt }),
+          payment.created_at
+        ]
+      );
+    } catch (e) {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('customers_updated', { detail: { customerId: cust.id } }));
+    }
 
     return payment;
   }
