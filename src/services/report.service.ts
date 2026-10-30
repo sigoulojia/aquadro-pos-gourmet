@@ -142,19 +142,46 @@ export class ReportService {
    * 3. Marge Brute = Net Revenue - COGS
    * 4. Résultat Net = Marge Brute - Charges d'Exploitation (Hors Achats de stock pour éviter le double comptage)
    */
-  public async getFinancialMetrics(dateStr?: string): Promise<FinancialMetrics> {
-    const period = (dateStr === 'TODAY' ? new Date().toISOString().split('T')[0] : dateStr) || new Date().toISOString().split('T')[0];
+  public async getFinancialMetrics(
+    dateFilter?: string | { startDate?: string; endDate?: string }
+  ): Promise<FinancialMetrics> {
+    const todayPrefix = new Date().toISOString().split('T')[0];
     const currentMonth = new Date().toISOString().slice(0, 7);
+
+    let period = 'TODAY';
+    let rangeStart: string | undefined;
+    let rangeEnd: string | undefined;
+
+    if (typeof dateFilter === 'object' && dateFilter !== null) {
+      rangeStart = dateFilter.startDate ? dateFilter.startDate.slice(0, 10) : undefined;
+      rangeEnd = dateFilter.endDate ? dateFilter.endDate.slice(0, 10) : undefined;
+      if (rangeStart && rangeEnd && rangeStart === rangeEnd) {
+        period = rangeStart;
+      } else if (rangeStart || rangeEnd) {
+        period = 'RANGE';
+      } else {
+        period = 'ALL';
+      }
+    } else {
+      period = (dateFilter === 'TODAY' ? todayPrefix : dateFilter) || todayPrefix;
+    }
+
+    const matchesPeriod = (isoOrDate?: string): boolean => {
+      if (!isoOrDate) return false;
+      if (period === 'ALL') return true;
+      if (period === 'MONTH') return isoOrDate.startsWith(currentMonth);
+      if (period === 'RANGE') {
+        const d = isoOrDate.slice(0, 10);
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd && d > rangeEnd) return false;
+        return true;
+      }
+      return isoOrDate.startsWith(period);
+    };
 
     // ── 1. Ventes et Remboursements ──────────────────────────────────────────
     const allSales = await db.select<Sale>('SELECT * FROM sales');
-    
-    // Filtrage par période (ALL, MONTH, TODAY, ou date exacte YYYY-MM-DD)
-    const periodSales = period === 'ALL'
-      ? allSales
-      : period === 'MONTH'
-      ? allSales.filter(s => s.created_at && s.created_at.startsWith(currentMonth))
-      : allSales.filter(s => s.created_at && s.created_at.startsWith(period));
+    const periodSales = allSales.filter(s => matchesPeriod(s.created_at));
 
     // Ségrégation par statut : Seules les ventes non annulées génèrent du CA brut
     const validSales = periodSales.filter(s => (s.status as string) !== 'CANCELLED');
@@ -162,12 +189,8 @@ export class ReportService {
     const fullyRefundedSales = validSales.filter(s => s.status === 'REFUNDED');
 
     // Récupération des remboursements enregistrés dans la table refunds
-    const allRefunds = await db.select<{ id: string; original_sale_id?: string; receipt_number?: string; refund_amount: number; created_at: string }>('SELECT * FROM refunds');
-    const periodRefunds = period === 'ALL'
-      ? allRefunds
-      : period === 'MONTH'
-      ? allRefunds.filter(r => r.created_at && r.created_at.startsWith(currentMonth))
-      : allRefunds.filter(r => r.created_at && r.created_at.startsWith(period));
+    const allRefunds = await db.select<{ id: string; original_sale_id?: string; receipt_number?: string; refund_amount: number; payment_method?: string; created_at: string }>('SELECT * FROM refunds');
+    const periodRefunds = allRefunds.filter(r => matchesPeriod(r.created_at));
 
     let grossRevenue = 0;
     let totalDiscounts = 0;
@@ -192,10 +215,26 @@ export class ReportService {
     // Chiffre d'Affaires Net = Ventes Brutes - Remboursements (déduction exacte et unique)
     const netRevenue = Math.max(0, CurrencyUtil.subtract(grossRevenue, totalRefunds));
 
-    // ── 2. Lignes de vente et COGS historique ────────────────────────────────
+    // ── 2. Lignes de vente et COGS historique (avec déduction des retours partiels) ──
     const completedSaleIds = new Set(completedSales.map(s => s.id));
     const allSaleItems = await db.select<SaleItem>('SELECT * FROM sale_items');
     const periodSaleItems = allSaleItems.filter(item => completedSaleIds.has(item.sale_id));
+
+    const periodRefundIds = new Set(periodRefunds.map(r => r.id));
+    const allRefundItems = periodRefundIds.size > 0
+      ? await db.select<{ refund_id: string; sale_item_id: string; quantity: number; refund_price: number }>('SELECT * FROM refund_items')
+      : [];
+    const refundedBySaleItem = new Map<string, { qty: number; amount: number }>();
+    for (const ri of allRefundItems) {
+      if (periodRefundIds.has(ri.refund_id) && ri.sale_item_id) {
+        const cur = refundedBySaleItem.get(ri.sale_item_id) || { qty: 0, amount: 0 };
+        const q = Number(ri.quantity) || 0;
+        const p = Number(ri.refund_price) || 0;
+        cur.qty += q;
+        cur.amount = CurrencyUtil.add(cur.amount, CurrencyUtil.multiply(p, q));
+        refundedBySaleItem.set(ri.sale_item_id, cur);
+      }
+    }
 
     // Récupération du référentiel produits, catégories et suppléments pour classification pizzeria
     const allProducts = await db.select<Product>('SELECT * FROM products');
@@ -224,6 +263,13 @@ export class ReportService {
     let otherRev = 0, otherQty = 0;
 
     for (const item of periodSaleItems) {
+      const refInfo = refundedBySaleItem.get(item.id);
+      const netQty = Math.max(0, (item.quantity || 0) - (refInfo?.qty || 0));
+      const netItemRevenue = Math.max(0, CurrencyUtil.subtract(item.total_ttc || 0, refInfo?.amount || 0));
+      if (netQty <= 0 && (refInfo?.qty || 0) > 0) {
+        continue;
+      }
+
       const prod = productMap.get(item.product_id);
       const prodName = (item.product_name || prod?.name_fr || 'Article').toLowerCase();
       const catId = prod?.category_id || '';
@@ -246,8 +292,8 @@ export class ReportService {
         prodName.includes('thon')
       ) {
         cat = 'pizza';
-        pizzaRev = CurrencyUtil.add(pizzaRev, item.total_ttc || 0);
-        pizzaQty += item.quantity;
+        pizzaRev = CurrencyUtil.add(pizzaRev, netItemRevenue);
+        pizzaQty += netQty;
       } else if (
         catId === 'cat-drink' ||
         catNameFr.includes('boisson') ||
@@ -262,8 +308,8 @@ export class ReportService {
         prodName.includes('schweppes')
       ) {
         cat = 'drink';
-        drinkRev = CurrencyUtil.add(drinkRev, item.total_ttc || 0);
-        drinkQty += item.quantity;
+        drinkRev = CurrencyUtil.add(drinkRev, netItemRevenue);
+        drinkQty += netQty;
       } else if (
         supplementIds.has(item.product_id) ||
         catId === 'cat-supplement' ||
@@ -275,19 +321,19 @@ export class ReportService {
         (item as any).notes?.toLowerCase().includes('supplément')
       ) {
         cat = 'supplement';
-        suppRev = CurrencyUtil.add(suppRev, item.total_ttc || 0);
-        suppQty += item.quantity;
+        suppRev = CurrencyUtil.add(suppRev, netItemRevenue);
+        suppQty += netQty;
       } else {
         cat = 'other';
-        otherRev = CurrencyUtil.add(otherRev, item.total_ttc || 0);
-        otherQty += item.quantity;
+        otherRev = CurrencyUtil.add(otherRev, netItemRevenue);
+        otherQty += netQty;
       }
 
-      // COGS basé rigoureusement sur le coût unitaire historique figé
+      // COGS basé rigoureusement sur le coût unitaire historique figé (quantité nette après retour partiel)
       const snapshotCost = item.unit_purchase_cost_snapshot || 0;
       if (snapshotCost > 0) {
         itemsWithReliableCost += 1;
-        const lineCost = CurrencyUtil.multiply(snapshotCost, item.quantity);
+        const lineCost = CurrencyUtil.multiply(snapshotCost, netQty);
         cogs = CurrencyUtil.add(cogs, lineCost);
       }
 
@@ -300,8 +346,8 @@ export class ReportService {
         revenue: 0,
         unitPrice: item.unit_price_ttc || prod?.selling_price_ttc || 0
       };
-      existing.quantity += item.quantity;
-      existing.revenue = CurrencyUtil.add(existing.revenue, item.total_ttc || 0);
+      existing.quantity += netQty;
+      existing.revenue = CurrencyUtil.add(existing.revenue, netItemRevenue);
       productSalesMap.set(item.product_id, existing);
     }
 
@@ -343,11 +389,7 @@ export class ReportService {
 
     // ── 3. Charges d'Exploitation & Prévention du Double Comptage ────────────
     const allExpenses = await db.select<Expense>('SELECT * FROM expenses');
-    const periodExpenses = period === 'ALL'
-      ? allExpenses
-      : period === 'MONTH'
-      ? allExpenses.filter(e => (e.date && e.date.startsWith(currentMonth)) || (e.created_at && e.created_at.startsWith(currentMonth)))
-      : allExpenses.filter(e => e.date === period || (e.created_at && e.created_at.startsWith(period)));
+    const periodExpenses = allExpenses.filter(e => matchesPeriod(e.date || e.created_at));
 
     let operatingExpenses = 0;
     let stockPurchasesExpenses = 0;
@@ -399,11 +441,7 @@ export class ReportService {
       cash_discrepancy: number;
     }>('SELECT * FROM cash_sessions');
 
-    const periodSessions = period === 'ALL'
-      ? allCashSessions
-      : period === 'MONTH'
-      ? allCashSessions.filter(cs => cs.opened_at && cs.opened_at.startsWith(currentMonth))
-      : allCashSessions.filter(cs => cs.opened_at && cs.opened_at.startsWith(period));
+    const periodSessions = allCashSessions.filter(cs => matchesPeriod(cs.opened_at));
 
     let openingFloat = 0, sessionCashSales = 0, sessionCashExpenses = 0, expectedDrawer = 0, actualCounted = 0, discrepancy = 0;
     for (const cs of periodSessions) {
@@ -415,11 +453,14 @@ export class ReportService {
       discrepancy = CurrencyUtil.add(discrepancy, cs.cash_discrepancy || 0);
     }
 
-    // Si aucune session n'est explicitement ouverte, on prend les encaissements directs
+    // Si aucune session n'est explicitement ouverte, on prend les encaissements directs moins dépenses et remboursements espèces
     if (periodSessions.length === 0) {
       sessionCashSales = cash;
       sessionCashExpenses = periodExpenses.filter(e => e.payment_method === 'CASH').reduce((sum, e) => sum + e.amount, 0);
-      expectedDrawer = CurrencyUtil.subtract(sessionCashSales, sessionCashExpenses);
+      const cashRefunds = periodRefunds
+        .filter(r => !r.payment_method || r.payment_method === 'CASH')
+        .reduce((sum, r) => CurrencyUtil.add(sum, r.refund_amount || 0), 0);
+      expectedDrawer = CurrencyUtil.subtract(CurrencyUtil.subtract(sessionCashSales, sessionCashExpenses), cashRefunds);
     }
 
     const cashSessionSummary: CashSessionSummary = {
@@ -562,11 +603,7 @@ export class ReportService {
 
     // Achats fournisseurs sur la période
     const allPurchases = await db.select<{ total_cost: number; ordered_at: string }>('SELECT total_cost, ordered_at FROM purchases');
-    const periodPurchases = period === 'ALL'
-      ? allPurchases
-      : period === 'MONTH'
-      ? allPurchases.filter(p => p.ordered_at && p.ordered_at.startsWith(currentMonth))
-      : allPurchases.filter(p => p.ordered_at && p.ordered_at.startsWith(period));
+    const periodPurchases = allPurchases.filter(p => matchesPeriod(p.ordered_at));
     const totalPurchasesCost = periodPurchases.reduce((sum, p) => sum + (p.total_cost || 0), 0);
 
     return {
@@ -623,8 +660,7 @@ export class ReportService {
     netOperatingProfit: number;
     paymentsByMethod: Array<{ method: string; total: number }>;
   }> {
-    const period = typeof filter === 'string' ? filter : 'ALL';
-    const metrics = await this.getFinancialMetrics(period);
+    const metrics = await this.getFinancialMetrics(filter || 'ALL');
     return {
       grossRevenue: metrics.grossRevenue,
       netRevenue: metrics.revenue,
@@ -706,6 +742,23 @@ export class ReportService {
     const allSaleItems = await db.select<SaleItem>('SELECT * FROM sale_items');
     const periodSaleItems = allSaleItems.filter(item => completedSaleIds.has(item.sale_id));
 
+    const allRefunds = await db.select<{ id: string; original_sale_id?: string }>('SELECT id, original_sale_id FROM refunds');
+    const relevantRefundIds = new Set(
+      allRefunds.filter(r => r.original_sale_id && completedSaleIds.has(r.original_sale_id)).map(r => r.id)
+    );
+    const allRefundItems = relevantRefundIds.size > 0
+      ? await db.select<{ refund_id: string; sale_item_id: string; quantity: number }>('SELECT * FROM refund_items')
+      : [];
+    const refundedQtyBySaleItem = new Map<string, number>();
+    for (const ri of allRefundItems) {
+      if (relevantRefundIds.has(ri.refund_id) && ri.sale_item_id) {
+        refundedQtyBySaleItem.set(
+          ri.sale_item_id,
+          (refundedQtyBySaleItem.get(ri.sale_item_id) || 0) + (Number(ri.quantity) || 0)
+        );
+      }
+    }
+
     const recipes = await db.select<RecipeItem>('SELECT * FROM recipe_items');
     const ingredients = await db.select<Ingredient>('SELECT * FROM ingredients');
     const ingMap = new Map(ingredients.map(i => [i.id, i]));
@@ -720,6 +773,9 @@ export class ReportService {
     const consumptionMap = new Map<string, IngredientConsumption>();
 
     for (const si of periodSaleItems) {
+      const netQty = Math.max(0, (si.quantity || 0) - (refundedQtyBySaleItem.get(si.id) || 0));
+      if (netQty <= 0) continue;
+
       const recipe = productRecipesMap.get(si.product_id);
       if (!recipe) continue;
 
@@ -728,7 +784,7 @@ export class ReportService {
         const name = ing?.name_fr || 'Ingrédient';
         const unit = item.unit_display || ing?.unit || 'kg';
         const costPerUnit = ing?.cost_per_unit || 0;
-        const qtyConsumed = (item.quantity_required || 0) * (si.quantity || 0);
+        const qtyConsumed = (item.quantity_required || 0) * netQty;
         const costConsumed = CurrencyUtil.multiply(costPerUnit, qtyConsumed);
 
         const existing = consumptionMap.get(item.ingredient_id) || {

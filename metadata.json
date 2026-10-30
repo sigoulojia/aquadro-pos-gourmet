@@ -1,0 +1,8 @@
+{
+  "name": "Aquadro POS — Gourmet Desktop",
+  "description": "Système de caisse et gestion de restaurant pizzeria avec mode hors-ligne, stocks et gestion de commandes.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

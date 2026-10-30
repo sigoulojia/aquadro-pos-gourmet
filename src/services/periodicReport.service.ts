@@ -229,7 +229,8 @@ export class PeriodicReportService {
     // Récupération des données SQLite
     const allSales = await db.select<Sale>("SELECT * FROM sales WHERE status != 'CANCELLED'");
     const daySales = allSales.filter(s => s.created_at && s.created_at.startsWith(targetDate));
-    const saleIds = new Set(daySales.map(s => s.id));
+    const activeDaySales = daySales.filter(s => s.status !== 'REFUNDED');
+    const saleIds = new Set(activeDaySales.map(s => s.id));
 
     const allSaleItems = await db.select<SaleItem>('SELECT * FROM sale_items');
     const allProducts = await db.select<Product>('SELECT id, name_fr, name_ar, selling_price_ttc FROM products');
@@ -246,7 +247,18 @@ export class PeriodicReportService {
 
     // Remboursements enregistrés sur la journée
     const allRefunds = await db.select<{ id: string; original_sale_id?: string; receipt_number?: string; refund_amount: number; created_at: string }>('SELECT * FROM refunds');
+    const allRefundItems = await db.select<{ refund_id: string; sale_item_id: string; quantity: number; refund_amount: number }>('SELECT * FROM refund_items');
     const dayRefunds = allRefunds.filter(r => r.created_at && r.created_at.startsWith(targetDate));
+    const dayRefundIds = new Set(dayRefunds.map(r => r.id));
+    const refundedQtyBySaleItem = new Map<string, number>();
+    const refundedRevBySaleItem = new Map<string, number>();
+    for (const ri of allRefundItems) {
+      if (dayRefundIds.has(ri.refund_id)) {
+        refundedQtyBySaleItem.set(ri.sale_item_id, (refundedQtyBySaleItem.get(ri.sale_item_id) || 0) + (ri.quantity || 0));
+        refundedRevBySaleItem.set(ri.sale_item_id, CurrencyUtil.add(refundedRevBySaleItem.get(ri.sale_item_id) || 0, ri.refund_amount || 0));
+      }
+    }
+
     let dayRefundAmount = 0;
     for (const ref of dayRefunds) {
       dayRefundAmount = CurrencyUtil.add(dayRefundAmount, ref.refund_amount || 0);
@@ -287,20 +299,24 @@ export class PeriodicReportService {
 
     for (const item of allSaleItems) {
       if (saleIds.has(item.sale_id)) {
-        const lineCost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, item.quantity);
+        const netQty = Math.max(0, item.quantity - (refundedQtyBySaleItem.get(item.id) || 0));
+        const netItemRev = Math.max(0, CurrencyUtil.subtract(item.total_ttc || 0, refundedRevBySaleItem.get(item.id) || 0));
+        const lineCost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, netQty);
         cogs = CurrencyUtil.add(cogs, lineCost);
 
-        const prodInfo = productMap.get(item.product_id);
-        const name = item.product_name || prodInfo?.name_fr || 'Produit';
-        const existing = productSalesMap.get(item.product_id) || {
-          name,
-          quantity: 0,
-          revenue: 0,
-          unitPrice: item.unit_price_ttc || prodInfo?.selling_price_ttc || 0
-        };
-        existing.quantity += item.quantity;
-        existing.revenue = CurrencyUtil.add(existing.revenue, item.total_ttc || 0);
-        productSalesMap.set(item.product_id, existing);
+        if (netQty > 0) {
+          const prodInfo = productMap.get(item.product_id);
+          const name = item.product_name || prodInfo?.name_fr || 'Produit';
+          const existing = productSalesMap.get(item.product_id) || {
+            name,
+            quantity: 0,
+            revenue: 0,
+            unitPrice: item.unit_price_ttc || prodInfo?.selling_price_ttc || 0
+          };
+          existing.quantity += netQty;
+          existing.revenue = CurrencyUtil.add(existing.revenue, netItemRev);
+          productSalesMap.set(item.product_id, existing);
+        }
       }
     }
 
@@ -308,8 +324,12 @@ export class PeriodicReportService {
     const marginPercent = totalRevenue > 0 ? Math.round((grossMargin / totalRevenue) * 1000) / 10 : 0;
 
     let totalExpenses = 0;
+    let operatingExpenses = 0;
     const expensesList = dayExpenses.map(e => {
       totalExpenses = CurrencyUtil.add(totalExpenses, e.amount);
+      if (e.category !== 'INGREDIENTS_PURCHASE' && e.category !== 'SUPPLEMENTS_PURCHASE') {
+        operatingExpenses = CurrencyUtil.add(operatingExpenses, e.amount);
+      }
       const catTrans = EXPENSE_CATEGORIES_TRANSLATION[e.category] || { fr: e.category, ar: e.category };
       return {
         category: `${catTrans.fr} (${catTrans.ar})`,
@@ -319,8 +339,8 @@ export class PeriodicReportService {
       };
     });
 
-    const netProfit = CurrencyUtil.subtract(grossMargin, totalExpenses);
-    const orderCount = daySales.length;
+    const netProfit = CurrencyUtil.subtract(grossMargin, operatingExpenses);
+    const orderCount = activeDaySales.length;
     const averageBasket = orderCount > 0 ? Math.round(totalRevenue / orderCount) : 0;
 
     // Règlements
@@ -342,18 +362,24 @@ export class PeriodicReportService {
     let openingFloat = 0;
     let cashSalesTotal = 0;
     let cashExpensesTotal = 0;
+    let cashRefundsTotal = 0;
 
     for (const cs of daySessions) {
       openingFloat = CurrencyUtil.add(openingFloat, cs.opening_float || 0);
       cashSalesTotal = CurrencyUtil.add(cashSalesTotal, cs.total_cash_sales || 0);
       cashExpensesTotal = CurrencyUtil.add(cashExpensesTotal, cs.total_cash_expenses || 0);
+      cashRefundsTotal = CurrencyUtil.add(cashRefundsTotal, cs.total_cash_refunds || 0);
     }
-    // Si pas de session enregistrée, on estime avec les règlements cash et dépenses cash du jour
+    // Si pas de session enregistrée, on estime avec les règlements cash, remboursements cash et dépenses cash du jour
     if (daySessions.length === 0) {
       cashSalesTotal = cash;
       cashExpensesTotal = dayExpenses.filter(e => e.payment_method === 'CASH').reduce((sum, e) => sum + e.amount, 0);
+      cashRefundsTotal = dayRefundAmount;
     }
-    const expectedCash = CurrencyUtil.subtract(CurrencyUtil.add(openingFloat, cashSalesTotal), cashExpensesTotal);
+    const expectedCash = CurrencyUtil.subtract(
+      CurrencyUtil.add(openingFloat, cashSalesTotal),
+      CurrencyUtil.add(cashExpensesTotal, cashRefundsTotal)
+    );
 
     const topProducts = Array.from(productSalesMap.values())
       .sort((a, b) => b.quantity - a.quantity)
@@ -453,6 +479,7 @@ export class PeriodicReportService {
     const allExpenses = await db.select<Expense>('SELECT * FROM expenses');
     const allPurchases = await db.select<{ total_cost: number; ordered_at: string }>('SELECT total_cost, ordered_at FROM purchases');
     const allRefunds = await db.select<{ id: string; original_sale_id?: string; receipt_number?: string; refund_amount: number; created_at: string }>('SELECT * FROM refunds');
+    const allRefundItems = await db.select<{ refund_id: string; sale_item_id: string; quantity: number; refund_amount: number }>('SELECT * FROM refund_items');
     const customers = await db.select<{ current_debt: number }>('SELECT current_debt FROM customers');
 
     let totalRevenue = 0;
@@ -473,9 +500,19 @@ export class PeriodicReportService {
 
     for (const day of weekDays) {
       const salesOnDay = allSales.filter(s => s.created_at && s.created_at.startsWith(day.date));
-      const saleIds = new Set(salesOnDay.map(s => s.id));
+      const activeSalesOnDay = salesOnDay.filter(s => s.status !== 'REFUNDED');
+      const saleIds = new Set(activeSalesOnDay.map(s => s.id));
 
       const dayRefunds = allRefunds.filter(r => r.created_at && r.created_at.startsWith(day.date));
+      const dayRefundIds = new Set(dayRefunds.map(r => r.id));
+      const refundedQtyBySaleItem = new Map<string, number>();
+      const refundedRevBySaleItem = new Map<string, number>();
+      for (const ri of allRefundItems) {
+        if (dayRefundIds.has(ri.refund_id)) {
+          refundedQtyBySaleItem.set(ri.sale_item_id, (refundedQtyBySaleItem.get(ri.sale_item_id) || 0) + (ri.quantity || 0));
+          refundedRevBySaleItem.set(ri.sale_item_id, CurrencyUtil.add(refundedRevBySaleItem.get(ri.sale_item_id) || 0, ri.refund_amount || 0));
+        }
+      }
       let dayRefundAmount = 0;
       for (const ref of dayRefunds) {
         dayRefundAmount = CurrencyUtil.add(dayRefundAmount, ref.refund_amount || 0);
@@ -496,46 +533,54 @@ export class PeriodicReportService {
       const dayRev = Math.max(0, CurrencyUtil.subtract(dayGross, dayRefundAmount));
 
       let dayExp = 0;
+      let dayOperatingExp = 0;
       const expensesOnDay = allExpenses.filter(e => 
         e.date === day.date || (e.created_at && e.created_at.startsWith(day.date))
       );
       for (const exp of expensesOnDay) {
         dayExp = CurrencyUtil.add(dayExp, exp.amount);
+        if (exp.category !== 'INGREDIENTS_PURCHASE' && exp.category !== 'SUPPLEMENTS_PURCHASE') {
+          dayOperatingExp = CurrencyUtil.add(dayOperatingExp, exp.amount);
+        }
       }
 
       let dayCogs = 0;
       for (const item of allSaleItems) {
         if (saleIds.has(item.sale_id)) {
-          const cost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, item.quantity);
+          const netQty = Math.max(0, item.quantity - (refundedQtyBySaleItem.get(item.id) || 0));
+          const netItemRev = Math.max(0, CurrencyUtil.subtract(item.total_ttc || 0, refundedRevBySaleItem.get(item.id) || 0));
+          const cost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, netQty);
           dayCogs = CurrencyUtil.add(dayCogs, cost);
 
-          const existing = productSalesMap.get(item.product_id) || {
-            name: item.product_name || 'Produit',
-            quantity: 0,
-            revenue: 0
-          };
-          existing.quantity += item.quantity;
-          existing.revenue = CurrencyUtil.add(existing.revenue, item.total_ttc || 0);
-          productSalesMap.set(item.product_id, existing);
+          if (netQty > 0) {
+            const existing = productSalesMap.get(item.product_id) || {
+              name: item.product_name || 'Produit',
+              quantity: 0,
+              revenue: 0
+            };
+            existing.quantity += netQty;
+            existing.revenue = CurrencyUtil.add(existing.revenue, netItemRev);
+            productSalesMap.set(item.product_id, existing);
+          }
         }
       }
 
-      const dayNet = CurrencyUtil.subtract(CurrencyUtil.subtract(dayRev, dayCogs), dayExp);
+      const dayNet = CurrencyUtil.subtract(CurrencyUtil.subtract(dayRev, dayCogs), dayOperatingExp);
 
       dailyBreakdown.push({
         date: day.date,
         dayNameFr: day.dayNameFr,
         dayNameAr: day.dayNameAr,
         revenue: dayRev,
-        orders: salesOnDay.length,
+        orders: activeSalesOnDay.length,
         expenses: dayExp,
         net: dayNet
       });
 
       totalRevenue = CurrencyUtil.add(totalRevenue, dayRev);
       totalCogs = CurrencyUtil.add(totalCogs, dayCogs);
-      totalExpenses = CurrencyUtil.add(totalExpenses, dayExp);
-      totalOrders += salesOnDay.length;
+      totalExpenses = CurrencyUtil.add(totalExpenses, dayOperatingExp);
+      totalOrders += activeSalesOnDay.length;
 
       if (dayRev > bestDay.revenue) {
         bestDay = {
@@ -556,10 +601,11 @@ export class PeriodicReportService {
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 10);
 
-    // Achats fournisseurs de la semaine
-    const weekPurchases = allPurchases.filter(p => 
-      p.ordered_at && p.ordered_at >= startDate && p.ordered_at <= endDate
-    );
+    // Achats fournisseurs de la semaine (comparaison sur préfixe YYYY-MM-DD pour inclure toute la journée de fin)
+    const weekPurchases = allPurchases.filter(p => {
+      const d = p.ordered_at ? p.ordered_at.slice(0, 10) : '';
+      return d >= startDate && d <= endDate;
+    });
     const totalPurchasesCost = weekPurchases.reduce((sum, p) => sum + (p.total_cost || 0), 0);
 
     const totalCustomerDebt = customers.reduce((sum, c) => sum + (c.current_debt || 0), 0);
@@ -626,12 +672,23 @@ export class PeriodicReportService {
 
     const allSales = await db.select<Sale>("SELECT * FROM sales WHERE status != 'CANCELLED'");
     const monthSales = allSales.filter(s => s.created_at && s.created_at.startsWith(yearMonth));
-    const saleIds = new Set(monthSales.map(s => s.id));
+    const activeMonthSales = monthSales.filter(s => s.status !== 'REFUNDED');
+    const saleIds = new Set(activeMonthSales.map(s => s.id));
 
     const allSaleItems = await db.select<SaleItem>('SELECT * FROM sale_items');
     const allExpenses = await db.select<Expense>('SELECT * FROM expenses');
     const allRefunds = await db.select<{ id: string; original_sale_id?: string; receipt_number?: string; refund_amount: number; created_at: string }>('SELECT * FROM refunds');
+    const allRefundItems = await db.select<{ refund_id: string; sale_item_id: string; quantity: number; refund_amount: number }>('SELECT * FROM refund_items');
     const monthRefunds = allRefunds.filter(r => r.created_at && r.created_at.startsWith(yearMonth));
+    const monthRefundIds = new Set(monthRefunds.map(r => r.id));
+    const refundedQtyBySaleItem = new Map<string, number>();
+    const refundedRevBySaleItem = new Map<string, number>();
+    for (const ri of allRefundItems) {
+      if (monthRefundIds.has(ri.refund_id)) {
+        refundedQtyBySaleItem.set(ri.sale_item_id, (refundedQtyBySaleItem.get(ri.sale_item_id) || 0) + (ri.quantity || 0));
+        refundedRevBySaleItem.set(ri.sale_item_id, CurrencyUtil.add(refundedRevBySaleItem.get(ri.sale_item_id) || 0, ri.refund_amount || 0));
+      }
+    }
     let monthRefundAmount = 0;
     for (const ref of monthRefunds) {
       monthRefundAmount = CurrencyUtil.add(monthRefundAmount, ref.refund_amount || 0);
@@ -657,32 +714,40 @@ export class PeriodicReportService {
 
     for (const item of allSaleItems) {
       if (saleIds.has(item.sale_id)) {
-        const cost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, item.quantity);
+        const netQty = Math.max(0, item.quantity - (refundedQtyBySaleItem.get(item.id) || 0));
+        const netItemRev = Math.max(0, CurrencyUtil.subtract(item.total_ttc || 0, refundedRevBySaleItem.get(item.id) || 0));
+        const cost = CurrencyUtil.multiply(item.unit_purchase_cost_snapshot || 0, netQty);
         totalCogs = CurrencyUtil.add(totalCogs, cost);
 
-        const existing = productSalesMap.get(item.product_id) || {
-          name: item.product_name || 'Produit',
-          quantity: 0,
-          revenue: 0
-        };
-        existing.quantity += item.quantity;
-        existing.revenue = CurrencyUtil.add(existing.revenue, item.total_ttc || 0);
-        productSalesMap.set(item.product_id, existing);
+        if (netQty > 0) {
+          const existing = productSalesMap.get(item.product_id) || {
+            name: item.product_name || 'Produit',
+            quantity: 0,
+            revenue: 0
+          };
+          existing.quantity += netQty;
+          existing.revenue = CurrencyUtil.add(existing.revenue, netItemRev);
+          productSalesMap.set(item.product_id, existing);
+        }
       }
     }
 
     let totalExpenses = 0;
+    let operatingExpenses = 0;
     const expensesByCategory: Record<string, number> = {};
     for (const exp of monthExpenses) {
       totalExpenses = CurrencyUtil.add(totalExpenses, exp.amount);
       const cat = exp.category || 'OTHER';
       expensesByCategory[cat] = CurrencyUtil.add(expensesByCategory[cat] || 0, exp.amount);
+      if (cat !== 'INGREDIENTS_PURCHASE' && cat !== 'SUPPLEMENTS_PURCHASE') {
+        operatingExpenses = CurrencyUtil.add(operatingExpenses, exp.amount);
+      }
     }
 
     const grossMargin = CurrencyUtil.subtract(totalRevenue, totalCogs);
     const marginPercent = totalRevenue > 0 ? Math.round((grossMargin / totalRevenue) * 1000) / 10 : 0;
-    const netProfit = CurrencyUtil.subtract(grossMargin, totalExpenses);
-    const orderCount = monthSales.length;
+    const netProfit = CurrencyUtil.subtract(grossMargin, operatingExpenses);
+    const orderCount = activeMonthSales.length;
     const averageBasket = orderCount > 0 ? Math.round(totalRevenue / orderCount) : 0;
 
     // Découpage en 4 semaines du mois

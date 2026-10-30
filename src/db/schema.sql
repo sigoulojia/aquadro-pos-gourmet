@@ -220,6 +220,8 @@ CREATE TABLE IF NOT EXISTS sale_items (
     discount_amount INTEGER NOT NULL DEFAULT 0,
     total_ttc INTEGER NOT NULL,
     unit_purchase_cost_snapshot INTEGER NOT NULL,
+    unit_purchase_price INTEGER DEFAULT 0,
+    unit_price INTEGER DEFAULT 0,
     supplements TEXT,
     notes TEXT,
     created_at TEXT NOT NULL
@@ -283,6 +285,7 @@ CREATE TABLE IF NOT EXISTS customers (
     notes TEXT,
     credit_limit INTEGER DEFAULT 0,
     current_debt INTEGER DEFAULT 0,
+    total_spent INTEGER DEFAULT 0,
     loyalty_points INTEGER DEFAULT 0,
     created_at TEXT NOT NULL
 );
@@ -307,6 +310,16 @@ CREATE TABLE IF NOT EXISTS suppliers (
     rc_number TEXT,
     nif_number TEXT,
     current_balance INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS supplier_payments (
+    id TEXT PRIMARY KEY,
+    supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+    amount INTEGER NOT NULL,
+    payment_method TEXT NOT NULL,
+    reference TEXT,
+    cashier_id TEXT NOT NULL REFERENCES users(id),
     created_at TEXT NOT NULL
 );
 

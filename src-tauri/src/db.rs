@@ -53,17 +53,17 @@ pub async fn init_db(app_handle: &AppHandle) -> Result<SqlitePool, Box<dyn std::
         e
     })?;
 
+    // Initialize essential structural metadata (columns, categories and sequences) before rebuild migrations
+    if let Err(e) = init_structural_metadata(&pool).await {
+        crate::logger::log_warn("DATABASE", &format!("Structural metadata init warning: {}", e));
+    }
+
     // Run Gate 1C safe rebuild migrations
     crate::logger::log_info("DATABASE", "Checking & applying database migrations...");
     crate::migrations::apply_gate_1c_migrations(&pool).await.map_err(|e| {
         crate::logger::log_error("DATABASE", &format!("Failed applying migrations: {}", e));
         e
     })?;
-
-    // Initialize essential structural metadata (categories and sequences) without dummy data
-    if let Err(e) = init_structural_metadata(&pool).await {
-        crate::logger::log_warn("DATABASE", &format!("Structural metadata init warning: {}", e));
-    }
 
     // Verify database health
     let integrity = crate::runtime::check_pool_integrity(&pool).await.unwrap_or_else(|e| {
@@ -82,8 +82,19 @@ pub async fn init_structural_metadata(pool: &SqlitePool) -> Result<(), Box<dyn s
     use sqlx::Row;
     let now = chrono::Utc::now().to_rfc3339();
 
-    // 0. Ensure schema compatibility columns exist
+    // 0. Ensure schema compatibility columns & tables exist
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN image_url TEXT;").execute(pool).await;
+    let _ = sqlx::query(
+        r#"CREATE TABLE IF NOT EXISTS supplier_payments (
+            id TEXT PRIMARY KEY,
+            supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+            amount INTEGER NOT NULL,
+            payment_method TEXT NOT NULL,
+            reference TEXT,
+            cashier_id TEXT NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL
+        );"#
+    ).execute(pool).await;
 
     // 1. Categories (Pizzas and Boissons ONLY, ready for owner items)
     let _ = sqlx::query(
@@ -105,6 +116,18 @@ pub async fn init_structural_metadata(pool: &SqlitePool) -> Result<(), Box<dyn s
             ('BON_LIVRAISON', 2026, 0),
             ('COMMANDE', 2026, 0)"#
         ).execute(pool).await?;
+    }
+
+    // 3. Ensure sale_items and customers extended columns exist for checkout & backup/restore compatibility
+    for col_sql in [
+        "ALTER TABLE sale_items ADD COLUMN product_name TEXT",
+        "ALTER TABLE sale_items ADD COLUMN supplements TEXT",
+        "ALTER TABLE sale_items ADD COLUMN notes TEXT",
+        "ALTER TABLE sale_items ADD COLUMN unit_purchase_price INTEGER DEFAULT 0",
+        "ALTER TABLE sale_items ADD COLUMN unit_price INTEGER DEFAULT 0",
+        "ALTER TABLE customers ADD COLUMN total_spent INTEGER DEFAULT 0",
+    ] {
+        let _ = sqlx::query(col_sql).execute(pool).await;
     }
 
     Ok(())

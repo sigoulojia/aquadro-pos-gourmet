@@ -56,11 +56,14 @@ export class SupplierService {
   }
 
   public async updateSupplier(id: string, updates: Partial<Supplier>): Promise<void> {
+    const allowedColumns = new Set([
+      'name', 'contact_person', 'phone', 'email', 'rc_number', 'nif_number', 'current_balance'
+    ]);
     const fields: string[] = [];
     const values: any[] = [];
 
     for (const [key, val] of Object.entries(updates)) {
-      if (key !== 'id' && key !== 'created_at') {
+      if (allowedColumns.has(key)) {
         fields.push(`${key} = ?`);
         values.push(val);
       }
@@ -80,6 +83,10 @@ export class SupplierService {
     reference?: string;
     cashierId: string;
   }): Promise<SupplierPayment> {
+    if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+      throw new Error('Le montant du règlement fournisseur doit être supérieur à zéro.');
+    }
+
     const suppliers = await db.select<Supplier>('SELECT * FROM suppliers WHERE id = ?', [payload.supplierId]);
     if (suppliers.length === 0) {
       throw new Error(`Fournisseur introuvable : ${payload.supplierId}`);

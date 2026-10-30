@@ -268,7 +268,7 @@ export class UsageSessionService {
   }
 
   /**
-   * Vérifie le code secret de récupération issu de la charte de setup PDF
+   * Vérifie le code secret de récupération issu de la charte de setup PDF ou le PIN Propriétaire (Owner)
    */
   public async verifyRecoveryCode(secretCode: string): Promise<{ valid: boolean; error?: string }> {
     const clean = secretCode.trim();
@@ -276,24 +276,33 @@ export class UsageSessionService {
       return { valid: false, error: 'يرجى إدخال الرمز السري المطبوع في وثيقة الإعداد (Setup Charter PDF)' };
     }
 
+    const { authService } = await import('./auth.service');
+
     if (this.isTauri) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        let token = localStorage.getItem('aquadro_session_token') || 'dev-token-usr-owner';
+        const token =
+          authService.getSessionToken() ||
+          (typeof localStorage !== 'undefined' ? localStorage.getItem('aquadro_session_token') : null) ||
+          '';
         const isOk = await invoke<boolean>('verify_danger_zone', { secret: clean, token });
         return { valid: isOk };
       } catch (err: any) {
         return { valid: false, error: err?.message || String(err) };
       }
     } else {
-      // Mode Web / Secours
-      const savedSecret = localStorage.getItem('aquadro_db_secret_key');
-      if (savedSecret && clean === savedSecret.trim()) {
+      // Mode Adaptateur SQLite / Web : vérifier le secret de la charte OU le PIN Propriétaire exclusif
+      const savedSecret = typeof localStorage !== 'undefined' ? localStorage.getItem('aquadro_db_secret_key') : null;
+      if (savedSecret && savedSecret.trim().length >= 4 && clean === savedSecret.trim()) {
+        return { valid: true };
+      }
+      const ownerPinCheck = await authService.verifyOwnerPin(clean);
+      if (ownerPinCheck.valid && ownerPinCheck.user?.role === 'owner') {
         return { valid: true };
       }
       return {
         valid: false,
-        error: 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF).'
+        error: 'رمز الأمان غير مطابق للرمز السري المطبوع في وثيقة إعداد النظام (Setup Charter PDF) أو رمز المالك (Owner PIN).'
       };
     }
   }

@@ -7,6 +7,8 @@ import { inventoryService } from './inventory.service';
 import { caisseService } from './caisse.service';
 import { CurrencyUtil } from '../core/currency/currency';
 import { documentService } from './document.service';
+import { recipeService } from './recipe.service';
+import { supplementService } from './supplement.service';
 
 export interface CheckoutItemInput {
   productId: string;
@@ -16,6 +18,7 @@ export interface CheckoutItemInput {
   unitPrice: number;     // Prix unitaire TTC
   discountAmount: number;// Remise unitaire
   supplements?: any;
+  multiParts?: Array<{ id?: string; name: string; price: number }>;
   notes?: string;
 }
 
@@ -37,6 +40,7 @@ export interface ProcessCheckoutPayload {
   payments: PaymentInput[];
   discountAmount?: number;
   notes?: string;
+  deductRecipeAndSupplements?: boolean;
 }
 
 export class CheckoutService {
@@ -51,12 +55,188 @@ export class CheckoutService {
     return CheckoutService.instance;
   }
 
+  private parseSupplementsArray(supplements: any): any[] {
+    if (!supplements) return [];
+    if (Array.isArray(supplements)) return supplements;
+    if (typeof supplements === 'string' && supplements.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(supplements);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
 
+  // Assure qu'une pizza multi-parties possède ses lignes de recette proportionnelles enregistrées
+  // afin que le calcul du coût matière (COGS), la déduction des ingrédients et le remboursement fonctionnent de manière uniforme.
+  private async ensureMultiPartRecipeLinked(item: CheckoutItemInput): Promise<void> {
+    if (!item.multiParts || item.multiParts.length === 0 || !item.productId) return;
+    try {
+      const now = new Date().toISOString();
+      await db.execute(
+        `INSERT OR IGNORE INTO products (
+          id, sku, barcode, name_fr, name_ar, selling_price_ttc, purchase_cost,
+          min_selling_price_ttc, current_stock, min_stock_alert, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'بيتزا متعددة', ?, 0, 0, 100, 0, 1, ?, ?)`,
+        [item.productId, `SKU-${item.productId}`, `BC-${item.productId}`, item.name || 'Pizza Multi', Math.round(item.unitPrice || 0), now, now]
+      );
+
+      const existingRecipe = await recipeService.getRecipeForProduct(item.productId);
+      if (existingRecipe.length === 0) {
+        const fraction = 1 / item.multiParts.length;
+        const aggMap = new Map<string, { qty: number; unit?: string }>();
+        for (const part of item.multiParts) {
+          if (!part.id) continue;
+          const partRecipe = await recipeService.getRecipeForProduct(part.id);
+          for (const ri of partRecipe) {
+            const prev = aggMap.get(ri.ingredient_id) || { qty: 0, unit: ri.unit_display };
+            aggMap.set(ri.ingredient_id, {
+              qty: prev.qty + ri.quantity_required * fraction,
+              unit: prev.unit || ri.unit_display
+            });
+          }
+        }
+        const entries: Array<{ ingredient_id: string; quantity_required: number; unit_display?: string }> = [];
+        for (const [ingId, info] of aggMap.entries()) {
+          if (info.qty > 0) {
+            entries.push({
+              ingredient_id: ingId,
+              quantity_required: Number(info.qty.toFixed(6)),
+              unit_display: info.unit
+            });
+          }
+        }
+        if (entries.length > 0) {
+          await recipeService.saveRecipe(item.productId, entries);
+        }
+      }
+    } catch (err) {
+      console.warn('[CheckoutService] Liaison recette multi-parties ignorée:', err);
+    }
+  }
+
+  private async resolveEffectiveUnitPurchaseCost(item: CheckoutItemInput, baseBatchCost: number): Promise<number> {
+    const explicitCost = Number(baseBatchCost) || 0;
+    if (explicitCost > 0) {
+      return Math.round(explicitCost);
+    }
+
+    let unitCost = 0;
+
+    if (item.productId) {
+      try {
+        const recipeDetails = await recipeService.getRecipeForProduct(item.productId);
+        if (recipeDetails.length > 0) {
+          const recipeCost = recipeDetails.reduce((sum, r) => sum + (Number(r.cost_for_portion) || 0), 0);
+          unitCost += Math.round(recipeCost);
+        }
+      } catch {}
+    }
+
+    const supps = this.parseSupplementsArray(item.supplements);
+    if (supps.length > 0) {
+      let allSuppsCatalog: any[] | null = null;
+      for (const s of supps) {
+        const sQty = Number(s?.quantity) || 1;
+        let sCost = Number(s?.purchase_cost);
+        if (!Number.isFinite(sCost) || sCost <= 0) {
+          const sId = typeof s === 'string' ? s : (s?.id || s?.supplementId);
+          if (sId) {
+            if (!allSuppsCatalog) {
+              try {
+                allSuppsCatalog = await supplementService.getSupplements(true);
+              } catch {
+                allSuppsCatalog = [];
+              }
+            }
+            const catalogList = allSuppsCatalog || [];
+            const found = catalogList.find((x: any) => x.id === sId);
+            sCost = Number(found?.purchase_cost) || 0;
+          } else {
+            sCost = 0;
+          }
+        }
+        unitCost += Math.round(sCost * sQty);
+      }
+    }
+
+    return Math.max(0, Math.round(unitCost));
+  }
+
+  private async deductRecipesAndSupplementsForItems(items: CheckoutItemInput[]): Promise<void> {
+    const supplementsToDeduct: Array<{ supplementId: string; quantity: number }> = [];
+    for (const item of items) {
+      const supps = this.parseSupplementsArray(item.supplements);
+      for (const s of supps) {
+        const sId = typeof s === 'string' ? s : (s?.id || s?.supplementId);
+        if (sId) {
+          supplementsToDeduct.push({
+            supplementId: sId,
+            quantity: (Number(s?.quantity) || 1) * item.quantity
+          });
+        }
+      }
+    }
+    if (supplementsToDeduct.length > 0) {
+      try {
+        await supplementService.deductSupplementStock(supplementsToDeduct);
+      } catch (suppErr) {
+        console.warn('[CheckoutService] Erreur déduction stock suppléments:', suppErr);
+      }
+    }
+
+    for (const item of items) {
+      try {
+        await this.ensureMultiPartRecipeLinked(item);
+        if (item.productId) {
+          await recipeService.deductRecipeIngredientsForSale(item.productId, item.quantity);
+        }
+      } catch (recipeErr) {
+        console.warn('[CheckoutService] Erreur déduction ingrédients recette:', recipeErr);
+      }
+    }
+  }
 
   // Traitement atomique de l'encaissement (Délégué au Backend Rust en environnement Tauri)
   public async processCheckout(payload: ProcessCheckoutPayload): Promise<Sale> {
     if (!payload.items || payload.items.length === 0) {
       throw new Error('Le panier est vide. Impossible de finaliser la vente.');
+    }
+    if (!payload.payments || payload.payments.length === 0) {
+      throw new Error('Aucun moyen de paiement fourni.');
+    }
+
+    // Validation stricte des articles et des règlements (Protection intégrité financière)
+    for (const item of payload.items) {
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        throw new Error(`Quantité invalide pour l'article "${item.name || item.productId}".`);
+      }
+      if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+        throw new Error(`Prix unitaire invalide pour l'article "${item.name || item.productId}".`);
+      }
+      const disc = item.discountAmount || 0;
+      if (!Number.isFinite(disc) || disc < 0 || disc > item.unitPrice) {
+        throw new Error(`Remise invalide pour l'article "${item.name || item.productId}".`);
+      }
+    }
+
+    const globalDiscount = payload.discountAmount || 0;
+    if (!Number.isFinite(globalDiscount) || globalDiscount < 0) {
+      throw new Error('Montant de remise globale invalide.');
+    }
+
+    for (const p of payload.payments) {
+      if (!Number.isFinite(p.amount) || p.amount <= 0) {
+        throw new Error('Le montant du règlement doit être strictement supérieur à zéro.');
+      }
+      if (!Number.isFinite(p.tenderedAmount) || p.tenderedAmount < 0) {
+        throw new Error('Le montant encaissé est invalide.');
+      }
+      if (p.method === 'CASH' && p.tenderedAmount < p.amount) {
+        throw new Error('Le montant espèces remis est inférieur au montant du règlement.');
+      }
     }
 
     const isTauri = typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function';
@@ -96,6 +276,10 @@ export class CheckoutService {
         const saleId = response?.saleId || response?.sale_id || `sale-${Date.now()}`;
         const receiptNumber = response?.receiptNumber || response?.receipt_number || `TK-${Date.now().toString().slice(-6)}`;
         const totalTtc = response?.totalTtc !== undefined ? response.totalTtc : (response?.total_ttc || 0);
+
+        if (payload.deductRecipeAndSupplements) {
+          await this.deductRecipesAndSupplementsForItems(payload.items);
+        }
 
         // Enregistrer automatiquement le document commercial officiel (Ticket)
         try {
@@ -144,7 +328,6 @@ export class CheckoutService {
       );
       calculatedSubtotal = CurrencyUtil.add(calculatedSubtotal, lineTotal);
     }
-    const globalDiscount = payload.discountAmount || 0;
     const finalTotalTTC = Math.max(0, CurrencyUtil.subtract(calculatedSubtotal, globalDiscount));
 
     // 2. Vérification des règlements
@@ -156,6 +339,13 @@ export class CheckoutService {
       );
     }
 
+    const totalCreditAmount = payload.payments
+      .filter(p => p.method === 'CREDIT')
+      .reduce((sum, p) => CurrencyUtil.add(sum, p.amount), 0);
+    if (totalCreditAmount > 0 && !payload.customerId) {
+      throw new Error('Une vente à crédit nécessite obligatoirement la sélection d\'un client.');
+    }
+
     const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
@@ -163,7 +353,7 @@ export class CheckoutService {
     const internalRef = `REC-${dateStr}-${randSeq}`;
 
     // Enregistrer le document officiel (Ticket)
-    const docRecord = await documentService.registerDocument({
+    await documentService.registerDocument({
       type: 'TICKET',
       referenceId: internalRef,
       customerOrSupplierName: payload.customerName || undefined,
@@ -182,10 +372,14 @@ export class CheckoutService {
     const saleItems: SaleItem[] = [];
 
     for (const item of payload.items) {
+      await this.ensureMultiPartRecipeLinked(item);
+
       // Allocation FEFO
       const allocation = await inventoryService.allocateFefoBatches(item.productId, item.quantity);
 
       for (const alloc of allocation.allocations) {
+        const effectiveUnitCost = await this.resolveEffectiveUnitPurchaseCost(item, alloc.unitPurchaseCost);
+
         const itemLineTotal = CurrencyUtil.multiply(
           CurrencyUtil.subtract(item.unitPrice, item.discountAmount || 0),
           alloc.quantityAllocated
@@ -203,8 +397,8 @@ export class CheckoutService {
           unit_price_ttc: item.unitPrice,
           discount_amount: item.discountAmount || 0,
           total_ttc: itemLineTotal,
-          unit_purchase_cost_snapshot: alloc.unitPurchaseCost,
-          unit_purchase_price: alloc.unitPurchaseCost,
+          unit_purchase_cost_snapshot: effectiveUnitCost,
+          unit_purchase_price: effectiveUnitCost,
           unit_price: item.unitPrice,
           supplements: item.supplements ? (typeof item.supplements === 'string' ? item.supplements : JSON.stringify(item.supplements)) : null,
           notes: item.notes || undefined,
@@ -213,10 +407,7 @@ export class CheckoutService {
 
         saleItems.push(saleItem);
 
-        if (alloc.batchId && alloc.batchId !== 'default-batch') {
-          await inventoryService.decrementBatchStock(alloc.batchId, alloc.quantityAllocated);
-        }
-
+        // Note: inventoryService.recordMovement met déjà à jour products.current_stock ET product_batches.current_stock (si batchId fourni)
         await inventoryService.recordMovement({
           productId: item.productId,
           batchId: alloc.batchId !== 'default-batch' ? alloc.batchId : undefined,
@@ -224,11 +415,16 @@ export class CheckoutService {
           quantityChange: -alloc.quantityAllocated,
           reason: `Vente ${receiptNumber} (Lot: ${alloc.batchNumber})`,
           referenceId: receiptNumber,
-          unitCostSnapshot: alloc.unitPurchaseCost,
+          unitCostSnapshot: effectiveUnitCost,
           userId: payload.cashierId,
           userName: payload.cashierName
         });
       }
+    }
+
+    // 3b. Déduire les ingrédients de la fiche technique (recette) et le stock des suppléments si demandé
+    if (payload.deductRecipeAndSupplements) {
+      await this.deductRecipesAndSupplementsForItems(payload.items);
     }
 
     // 4. Enregistrer la vente principale dans SQLite
@@ -326,12 +522,9 @@ export class CheckoutService {
         const pointsEarned = Math.floor(finalTotalTTC / 100);
         const newPoints = (c.loyalty_points || 0) + pointsEarned;
         const newSpent = CurrencyUtil.add(c.total_spent || 0, finalTotalTTC);
-        
-        let newDebt = c.current_debt || 0;
-        const creditPayment = payload.payments.find(p => p.method === 'CREDIT');
-        if (creditPayment) {
-          newDebt = CurrencyUtil.add(newDebt, creditPayment.amount);
-        }
+        const newDebt = totalCreditAmount > 0
+          ? CurrencyUtil.add(c.current_debt || 0, totalCreditAmount)
+          : (c.current_debt || 0);
 
         await db.execute(
           'UPDATE customers SET loyalty_points = ?, total_spent = ?, current_debt = ? WHERE id = ?',

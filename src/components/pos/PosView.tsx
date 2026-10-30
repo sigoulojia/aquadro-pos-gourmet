@@ -455,6 +455,7 @@ export const PosView: React.FC = () => {
             unitPrice: item.unitPrice,
             discountAmount: 0,
             supplements: item.supplements,
+            multiParts: item.multiParts,
             notes: item.notes
           })),
           ...(activeDeliveryFee > 0 ? [{
@@ -473,51 +474,14 @@ export const PosView: React.FC = () => {
             changeGiven: changeGiven
           }
         ],
-        notes: orderTypeLabel
+        notes: orderTypeLabel,
+        deductRecipeAndSupplements: true
       });
 
-      // Gestion du crédit et des points fidélité si un client est sélectionné
-      if (selectedCustomer) {
-        if (paymentMethod === "CREDIT") {
-          await customerService.addDebt(selectedCustomer.id, totalAmount);
-        }
-        const pts = Math.max(1, Math.floor(totalAmount / 100));
-        await customerService.addLoyaltyPoints(selectedCustomer.id, pts);
-      }
-
-      // Déduction automatique du stock des suppléments vendus (en tenant compte des portions 2x, 3x)
-      const supplementsToDeduct: Array<{ supplementId: string; quantity: number }> = [];
-      for (const item of cart) {
-        if (item.supplements && item.supplements.length > 0) {
-          for (const s of item.supplements) {
-            supplementsToDeduct.push({
-              supplementId: s.id,
-              quantity: ((s as any).quantity || 1) * item.quantity
-            });
-          }
-        }
-      }
-      if (supplementsToDeduct.length > 0) {
-        await supplementService.deductSupplementStock(supplementsToDeduct);
-      }
-
-      // Déduction automatique du stock des ingrédients de la recette (Backend SQLite)
-      for (const item of cart) {
-        try {
-          if (item.productId && !item.productId.startsWith('multi-')) {
-            await recipeService.deductRecipeIngredientsForSale(item.productId, item.quantity);
-          } else if (item.multiParts && item.multiParts.length > 0) {
-            // Pour Moitié-Moitié ou 4 Saisons : déduire proportionnellement les ingrédients de chaque partie
-            const fraction = 1 / item.multiParts.length;
-            for (const part of item.multiParts) {
-              if (part.id) {
-                await recipeService.deductRecipeIngredientsForSale(part.id, item.quantity * fraction);
-              }
-            }
-          }
-        } catch (recipeErr) {
-          console.warn("Erreur déduction recette:", recipeErr);
-        }
+      // Note: checkoutService.processCheckout met déjà à jour atomiquement current_debt, total_spent, loyalty_points,
+      // ainsi que la déduction des ingrédients de la recette et des suppléments.
+      if (selectedCustomer && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('customers_updated', { detail: { customerId: selectedCustomer.id } }));
       }
 
       // Construction des données complètes pour tickets thermiques

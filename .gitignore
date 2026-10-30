@@ -38,3 +38,4 @@ secrets/
 .sys_clock.dat
 *سجلات_النشاط*
 .website_repo/
+.aistudio/

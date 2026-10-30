@@ -1,30 +1,12 @@
 // Aquadro POS Algérie V2 — Assistant de Configuration Initiale (First-Run Wizard)
 // Design sobre blanc ERP, conformité fiscale DGI (IFU / Régime Réel) et création sécurisée du compte Propriétaire
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { SecurityUtil } from '../../core/security/security';
 import { printerService } from '../../services/printer.service';
 import { authService } from '../../services/auth.service';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
-
+import { backupService } from '../../services/backup.service';
 import { db } from '../../db/sqlite';
-
-const isTauri = typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function';
-
-async function invoke(cmd: string, args?: any): Promise<any> {
-  if (isTauri) {
-    return await tauriInvoke(cmd, args);
-  }
-  console.warn(`[Web Mode] Mocking Tauri invoke for: ${cmd}`);
-  if (cmd === 'complete_setup') {
-    const p = args.payload;
-    await db.execute(
-      `INSERT INTO users (id, name, role, pin_hash, phone, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-      [`usr-owner`, p.owner_name, 'owner', p.owner_pin, p.owner_phone, new Date().toISOString(), new Date().toISOString()]
-    );
-  }
-  return true;
-}
 import { AlgeriaCities } from '../../data/AlgeriaCities';
 import {
   Building2,
@@ -34,7 +16,8 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowLeft,
-  Pizza
+  Pizza,
+  Upload
 } from 'lucide-react';
 
 interface SetupWizardProps {
@@ -46,6 +29,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   const [hasPrinted, setHasPrinted] = useState(false);
   const [verifyPin, setVerifyPin] = useState('');
   const [generatedDbSecret, setGeneratedDbSecret] = useState('');
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [pendingRestoreBackup, setPendingRestoreBackup] = useState<{
+    content: string;
+    storeName: string;
+    productsCount: number;
+  } | null>(null);
+  const [restoreNewPin, setRestoreNewPin] = useState('');
+  const [restoreConfirmPin, setRestoreConfirmPin] = useState('');
+  const [restorePinError, setRestorePinError] = useState('');
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   // Étape 1 : Identité Magasin
   const [storeName, setStoreName] = useState('');
@@ -73,7 +66,104 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
   const [pinConfirm, setPinConfirm] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Si la base de données est déjà configurée et qu'aucun Propriétaire authentifié
+  // n'a demandé une reconfiguration, rediriger immédiatement vers l'écran de connexion normal.
+  useEffect(() => {
+    let mounted = true;
+    db.isSetupCompleted()
+      .then(alreadyConfigured => {
+        if (mounted && alreadyConfigured && authService.getCurrentUser()?.role !== 'owner') {
+          localStorage.setItem('aquadro_setup_completed', 'true');
+          localStorage.setItem('pizzeria_setup_completed', 'true');
+          onComplete();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [onComplete]);
 
+  const handleRestoreFromSetup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setErrorMessage('');
+    setRestorePinError('');
+    setIsRestoringBackup(true);
+
+    try {
+      const content = await file.text();
+      // Pré-valider la sauvegarde de manière non destructive avant d'inviter l'utilisateur à définir son PIN
+      const validated = backupService.validateAndNormalizeBackup(content);
+      const storeNameResolved =
+        validated.tables.stores?.[0]?.name_fr ||
+        validated.tables.stores?.[0]?.name_ar ||
+        'Magasin Aquadro';
+      const productsCount = validated.tables.products?.length || 0;
+
+      setPendingRestoreBackup({
+        content,
+        storeName: storeNameResolved,
+        productsCount
+      });
+      setRestoreNewPin('');
+      setRestoreConfirmPin('');
+      setRestorePinError('');
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message || 'Impossible de valider ce fichier de sauvegarde. Vos données actuelles sont intactes.'
+      );
+    } finally {
+      setIsRestoringBackup(false);
+      if (backupInputRef.current) {
+        backupInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleCancelRestore = () => {
+    setPendingRestoreBackup(null);
+    setRestoreNewPin('');
+    setRestoreConfirmPin('');
+    setRestorePinError('');
+    if (backupInputRef.current) {
+      backupInputRef.current.value = '';
+    }
+  };
+
+  const handleExecuteRestoreWithPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingRestoreBackup) return;
+
+    setRestorePinError('');
+
+    const pinVal = SecurityUtil.validateNewPin(restoreNewPin);
+    if (!pinVal.valid) {
+      setRestorePinError(pinVal.error || 'Code PIN non conforme.');
+      return;
+    }
+
+    if (restoreNewPin !== restoreConfirmPin) {
+      setRestorePinError('La confirmation du code PIN ne correspond pas.');
+      return;
+    }
+
+    setIsRestoringBackup(true);
+    try {
+      await backupService.restoreBackup(pendingRestoreBackup.content, undefined, {
+        fromSetup: true,
+        newOwnerPin: restoreNewPin
+      });
+      localStorage.setItem('aquadro_setup_completed', 'true');
+      localStorage.setItem('pizzeria_setup_completed', 'true');
+      onComplete();
+    } catch (err: any) {
+      setRestorePinError(err?.message || 'Erreur lors de la restauration.');
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
 
   const handleNextStep1 = (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,6 +224,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
     }
 
     try {
+      // Vérifier si la base est déjà configurée sans session Propriétaire active :
+      // si oui, basculer directement vers l'écran de connexion normal sans écraser la base.
+      const alreadyConfigured = await db.isSetupCompleted();
+      if (alreadyConfigured && authService.getCurrentUser()?.role !== 'owner') {
+        localStorage.setItem('aquadro_setup_completed', 'true');
+        localStorage.setItem('pizzeria_setup_completed', 'true');
+        onComplete();
+        return;
+      }
+
       // Setup payload matching Rust struct
       const payload = {
         store_name_fr: storeName,
@@ -142,6 +242,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         wilaya: wilaya,
         commune: commune,
         phone: phone,
+        email: email.trim() || null,
         rc: rc,
         nif: nif,
         nis: nis,
@@ -155,7 +256,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
       // 1. Sauvegarder le DB Secret dans le Keyring OS (Rust) et localStorage
       try {
-        await invoke('setup_db_secret', { secret: generatedDbSecret });
+        await authService.setupDbSecret(generatedDbSecret);
       } catch (keyringErr) {
         console.warn('Keyring non disponible, sauvegarde locale:', keyringErr);
       }
@@ -170,8 +271,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
         window.dispatchEvent(new Event('store_logo_updated'));
       }
 
-      // 2. Exécuter l'initialisation atomique de la BDD via Rust
-      await invoke('complete_setup', { payload });
+      // 2. Exécuter l'initialisation atomique de la BDD via authService (transmet le token Propriétaire si présent)
+      await authService.completeSetup(payload);
 
       // 3. Connexion automatique pour ne pas avoir à retaper le PIN
       await authService.loginWithPin(pin);
@@ -220,9 +321,147 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
 
         {/* Corps */}
         <div className="p-6">
-          {/* ÉTAPE 1 : Identité Magasin */}
-          {currentStep === 1 && (
-            <form onSubmit={handleNextStep1} className="space-y-4">
+          {pendingRestoreBackup ? (
+            <div data-testid="restore-pin-setup-card" className="space-y-4">
+              <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2">
+                <ShieldCheck className="w-5 h-5" />
+                <span className="text-sm">Restauration de Sauvegarde — Nouveau code PIN Propriétaire</span>
+              </div>
+
+              <div className="p-3.5 rounded border border-orange-200 bg-orange-50/80 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-gray-900 text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Fichier de sauvegarde validé avec succès</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-gray-700 pt-1">
+                  <div>
+                    <span className="text-gray-500">Établissement : </span>
+                    <strong className="text-gray-900">{pendingRestoreBackup.storeName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Articles / Produits : </span>
+                    <strong className="text-gray-900">{pendingRestoreBackup.productsCount}</strong>
+                  </div>
+                </div>
+                <div className="text-[11px] text-gray-600 pt-1 border-t border-orange-200 leading-relaxed">
+                  Pour garantir un accès sécurisé immédiat, définissez le nouveau code PIN du compte Propriétaire (4 à 8 chiffres). L'ancien code contenu dans la sauvegarde sera remplacé de façon atomique et sécurisée.
+                </div>
+              </div>
+
+              {restorePinError && (
+                <div className="p-3 rounded bg-red-50 border border-red-200 flex items-center space-x-2 text-red-800 text-xs">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{restorePinError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleExecuteRestoreWithPin} className="space-y-4">
+                <div>
+                  <label htmlFor="restore-new-pin" className="block font-bold text-gray-700 mb-1">
+                    Nouveau code PIN Propriétaire (4 à 8 chiffres) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="restore-new-pin"
+                    data-testid="restore-new-pin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={8}
+                    required
+                    value={restoreNewPin}
+                    onChange={e => setRestoreNewPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    className="w-full p-2.5 border border-gray-300 rounded text-xs text-gray-900 font-mono tracking-widest"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    Chiffres uniquement. Les codes trop simples (ex: 1234, 1111, 5678) sont interdits.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="restore-confirm-pin" className="block font-bold text-gray-700 mb-1">
+                    Confirmer le nouveau code PIN Propriétaire <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="restore-confirm-pin"
+                    data-testid="restore-confirm-pin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={8}
+                    required
+                    value={restoreConfirmPin}
+                    onChange={e => setRestoreConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    className="w-full p-2.5 border border-gray-300 rounded text-xs text-gray-900 font-mono tracking-widest"
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-gray-200 flex items-center justify-between">
+                  <button
+                    type="button"
+                    data-testid="restore-cancel-btn"
+                    disabled={isRestoringBackup}
+                    onClick={handleCancelRestore}
+                    className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded flex items-center space-x-1.5 border border-gray-300 disabled:opacity-50"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Annuler</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    data-testid="restore-submit-btn"
+                    disabled={isRestoringBackup}
+                    className="px-5 py-2.5 bg-[#E87524] hover:bg-[#D46317] text-white font-bold rounded flex items-center space-x-2 shadow disabled:opacity-50"
+                  >
+                    {isRestoringBackup ? (
+                      <span>Restauration en cours...</span>
+                    ) : (
+                      <>
+                        <span>Confirmer & Restaurer</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <>
+              {/* ÉTAPE 1 : Identité Magasin */}
+              {currentStep === 1 && (
+                <form onSubmit={handleNextStep1} className="space-y-4">
+              {/* Restauration directe d'une sauvegarde JSON existante après réinstallation */}
+              <div className="p-3 rounded border border-orange-200 bg-orange-50/70 flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-gray-900">
+                    Vous avez déjà une sauvegarde Aquadro POS ? (استعادة نسخة احتياطية سابقة)
+                  </div>
+                  <div className="text-[11px] text-gray-600">
+                    Restaurez directement votre base de données JSON existante sans reconfigurer le magasin.
+                  </div>
+                </div>
+                <input
+                  ref={backupInputRef}
+                  data-testid="setup-restore-backup-input"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleRestoreFromSetup}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  data-testid="setup-restore-backup-btn"
+                  disabled={isRestoringBackup}
+                  onClick={() => backupInputRef.current?.click()}
+                  className="px-3 py-2 rounded bg-[#E87524] hover:bg-[#d16317] text-white font-bold flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isRestoringBackup ? 'Restauration...' : 'Restaurer (.json)'}</span>
+                </button>
+              </div>
+
               <div className="flex items-center space-x-2 text-[#E87524] font-bold border-b border-gray-200 pb-2 mb-4">
                 <Building2 className="w-4 h-4" />
                 <span>Étape 1 : Coordonnées du Magasin</span>
@@ -650,6 +889,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onComplete }) => {
                 </button>
               </div>
             </form>
+          )}
+            </>
           )}
         </div>
       </div>

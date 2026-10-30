@@ -35,10 +35,10 @@ export class ExpenseService {
   }
 
   public async createExpense(payload: CreateExpensePayload): Promise<Expense> {
-    if (payload.amount <= 0) {
+    if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
       throw new Error('Le montant de la dépense doit être supérieur à zéro.');
     }
-    if (!payload.description.trim()) {
+    if (!payload.description || !payload.description.trim()) {
       throw new Error('La description du motif de la charge est obligatoire.');
     }
 

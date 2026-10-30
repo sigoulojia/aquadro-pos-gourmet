@@ -6,9 +6,10 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 3000,
     strictPort: true,
-    host: '127.0.0.1',
+    host: '0.0.0.0',
+    allowedHosts: true,
   },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {

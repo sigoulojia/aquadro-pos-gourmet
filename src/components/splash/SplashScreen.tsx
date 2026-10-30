@@ -25,11 +25,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onReady, onFatalErro
     try {
       logger.info('STARTUP', 'Initialisation instantanée des sous-systèmes...');
 
-      // Initialisation concurrente et sans délais artificiels
-      await Promise.all([
-        db.initialize(),
-        authService.initSession()
-      ]);
+      // Initialiser d'abord la base de données, puis restaurer la session authentifiée
+      await db.initialize();
+      await authService.initSession();
 
       // Attacher le scanner code-barres USB instantanément
       ScannerInputManager.getInstance();

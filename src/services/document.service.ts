@@ -162,18 +162,30 @@ export class DocumentService {
     if (data.items && data.items.length > 0) {
       const saleId = `sale-${docId}`;
       try {
+        const users = await db.select<{ id: string }>('SELECT id FROM users LIMIT 1');
+        const cashierId = users.length > 0 ? users[0].id : 'usr-owner';
+        const idempotencyKey = `inv-${docId}-${Math.random().toString(36).substring(2, 8)}`;
+
         await db.execute(
-          `INSERT INTO sales (id, receipt_number, customer_name, total_ttc, cashier_id, cashier_name, status, notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO products (
+            id, sku, barcode, name_fr, name_ar, selling_price_ttc, purchase_cost,
+            min_selling_price_ttc, current_stock, min_stock_alert, is_active, created_at, updated_at
+          ) VALUES ('prod-custom', 'SKU-CUSTOM', 'BC-CUSTOM', 'Article Facturé', 'مقال مفوتر', 0, 0, 0, 100, 0, 1, ?, ?)`,
+          [now, now]
+        );
+
+        await db.execute(
+          `INSERT INTO sales (
+            id, receipt_number, cashier_id, subtotal_ht, discount_amount,
+            tax_amount, total_ttc, status, idempotency_key, sync_status, created_at
+          ) VALUES (?, ?, ?, ?, 0, 0, ?, 'COMPLETED', ?, 'PENDING', ?)`,
           [
             saleId,
             docNumber,
-            data.customerName,
+            cashierId,
             data.totalTtc,
-            'usr-owner',
-            'Propriétaire',
-            'COMPLETED',
-            `Facture ${docNumber} - ${data.notes || ''}`,
+            data.totalTtc,
+            idempotencyKey,
             now
           ]
         );
@@ -181,16 +193,20 @@ export class DocumentService {
         for (const item of data.items) {
           const itemId = `item-${Math.random().toString(36).substring(2, 8)}`;
           await db.execute(
-            `INSERT INTO sale_items (id, sale_id, product_id, name, quantity, unit_price, total_price, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO sale_items (
+              id, sale_id, product_id, product_name, quantity, unit_price_ttc,
+              discount_amount, total_ttc, unit_purchase_cost_snapshot,
+              unit_purchase_price, unit_price, notes, created_at
+            ) VALUES (?, ?, 'prod-custom', ?, ?, ?, 0, ?, 0, 0, ?, ?, ?)`,
             [
               itemId,
               saleId,
-              'prod-custom',
               item.name,
               item.quantity,
               item.unitPrice,
               item.total,
+              item.unitPrice,
+              data.notes || null,
               now
             ]
           );
@@ -271,11 +287,18 @@ export class DocumentService {
 
       if (sales.length > 0) {
         const saleId = sales[0].id;
-        const items = await db.select<any>(
-          'SELECT name, quantity, unit_price, total_price FROM sale_items WHERE sale_id = ?',
+        const rawItems = await db.select<any>(
+          'SELECT * FROM sale_items WHERE sale_id = ?',
           [saleId]
         );
-        if (items.length > 0) return items;
+        if (rawItems.length > 0) {
+          return rawItems.map((it: any) => ({
+            name: it.product_name || it.name || 'Article',
+            quantity: Number(it.quantity) || 1,
+            unit_price: Number(it.unit_price_ttc ?? it.unit_price ?? 0),
+            total_price: Number(it.total_ttc ?? it.total_price ?? 0)
+          }));
+        }
       }
     } catch {}
 

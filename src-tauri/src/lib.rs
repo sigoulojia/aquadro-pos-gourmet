@@ -24,6 +24,19 @@ fn raw_print_receipt(content: String, printer_name: Option<String>) -> Result<St
     printer_hardware::print_raw_receipt(content, printer_name)
 }
 
+// Native command to print raster ESC/POS monochrome image
+#[tauri::command]
+fn raw_print_image(
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    printer_name: Option<String>,
+    feed_lines: Option<u8>,
+    cut: Option<bool>,
+) -> Result<String, String> {
+    printer_hardware::print_raster_image(data, width, height, printer_name, feed_lines, cut)
+}
+
 // Native command to fire RJ11 drawer kick pulse (ESC p 0 25 250)
 #[tauri::command]
 fn open_cash_drawer(pin: Option<u8>, printer_name: Option<String>) -> Result<printer_hardware::DrawerKickResult, String> {
@@ -67,6 +80,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             raw_print_receipt,
+            raw_print_image,
             open_cash_drawer,
             list_hardware_printers,
             get_terminal_info,
@@ -76,8 +90,10 @@ pub fn run() {
             auth::logout_user,
             auth::setup_db_secret,
             auth::verify_danger_zone,
+            auth::check_setup_status,
             auth::complete_setup,
             auth::hash_new_pin,
+            auth::verify_pin_credential,
             auth::get_users,
             auth::create_user,
             auth::update_user_pin,
@@ -90,6 +106,7 @@ pub fn run() {
             runtime::create_database_backup,
             runtime::list_database_backups,
             runtime::verify_database_integrity,
+            runtime::restore_json_backup_atomic,
             runtime::save_report_file,
             runtime::open_reports_folder,
             runtime::open_logs_folder,

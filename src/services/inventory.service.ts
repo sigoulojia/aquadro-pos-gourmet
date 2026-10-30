@@ -187,9 +187,9 @@ export class InventoryService {
         user_id, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        movement.id, movement.product_id, movement.batch_id, movement.movement_type,
+        movement.id, movement.product_id, movement.batch_id || null, movement.movement_type,
         movement.quantity_change, movement.previous_stock, movement.new_stock,
-        movement.reference_id, movement.reason, movement.unit_cost_snapshot,
+        movement.reference_id || null, movement.reason, movement.unit_cost_snapshot ?? 0,
         movement.user_id, movement.created_at
       ]
     );

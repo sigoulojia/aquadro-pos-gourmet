@@ -68,7 +68,7 @@ export class LicenseService {
     }
 
     // Fallback environnement Web / Tests Vitest
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
       try {
         const saved = localStorage.getItem('aquadro_web_license_status');
         if (saved) {
@@ -128,9 +128,13 @@ export class LicenseService {
       is_trial_expired: false,
       trial_days_remaining: 0,
     };
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('aquadro_web_license_status', JSON.stringify(webStatus));
-      window.dispatchEvent(new CustomEvent('license_status_updated', { detail: webStatus }));
+    if (typeof window !== 'undefined' || typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('aquadro_web_license_status', JSON.stringify(webStatus));
+      } catch {}
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('license_status_updated', { detail: webStatus }));
+      }
     }
     this.cachedStatus = webStatus;
 
@@ -139,6 +143,25 @@ export class LicenseService {
       message: 'تم تنشيط البرنامج بنجاح (Mode Web)',
       status: webStatus
     };
+  }
+
+  /**
+   * Définit ou simule explicitement un statut de licence local (environnement Web / Tests)
+   */
+  public setMockStatus(status: LicenseStatusResponse | null): void {
+    this.cachedStatus = status;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        if (status) {
+          localStorage.setItem('aquadro_web_license_status', JSON.stringify(status));
+        } else {
+          localStorage.removeItem('aquadro_web_license_status');
+        }
+      } catch {}
+    }
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && status) {
+      window.dispatchEvent(new CustomEvent('license_status_updated', { detail: status }));
+    }
   }
 
   /**

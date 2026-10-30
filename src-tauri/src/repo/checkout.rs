@@ -114,9 +114,22 @@ impl CheckoutRepo {
         let mut prepared_items = Vec::new();
 
         // 2. Validate Products and calculate totals
+        if payload.items.is_empty() {
+            return Err("Cart cannot be empty".to_string());
+        }
+        if payload.payments.is_empty() {
+            return Err("Payments cannot be empty".to_string());
+        }
+
         for item in &payload.items {
-            if item.quantity <= 0.0 {
+            if !item.quantity.is_finite() || item.quantity <= 0.0 {
                 return Err("Quantity must be greater than zero".to_string());
+            }
+            if item.unit_price_ttc < 0 {
+                return Err("Unit price cannot be negative".to_string());
+            }
+            if item.discount_amount < 0 {
+                return Err("Discount amount cannot be negative".to_string());
             }
 
             // Verify Product
@@ -150,6 +163,9 @@ impl CheckoutRepo {
             };
 
             let line_total = (item.quantity * (item.unit_price_ttc as f64)).round() as i64 - item.discount_amount;
+            if line_total < 0 {
+                return Err("Line total cannot be negative".to_string());
+            }
             total_ttc += line_total;
             total_discount += item.discount_amount;
 
@@ -192,10 +208,19 @@ impl CheckoutRepo {
         let mut prepared_payments = Vec::new();
 
         for p in &payload.payments {
+            if p.amount <= 0 {
+                return Err("Payment amount must be greater than zero".to_string());
+            }
+            if p.tendered_amount < 0 {
+                return Err("Tendered amount cannot be negative".to_string());
+            }
             total_payments += p.amount;
             
             let mut payment_change = 0;
             if p.payment_method == "CASH" {
+                if p.tendered_amount < p.amount {
+                    return Err("Cash tendered amount cannot be less than payment amount".to_string());
+                }
                 payment_change = p.tendered_amount - p.amount;
                 change_given += payment_change;
                 total_cash_sales += p.amount;
@@ -217,11 +242,8 @@ impl CheckoutRepo {
             });
         }
 
-        // Ajuster total_ttc si paiements couvrent avec frais ou arrondis
-        if total_payments >= total_ttc {
-            total_ttc = total_payments;
-        } else if total_ttc - total_payments > 5 {
-            return Err("Payments do not match total TTC".to_string());
+        if total_payments < total_ttc {
+            return Err("Insufficient payment: total payments are less than total TTC".to_string());
         }
 
         if is_credit && payload.customer_id.is_none() {
@@ -287,11 +309,9 @@ impl CheckoutRepo {
             .execute(&mut *conn).await.map_err(|e| e.to_string())?;
         }
 
-        // 7. Handle Credit Debt
-        if is_credit {
-            if let Some(cust_id) = &payload.customer_id {
-                CustomerRepo::add_debt(conn, cust_id, total_credit_sales).await?;
-            }
+        // 7. Handle Customer Loyalty Points, Total Spent & Credit Debt
+        if let Some(cust_id) = &payload.customer_id {
+            CustomerRepo::update_after_sale(conn, cust_id, total_ttc, total_credit_sales).await?;
         }
 
         // 8. Update Cash Session if valid

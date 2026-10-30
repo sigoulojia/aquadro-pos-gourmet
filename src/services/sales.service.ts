@@ -17,11 +17,12 @@ export interface ProcessRefundPayload {
     saleItemId: string;
     productId: string;
     quantity: number;
-    unitPrice: number;
-    unitPurchasePrice: number;
+    unitPrice?: number;
+    unitPurchasePrice?: number;
     restock: boolean;
   }>;
   reason: string;
+  paymentMethod?: 'CASH' | 'CIB' | 'EDAHABIA' | 'BARIDIMOB' | 'CREDIT';
   managerPin?: string;
   sessionId?: string;
 }
@@ -123,16 +124,44 @@ export class SalesService {
   }
 
 
-  // Traiter un retour / remboursement avec validation des quantités
+  // Traiter un retour / remboursement avec validation cumulative des quantités et réversion comptable
   public async processRefund(payload: ProcessRefundPayload & { items?: any[] }): Promise<Refund> {
     const sale = await this.getSaleById(payload.saleId);
     if (!sale) {
       throw new Error(`Vente introuvable : ${payload.saleId}`);
     }
+    if ((sale.status as string) === 'CANCELLED') {
+      throw new Error(`Impossible de rembourser une vente annulée (${sale.receipt_number}).`);
+    }
+    if (sale.status === 'REFUNDED') {
+      throw new Error(`Cette vente (${sale.receipt_number}) a déjà été intégralement remboursée.`);
+    }
 
     const itemsToRefund = payload.items || payload.itemsToRefund || [];
     if (!itemsToRefund || itemsToRefund.length === 0) {
       throw new Error('Veuillez sélectionner au moins un article à rembourser.');
+    }
+
+    // Récupérer les remboursements déjà effectués sur cette vente pour empêcher tout sur-remboursement cumulé
+    const existingRefunds = await db.select<Refund>(
+      'SELECT id, refund_amount FROM refunds WHERE original_sale_id = ?',
+      [sale.id]
+    );
+    const existingRefundIds = new Set(existingRefunds.map(r => r.id));
+    const previouslyRefundedAmount = existingRefunds.reduce(
+      (sum, r) => CurrencyUtil.add(sum, Number(r.refund_amount) || 0),
+      0
+    );
+
+    const allRefundItems = existingRefundIds.size > 0
+      ? await db.select<RefundItem>('SELECT * FROM refund_items')
+      : [];
+    const refundedQtyBySaleItem = new Map<string, number>();
+    for (const ri of allRefundItems) {
+      if (existingRefundIds.has(ri.refund_id)) {
+        const prevQty = refundedQtyBySaleItem.get(ri.sale_item_id) || 0;
+        refundedQtyBySaleItem.set(ri.sale_item_id, prevQty + (Number(ri.quantity) || 0));
+      }
     }
 
     let totalRefundAmount = 0;
@@ -141,20 +170,34 @@ export class SalesService {
     const refundReceipt = `REF-AVO-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const now = new Date().toISOString();
 
+    // Suivre aussi les quantités demandées dans le même appel pour éviter les doublons de lignes dans itemsToRefund
+    const requestedInBatchBySaleItem = new Map<string, number>();
+
     for (const rItem of itemsToRefund) {
+      if (!rItem.quantity || rItem.quantity <= 0) {
+        throw new Error('La quantité à rembourser doit être strictement positive.');
+      }
+
       const origItem = sale.items?.find(i => i.id === rItem.saleItemId);
       if (!origItem) {
         throw new Error(`Ligne de vente introuvable : ${rItem.saleItemId}`);
       }
 
-      if (rItem.quantity > origItem.quantity) {
+      const alreadyRefundedQty = refundedQtyBySaleItem.get(rItem.saleItemId) || 0;
+      const batchRequestedQty = (requestedInBatchBySaleItem.get(rItem.saleItemId) || 0) + rItem.quantity;
+      requestedInBatchBySaleItem.set(rItem.saleItemId, batchRequestedQty);
+
+      const remainingRefundableQty = origItem.quantity - alreadyRefundedQty;
+      if (batchRequestedQty > remainingRefundableQty + 1e-9) {
         throw new Error(
           `Quantité excessive : Vous ne pouvez pas rembourser ${rItem.quantity} unité(s) ` +
-          `alors que seulement ${origItem.quantity} unité(s) ont été achetées.`
+          `alors que seulement ${remainingRefundableQty} unité(s) restent remboursables sur ${origItem.quantity} achetée(s).`
         );
       }
 
-      const unitPrice = rItem.unitPrice !== undefined ? rItem.unitPrice : (rItem.refundPrice !== undefined ? rItem.refundPrice : origItem.unit_price_ttc);
+      const unitPrice = rItem.unitPrice !== undefined
+        ? rItem.unitPrice
+        : (rItem.refundPrice !== undefined ? rItem.refundPrice : origItem.unit_price_ttc);
       const lineRefund = CurrencyUtil.multiply(unitPrice, rItem.quantity);
       totalRefundAmount = CurrencyUtil.add(totalRefundAmount, lineRefund);
 
@@ -162,10 +205,10 @@ export class SalesService {
         id: `refi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         refund_id: refundId,
         sale_item_id: rItem.saleItemId,
-        product_id: rItem.productId,
+        product_id: rItem.productId || origItem.product_id,
         product_name: origItem.product_name,
         quantity: rItem.quantity,
-        refund_price: rItem.unitPrice,
+        refund_price: unitPrice,
         unit_purchase_price: origItem.unit_purchase_cost_snapshot,
         restock_inventory: rItem.restock ? 1 : 0
       };
@@ -177,7 +220,7 @@ export class SalesService {
         // 1. Réintégration stock produit global / lot
         try {
           await inventoryService.recordMovement({
-            productId: rItem.productId,
+            productId: refundItem.product_id,
             batchId: origItem.batch_id,
             movementType: 'RETURN',
             quantityChange: rItem.quantity,
@@ -193,8 +236,8 @@ export class SalesService {
 
         // 2. Réintégration stock des ingrédients de la recette (Pizzas, plats cuisinés)
         try {
-          if (rItem.productId) {
-            await recipeService.restoreRecipeIngredientsForRefund(rItem.productId, rItem.quantity);
+          if (refundItem.product_id) {
+            await recipeService.restoreRecipeIngredientsForRefund(refundItem.product_id, rItem.quantity);
           }
         } catch (recipeErr) {
           console.warn('[SalesService] Erreur réintégration ingrédients recette:', recipeErr);
@@ -225,6 +268,11 @@ export class SalesService {
       }
     }
 
+    // Ne jamais stocker le code PIN en clair dans la base de données
+    const sanitizedAuthMarker = payload.managerPin
+      ? `AUTHORIZED_BY_${payload.cashierId || 'MANAGER'}`
+      : undefined;
+
     const refund: Refund = {
       id: refundId,
       original_sale_id: sale.id,
@@ -232,9 +280,9 @@ export class SalesService {
       cashier_id: payload.cashierId,
       cashier_name: payload.cashierName,
       refund_amount: totalRefundAmount,
-      payment_method: sale.payments?.[0]?.payment_method || 'CASH',
+      payment_method: payload.paymentMethod || sale.payments?.[0]?.payment_method || 'CASH',
       reason: payload.reason,
-      authorized_by_pin: payload.managerPin,
+      authorized_by_pin: sanitizedAuthMarker,
       created_at: now,
       items: refundItemsList
     };
@@ -265,10 +313,28 @@ export class SalesService {
       );
     }
 
-    // Mettre à jour le statut de la vente originale
-    const isFullRefund = totalRefundAmount >= sale.total_ttc;
+    // Mettre à jour le statut de la vente originale en tenant compte du cumul des remboursements
+    const cumulativeRefundedAmount = CurrencyUtil.add(previouslyRefundedAmount, totalRefundAmount);
+    const allItemsFullyRefunded = (sale.items || []).every(orig => {
+      const prev = refundedQtyBySaleItem.get(orig.id) || 0;
+      const cur = requestedInBatchBySaleItem.get(orig.id) || 0;
+      return prev + cur >= orig.quantity - 1e-9;
+    });
+    const isFullRefund = cumulativeRefundedAmount >= sale.total_ttc || allItemsFullyRefunded;
     const newStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
     await db.execute('UPDATE sales SET status = ? WHERE id = ?', [newStatus, sale.id]);
+
+    // Si la vente originale a été payée à CREDIT, réduire la dette du client à hauteur du remboursement
+    if (refund.payment_method === 'CREDIT' && sale.customer_id) {
+      const custRows = await db.select<{ id: string; current_debt: number }>(
+        'SELECT id, current_debt FROM customers WHERE id = ?',
+        [sale.customer_id]
+      );
+      if (custRows.length > 0) {
+        const newDebt = Math.max(0, CurrencyUtil.subtract(custRows[0].current_debt || 0, totalRefundAmount));
+        await db.execute('UPDATE customers SET current_debt = ? WHERE id = ?', [newDebt, sale.customer_id]);
+      }
+    }
 
     // Si remboursé en espèces, déduire de la session de caisse
     if (refund.payment_method === 'CASH') {

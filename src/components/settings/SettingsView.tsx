@@ -12,11 +12,24 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 const isTauri = typeof window !== 'undefined' && typeof (window as any).__TAURI_INTERNALS__?.invoke === 'function';
 
 async function invoke(cmd: string, args?: any): Promise<any> {
+  if (cmd === 'get_store') {
+    return await authService.getStore();
+  }
+  if (cmd === 'update_store') {
+    await authService.updateStore(args?.store, args?.token);
+    return {};
+  }
   if (isTauri) {
     return await tauriInvoke(cmd, args);
   }
-  console.warn(`[Web Mode] Mocking Tauri invoke for: ${cmd}`);
-  if (cmd === 'verify_danger_zone') return true;
+  if (cmd === 'verify_danger_zone') {
+    const { usageSessionService } = await import('../../services/usageSession.service');
+    const check = await usageSessionService.verifyRecoveryCode(String(args?.secret || ''));
+    if (!check.valid) {
+      throw new Error(check.error || 'Code secret ou PIN Propriétaire invalide');
+    }
+    return true;
+  }
   return {};
 }
 import { Store, FiscalProfile } from '../../types/database';
@@ -128,8 +141,10 @@ export const SettingsView: React.FC = () => {
   });
 
   // Imprimante
-  const [printerPaperSize, setPrinterPaperSize] = useState<'58mm' | '80mm'>('80mm');
-  const [autoPrintReceipt, setAutoPrintReceipt] = useState<boolean>(true);
+  const initialPrinterCfg = printerService.getConfig();
+  const [printerPaperSize, setPrinterPaperSize] = useState<'58mm' | '80mm'>(initialPrinterCfg.paperWidth || '80mm');
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState<boolean>(initialPrinterCfg.autoPrint ?? true);
+  const [cutterEnabled, setCutterEnabled] = useState<boolean>(initialPrinterCfg.cutterEnabled !== false);
   const [printersList, setPrintersList] = useState<Array<{ name: string; device_type: string; path_or_id: string; is_default: boolean }>>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>(printerService.getSelectedPrinterName() || '');
   const [isLoadingPrinters, setIsLoadingPrinters] = useState<boolean>(false);
@@ -224,6 +239,7 @@ export const SettingsView: React.FC = () => {
     e.preventDefault();
     try {
       await invoke('update_store', {
+        token: authService.getSessionToken() || localStorage.getItem('aquadro_session_token') || null,
         store: {
           id: store.id || 'store-alg-01',
           name_fr: store.name_fr || '',
@@ -254,30 +270,65 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  const handleChangePaperSize = (size: '58mm' | '80mm') => {
+    setPrinterPaperSize(size);
+    const cfg = printerService.getConfig();
+    printerService.saveConfig({ ...cfg, paperWidth: size });
+  };
+
+  const handleToggleAutoPrint = (enabled: boolean) => {
+    setAutoPrintReceipt(enabled);
+    const cfg = printerService.getConfig();
+    printerService.saveConfig({ ...cfg, autoPrint: enabled });
+  };
+
+  const handleToggleCutter = (enabled: boolean) => {
+    setCutterEnabled(enabled);
+    const cfg = printerService.getConfig();
+    printerService.saveConfig({ ...cfg, cutterEnabled: enabled });
+    showToast(
+      enabled
+        ? "Découpe automatique activée (pour imprimantes avec massicot motorisé)"
+        : "Découpe automatique désactivée (recommandé pour POS-80 à découpe manuelle)",
+      'info'
+    );
+  };
+
   const handleTestPrint = async () => {
     try {
       await printerService.printReceipt({
-        storeName: store.name_fr || 'Aquadro POS',
-        storeAddress: store.address || 'Alger',
+        storeName: store.name_fr || 'Aquadro POS Gourmet',
+        storeNameAr: store.name_ar || 'أكوادرو بيتزا غورميه',
+        storeAddress: store.address || 'Alger, Algérie',
         storePhone: store.phone || '0550 00 00 00',
         receiptNumber: 'TKT-TEST-0001',
         dateTime: new Date().toLocaleString('fr-FR'),
         cashierName: 'Testeur POS',
         items: [
-          { name: 'Produit Test A', quantity: 1, unitPrice: 16500, total: 16500 },
-          { name: 'Produit Test B', quantity: 1, unitPrice: 4200, total: 4200 }
+          { name: 'Pizza Margherita Royale', variant: 'Large', quantity: 1, unitPrice: 850, total: 850, supplements: ['Fromage Mozzarella Extra'] },
+          { name: 'Canette Boisson Fraîche 33cl', quantity: 2, unitPrice: 150, total: 300 }
         ],
-        subtotal: 20700,
+        subtotal: 1150,
         discountTotal: 0,
-        taxAmount: store.fiscal_regime === 'REEL' ? 3305 : 0,
-        taxRate: store.fiscal_regime === 'REEL' ? 19 : 0,
-        grandTotal: 20700,
-        payments: [{ method: 'CASH', amount: 20700, tendered: 21000, change: 300 }],
-        footerMessage: 'Merci pour votre confiance ! Compléments garantis 100% originaux.'
-      });
-      showToast('Ticket de test envoyé au gestionnaire d\'impression', 'info');
+        taxAmount: store.fiscal_regime === 'REEL' ? 218 : 0,
+        taxRate: store.fiscal_regime === 'REEL' ? 0.19 : 0,
+        grandTotal: 1150,
+        payments: [{ method: 'CASH', amount: 1150, tendered: 1500, change: 350 }],
+        footerMessage: 'Merci pour votre confiance ! شكراً لزيارتكم ونسعد بخدمتكم دائماً.',
+        paperWidth: printerPaperSize
+      }, true);
+      showToast('Ticket de test thermique envoyé avec succès à l\'imprimante', 'success');
     } catch (err: any) {
       showToast(`Erreur impression : ${err.message}`, 'error');
+    }
+  };
+
+  const handleTestDiagnostic = async () => {
+    try {
+      await printerService.printDiagnosticReceipt(true);
+      showToast('Ticket de test diagnostic matériel POS-80 envoyé avec succès', 'success');
+    } catch (err: any) {
+      showToast(`Erreur impression diagnostic : ${err.message}`, 'error');
     }
   };
 
@@ -384,22 +435,18 @@ export const SettingsView: React.FC = () => {
 
   const handleFullFactoryReset = async () => {
     try {
-      let token = authService.getSessionToken();
-      if (!token) {
-        token = localStorage.getItem('aquadro_session_token') || 'dev-token-usr-owner';
-      }
+      const token = authService.getSessionToken() || localStorage.getItem('aquadro_session_token') || '';
       
-      // Rust va vérifier si le token appartient à un admin/owner ET si le secret/PIN est bon
+      // Vérification stricte : code secret Setup Charter (verify_danger_zone) ou PIN Propriétaire (Owner exclusivement)
       let valid = false;
       try {
         valid = await invoke('verify_danger_zone', { secret: dangerPin, token });
       } catch (e: any) {
-        // En mode web ou secours, vérifier avec authService
-        const pinCheck = await authService.verifyManagerOrOwnerPin(dangerPin);
-        if (pinCheck.valid || dangerPin === '1234' || dangerPin === '0000' || dangerPin.toUpperCase() === 'RESET') {
+        const ownerCheck = await authService.verifyOwnerPin(dangerPin);
+        if (ownerCheck.valid && ownerCheck.user?.role === 'owner') {
           valid = true;
         } else {
-          throw new Error(e?.message || e || 'Code PIN ou secret incorrect');
+          throw new Error(e?.message || e || 'Accès refusé : Code secret Setup Charter ou PIN Propriétaire (Owner) requis.');
         }
       }
       if (!valid) return;
@@ -929,7 +976,7 @@ export const SettingsView: React.FC = () => {
                   <label className="block text-gray-700 font-bold mb-1">Format de papier ticket :</label>
                   <select
                     value={printerPaperSize}
-                    onChange={e => setPrinterPaperSize(e.target.value as any)}
+                    onChange={e => handleChangePaperSize(e.target.value as any)}
                     className="w-full p-2 border border-[#E9DCCB] rounded text-xs bg-white text-gray-900"
                   >
                     <option value="80mm">80 mm (Recommandé - Format standard avec logo et détails)</option>
@@ -945,13 +992,26 @@ export const SettingsView: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={autoPrintReceipt}
-                    onChange={e => setAutoPrintReceipt(e.target.checked)}
+                    onChange={e => handleToggleAutoPrint(e.target.checked)}
+                    className="w-4 h-4 text-[#E87524]"
+                  />
+                </div>
+
+                <div className="p-3 border border-[#E9DCCB] rounded bg-gray-50 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-gray-800">Découpe automatique du papier (Auto-cutter)</div>
+                    <div className="text-[11px] text-gray-500">Désactiver pour POS-80 sans massicot motorisé (découpe manuelle)</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={cutterEnabled}
+                    onChange={e => handleToggleCutter(e.target.checked)}
                     className="w-4 h-4 text-[#E87524]"
                   />
                 </div>
               </div>
 
-              <div className="flex space-x-3 mt-3">
+              <div className="flex flex-wrap gap-2.5 mt-3">
                 <button
                   type="button"
                   onClick={handleTestPrint}
@@ -959,6 +1019,15 @@ export const SettingsView: React.FC = () => {
                 >
                   <Printer className="w-4 h-4 text-gray-600" />
                   <span>Imprimer un ticket de test DZD</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestDiagnostic}
+                  className="px-3 py-2 bg-[#FFF3EB] hover:bg-[#FFE5D3] text-[#E87524] font-bold rounded border border-[#E87524] flex items-center space-x-1.5"
+                >
+                  <FileText className="w-4 h-4 text-[#E87524]" />
+                  <span>Test Diagnostic Matériel (Pattern & Langues)</span>
                 </button>
 
                 <button

@@ -84,11 +84,14 @@ export class CustomerService {
   }
 
   public async updateCustomer(id: string, updates: Partial<Customer>): Promise<void> {
+    const allowedColumns = new Set([
+      'name', 'phone', 'wilaya', 'notes', 'credit_limit', 'current_debt', 'total_spent', 'loyalty_points'
+    ]);
     const fields: string[] = [];
     const values: any[] = [];
 
     for (const [key, val] of Object.entries(updates)) {
-      if (key !== 'id' && key !== 'created_at') {
+      if (allowedColumns.has(key)) {
         fields.push(`${key} = ?`);
         values.push(val);
       }
@@ -106,7 +109,7 @@ export class CustomerService {
 
   // Ajouter au solde débiteur (lors d'un achat à crédit)
   public async addDebt(customerId: string, amount: number): Promise<void> {
-    if (amount <= 0) return;
+    if (!Number.isFinite(amount) || amount <= 0) return;
     const customers = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [customerId]);
     if (customers.length === 0) return;
     const cust = customers[0];
@@ -137,7 +140,7 @@ export class CustomerService {
 
   // Ajouter des points de fidélité
   public async addLoyaltyPoints(customerId: string, points: number): Promise<void> {
-    if (points <= 0) return;
+    if (!Number.isFinite(points) || points <= 0) return;
     await db.execute('UPDATE customers SET loyalty_points = loyalty_points + ? WHERE id = ?', [points, customerId]);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('customers_updated'));
@@ -152,15 +155,15 @@ export class CustomerService {
     cashierId: string;
     reference?: string;
   }): Promise<CustomerPayment> {
+    if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+      throw new Error('Le montant du versement doit être supérieur à zéro.');
+    }
+
     const customers = await db.select<Customer>('SELECT * FROM customers WHERE id = ?', [payload.customerId]);
     if (customers.length === 0) {
       throw new Error(`Client introuvable : ${payload.customerId}`);
     }
     const cust = customers[0];
-
-    if (payload.amount <= 0) {
-      throw new Error('Le montant du versement doit être supérieur à zéro.');
-    }
 
     const newDebt = Math.max(0, CurrencyUtil.subtract(cust.current_debt, payload.amount));
     await db.execute('UPDATE customers SET current_debt = ? WHERE id = ?', [newDebt, cust.id]);

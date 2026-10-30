@@ -249,6 +249,7 @@ export class CaisseService {
     const zReport = {
       openingFloat: closedSession.opening_float,
       cashSales: closedSession.total_cash_sales,
+      cashRefunds: closedSession.total_cash_refunds,
       cashExpenses: closedSession.total_cash_expenses,
       expectedCash: closedSession.expected_cash_drawer,
       actualCountedCash: counted,

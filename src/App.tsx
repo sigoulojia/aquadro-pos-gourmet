@@ -32,6 +32,7 @@ import { updateService } from "./services/update.service";
 import { logger } from "./services/logger.service";
 import { LicenseActivationModal } from "./components/license/LicenseActivationModal";
 import { licenseService, LicenseStatusResponse } from "./services/license.service";
+import { db } from "./db/sqlite";
 
 export const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<NavView>("pos");
@@ -87,12 +88,21 @@ export const AppContent: React.FC = () => {
     }
   }, [currentUser, currentView]);
 
-  const handleAppReady = () => {
-    const completed =
-      localStorage.getItem("pizzeria_setup_completed") ||
-      localStorage.getItem("aquadro_setup_completed");
-    if (!completed) {
-      setShowSetup(true);
+  const handleAppReady = async () => {
+    try {
+      const completed = await db.isSetupCompleted();
+      if (!completed) {
+        setShowSetup(true);
+      } else {
+        setShowSetup(false);
+      }
+    } catch {
+      const completedFallback =
+        localStorage.getItem("pizzeria_setup_completed") ||
+        localStorage.getItem("aquadro_setup_completed");
+      if (!completedFallback) {
+        setShowSetup(true);
+      }
     }
     setIsInitializing(false);
     logger.info("APPLICATION", "Pizzeria POS prêt et actif");

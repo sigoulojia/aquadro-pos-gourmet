@@ -10,7 +10,7 @@ export const LoginView: React.FC = () => {
   const [storeLogo, setStoreLogo] = useState<string | null>(() => localStorage.getItem('aquadro_store_logo') || localStorage.getItem('pizzeria_store_logo'));
 
   useEffect(() => {
-    db.select<{ name_fr?: string; name?: string }>("SELECT name_fr, name FROM stores LIMIT 1")
+    db.select<{ name_fr?: string; name?: string }>("SELECT * FROM stores LIMIT 1")
       .then(rows => {
         if (rows.length > 0) {
           setStoreName(rows[0].name_fr || rows[0].name || "");

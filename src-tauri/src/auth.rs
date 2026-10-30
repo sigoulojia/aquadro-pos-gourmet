@@ -7,6 +7,7 @@
     use lazy_static::lazy_static;
     use rand::{distributions::Alphanumeric, Rng};
     use serde::{Deserialize, Serialize};
+    use sha2::{Digest, Sha256};
     use sqlx::{FromRow, SqlitePool};
     use std::collections::HashMap;
     use std::fs;
@@ -47,23 +48,97 @@
             .collect()
     }
 
+    pub fn validate_new_pin_backend(pin: &str) -> Result<(), String> {
+        let trimmed = pin.trim();
+        if trimmed.len() < 4 || trimmed.len() > 8 {
+            return Err("Le code PIN doit comporter entre 4 et 8 chiffres.".to_string());
+        }
+        if !trimmed.chars().all(|c| c.is_ascii_digit()) {
+            return Err("Le code PIN ne doit contenir que des chiffres.".to_string());
+        }
+        const BLOCKED_PINS: &[&str] = &[
+            "0000", "1111", "2222", "3333", "4444",
+            "5555", "6666", "7777", "8888", "9999",
+            "1234", "4321", "2345", "5432", "3456",
+            "6543", "4567", "7654", "5678", "8765",
+            "6789", "9876", "0123", "3210",
+            "12345", "123456", "1234567", "12345678",
+            "00000", "000000", "11111", "111111",
+        ];
+        if BLOCKED_PINS.contains(&trimmed) {
+            return Err("Ce code PIN est trop simple ou par défaut. Veuillez choisir une combinaison sécurisée.".to_string());
+        }
+        Ok(())
+    }
+
     pub async fn hash_pin(pin: &str) -> Result<String, String> {
+        validate_new_pin_backend(pin)?;
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
         let password_hash = argon2
-            .hash_password(pin.as_bytes(), &salt)
+            .hash_password(pin.trim().as_bytes(), &salt)
             .map_err(|e| format!("Erreur de hachage: {}", e))?
             .to_string();
         Ok(password_hash)
     }
 
+    fn is_valid_salted_sha256_format(hash: &str) -> Option<(&str, &str)> {
+        let mut parts = hash.split(':');
+        let salt = parts.next()?;
+        let digest_hex = parts.next()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        if salt.len() < 8 || salt.len() > 64 {
+            return None;
+        }
+        if !salt.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            return None;
+        }
+        if digest_hex.len() != 64 || !digest_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        Some((salt, digest_hex))
+    }
+
+    fn constant_time_eq_hex(a: &str, b: &str) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut diff: u8 = 0;
+        for (byte_a, byte_b) in a.bytes().zip(b.bytes()) {
+            diff |= byte_a.to_ascii_lowercase() ^ byte_b.to_ascii_lowercase();
+        }
+        diff == 0
+    }
+
+    /// Vérifie un code PIN contre un hachage Argon2id (`$argon2...`) ou un hachage
+    /// SHA-256 salé legacy (`salt:64HexChars`). Rejette strictement les PINs en clair,
+    /// `mock-hash-*` et les formats malformés.
     pub async fn verify_pin(pin: &str, hash: &str) -> Result<bool, String> {
-        if !hash.starts_with("$argon2") {
+        if pin.trim().is_empty() || hash.trim().is_empty() {
             return Ok(false);
         }
-        let parsed_hash = PasswordHash::new(hash).map_err(|e| format!("Format hash invalide: {}", e))?;
-        let argon2 = Argon2::default();
-        Ok(argon2.verify_password(pin.as_bytes(), &parsed_hash).is_ok())
+        if hash.starts_with("mock-hash-") {
+            return Err("Format de hachage de test (mock-hash) interdit.".to_string());
+        }
+        if hash.starts_with("$argon2") {
+            let parsed_hash = PasswordHash::new(hash).map_err(|e| format!("Format hash Argon2 invalide: {}", e))?;
+            let argon2 = Argon2::default();
+            return Ok(argon2.verify_password(pin.as_bytes(), &parsed_hash).is_ok());
+        }
+        if let Some((salt, expected_hex)) = is_valid_salted_sha256_format(hash) {
+            let mut hasher = Sha256::new();
+            hasher.update(format!("{}:{}", salt, pin).as_bytes());
+            let computed_hex = hex::encode(hasher.finalize());
+            return Ok(constant_time_eq_hex(&computed_hex, expected_hex));
+        }
+        Err("Format de hachage PIN non reconnu ou invalide.".to_string())
+    }
+
+    #[tauri::command]
+    pub async fn verify_pin_credential(pin: String, hash: String) -> Result<bool, String> {
+        verify_pin(&pin, &hash).await
     }
 
     #[tauri::command]
@@ -100,55 +175,46 @@
             .await
             .map_err(|e| e.to_string())?;
 
-        let mut matched_user = None;
+        let mut matched_user: Option<(SafeUser, bool)> = None;
         for u in &users {
             if verify_pin(&pin, &u.pin_hash).await.unwrap_or(false) {
-                matched_user = Some(SafeUser {
-                    id: u.id.clone(),
-                    name: u.name.clone(),
-                    role: u.role.clone(),
-                    store_id: u.store_id.clone(),
-                });
+                let needs_argon2_migration = !u.pin_hash.starts_with("$argon2");
+                matched_user = Some((
+                    SafeUser {
+                        id: u.id.clone(),
+                        name: u.name.clone(),
+                        role: u.role.clone(),
+                        store_id: u.store_id.clone(),
+                    },
+                    needs_argon2_migration,
+                ));
                 break;
             }
         }
 
-        if matched_user.is_none() && (pin == "1234" || pin == "0000") {
-            if let Some(u) = users.first() {
-                matched_user = Some(SafeUser {
-                    id: u.id.clone(),
-                    name: u.name.clone(),
-                    role: u.role.clone(),
-                    store_id: u.store_id.clone(),
-                });
-            } else {
-                let now = Utc::now().to_rfc3339();
-                let def_hash = hash_pin("1234").await?;
-                let _ = sqlx::query(
-                    r#"INSERT INTO users (id, name, role, pin_hash, phone, is_active, created_at, updated_at) 
-                    VALUES (?, ?, ?, ?, ?, 1, ?, ?)"#
-                )
-                .bind("usr-owner-01")
-                .bind("Chef Pizzaiolo")
-                .bind("owner")
-                .bind(&def_hash)
-                .bind("0550000000")
-                .bind(&now)
-                .bind(&now)
-                .execute(&*pool)
-                .await;
-
-                matched_user = Some(SafeUser {
-                    id: "usr-owner-01".to_string(),
-                    name: "Chef Pizzaiolo".to_string(),
-                    role: "owner".to_string(),
-                    store_id: None,
-                });
-            }
-        }
-
-        if let Some(user) = matched_user {
+        if let Some((user, needs_argon2_migration)) = matched_user {
             RATE_LIMIT.write().await.remove("system");
+
+            // Migration explicite et transparente des anciens hachages SHA-256 salés vers Argon2id après vérification réussie
+            if needs_argon2_migration {
+                if let Ok(upgraded_hash) = hash_pin(&pin).await {
+                    let now = Utc::now().to_rfc3339();
+                    let _ = sqlx::query("UPDATE users SET pin_hash = ?, updated_at = ? WHERE id = ?")
+                        .bind(&upgraded_hash)
+                        .bind(&now)
+                        .bind(&user.id)
+                        .execute(&*pool)
+                        .await;
+                    log_audit(
+                        &pool,
+                        &user.id,
+                        "PIN_HASH_MIGRATED_TO_ARGON2",
+                        "Hachage PIN legacy SHA-256 migré en toute sécurité vers Argon2id",
+                        "SUCCESS",
+                    )
+                    .await;
+                }
+            }
 
             let token = generate_opaque_token();
             let session = Session {
@@ -199,12 +265,35 @@
     #[tauri::command]
     pub async fn setup_db_secret(
         secret: String,
+        token: Option<String>,
         pool: tauri::State<'_, SqlitePool>,
         app_handle: tauri::AppHandle,
     ) -> Result<(), String> {
         let trimmed = secret.trim().to_string();
         if trimmed.is_empty() {
             return Err("Le code secret ne peut pas être vide".to_string());
+        }
+
+        // Si un propriétaire actif existe déjà, exiger une session Propriétaire authentifiée
+        let existing_owners: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1"
+        )
+        .fetch_one(&*pool)
+        .await
+        .unwrap_or(0);
+
+        if existing_owners > 0 {
+            let tok = token.ok_or_else(|| {
+                "Action non autorisée : Session Propriétaire requise pour modifier le code secret."
+                    .to_string()
+            })?;
+            let user = verify_session(tok).await?;
+            if user.role != "owner" {
+                return Err(
+                    "Action non autorisée : Seul le Propriétaire peut modifier le code secret."
+                        .to_string(),
+                );
+            }
         }
 
         // 1. Sauvegarder dans le Keyring OS sécurisé
@@ -308,6 +397,7 @@
         pub wilaya: String,
         pub commune: String,
         pub phone: String,
+        pub email: Option<String>,
         pub rc: String,
         pub nif: String,
         pub nis: String,
@@ -317,33 +407,137 @@
         pub owner_name: String,
         pub owner_phone: String,
         pub owner_pin: String,
+        pub token: Option<String>,
+        pub current_owner_pin: Option<String>,
     }
 
     #[tauri::command]
-    pub async fn complete_setup(payload: SetupPayload, pool: tauri::State<'_, SqlitePool>) -> Result<(), String> {
+    pub async fn check_setup_status(pool: tauri::State<'_, SqlitePool>) -> Result<bool, String> {
+        let store_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stores")
+            .fetch_one(&*pool)
+            .await
+            .unwrap_or(0);
+        let active_owner_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1"
+        )
+        .fetch_one(&*pool)
+        .await
+        .unwrap_or(0);
+
+        Ok(store_count > 0 && active_owner_count > 0)
+    }
+
+    #[tauri::command]
+    pub async fn complete_setup(
+        payload: SetupPayload,
+        token: Option<String>,
+        current_owner_pin: Option<String>,
+        pool: tauri::State<'_, SqlitePool>,
+    ) -> Result<(), String> {
+        validate_new_pin_backend(&payload.owner_pin)?;
+
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
         
         let now = Utc::now().to_rfc3339();
+
+        // 1. Inspecter l'état existant de la base de données dans la transaction
+        let existing_store: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM stores ORDER BY created_at ASC LIMIT 1"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let existing_active_owners: Vec<(String, String)> = sqlx::query_as(
+            "SELECT id, pin_hash FROM users WHERE role = 'owner' AND is_active = 1 ORDER BY created_at ASC"
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // 2. Protection stricte d'une base déjà configurée :
+        // Dès qu'un propriétaire actif existe déjà, interdire toute réécriture ou réinitialisation non authentifiée.
+        if !existing_active_owners.is_empty() {
+            let effective_token = token.or_else(|| payload.token.clone());
+            let effective_current_pin = current_owner_pin.or_else(|| payload.current_owner_pin.clone());
+
+            let mut authorized = false;
+            if let Some(tok) = effective_token {
+                if let Ok(session_user) = verify_session(tok).await {
+                    if session_user.role == "owner" {
+                        authorized = true;
+                    }
+                }
+            }
+            if !authorized {
+                if let Some(curr_pin) = effective_current_pin {
+                    for (_, owner_hash) in &existing_active_owners {
+                        if verify_pin(&curr_pin, owner_hash).await.unwrap_or(false) {
+                            authorized = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !authorized {
+                log_audit(
+                    &pool,
+                    "system",
+                    "SETUP_OVERWRITE_BLOCKED",
+                    "Tentative non autorisée d'écraser une base déjà configurée via complete_setup",
+                    "FAILED",
+                )
+                .await;
+                return Err(
+                    "Action non autorisée : La base de données est déjà configurée. Une authentification Propriétaire (Owner) est requise pour modifier la configuration existante.".to_string()
+                );
+            }
+        }
+
         let pin_hash = hash_pin(&payload.owner_pin).await?;
 
-        sqlx::query("DELETE FROM stores").execute(&mut *tx).await.map_err(|e| e.to_string())?;
-        
+        let store_id = existing_store
+            .map(|(id,)| id)
+            .unwrap_or_else(|| "store-alg-01".to_string());
+
+        let clean_email = payload
+            .email
+            .as_ref()
+            .map(|e| e.trim().to_string())
+            .filter(|e| !e.is_empty());
+
         sqlx::query(
             r#"
             INSERT INTO stores (
               id, name_fr, name_ar, address, wilaya, commune,
-              phone, rc_number, nif_number, nis_number,
+              phone, email, rc_number, nif_number, nis_number,
               fiscal_regime, default_tva_rate, created_at, updated_at, ai_number
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              name_fr = excluded.name_fr,
+              name_ar = excluded.name_ar,
+              address = excluded.address,
+              wilaya = excluded.wilaya,
+              commune = excluded.commune,
+              phone = excluded.phone,
+              email = COALESCE(excluded.email, stores.email),
+              rc_number = excluded.rc_number,
+              nif_number = excluded.nif_number,
+              nis_number = excluded.nis_number,
+              fiscal_regime = excluded.fiscal_regime,
+              default_tva_rate = excluded.default_tva_rate,
+              updated_at = excluded.updated_at
             "#,
         )
-        .bind("store-alg-01")
+        .bind(&store_id)
         .bind(&payload.store_name_fr)
         .bind(&payload.store_name_ar)
         .bind(&payload.address)
         .bind(&payload.wilaya)
         .bind(&payload.commune)
         .bind(&payload.phone)
+        .bind(&clean_email)
         .bind(&payload.rc)
         .bind(&payload.nif)
         .bind(&payload.nis)
@@ -352,29 +546,65 @@
         .bind(&now)
         .bind(&now)
         .bind("AI-0000")
-        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
-        sqlx::query("DELETE FROM users").execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        // Réutiliser l'identifiant du propriétaire existant (même inactif lors d'une reprise de setup partiel)
+        let any_existing_owner: Option<(String,)> = if let Some((ref id, _)) = existing_active_owners.first() {
+            Some((id.clone(),))
+        } else {
+            sqlx::query_as("SELECT id FROM users WHERE role = 'owner' ORDER BY created_at ASC LIMIT 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+        };
+
+        let owner_id = any_existing_owner
+            .map(|(id,)| id)
+            .unwrap_or_else(|| "usr-owner-01".to_string());
 
         sqlx::query(
             r#"
-            INSERT INTO users (id, name, role, pin_hash, phone, is_active, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (id, store_id, name, role, pin_hash, phone, is_active, created_at, updated_at) 
+            VALUES (?, ?, ?, 'owner', ?, ?, 1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              store_id = excluded.store_id,
+              name = excluded.name,
+              role = 'owner',
+              pin_hash = excluded.pin_hash,
+              phone = excluded.phone,
+              is_active = 1,
+              updated_at = excluded.updated_at
             "#,
         )
-        .bind("usr-owner-01")
+        .bind(&owner_id)
+        .bind(&store_id)
         .bind(&payload.owner_name)
-        .bind("owner")
         .bind(pin_hash)
         .bind(&payload.owner_phone)
-        .bind(1)
         .bind(&now)
         .bind(&now)
-        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Rattacher tout utilisateur ou produit existant sans store_id au magasin actif
+        sqlx::query("UPDATE users SET store_id = ? WHERE store_id IS NULL OR store_id = ''")
+            .bind(&store_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("UPDATE products SET store_id = ? WHERE store_id IS NULL OR store_id = ''")
+            .bind(&store_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
 
         tx.commit().await.map_err(|e| e.to_string())?;
         
-        log_audit(&pool, "system", "SYSTEM_SETUP", "Initial setup completed", "SUCCESS").await;
+        log_audit(&pool, &owner_id, "SYSTEM_SETUP", "Initial setup completed safely (upsert)", "SUCCESS").await;
 
         Ok(())
     }
@@ -416,11 +646,22 @@
         let pin_hash = hash_pin(&pin).await?;
         let id = format!("usr-{}", uuid::Uuid::new_v4().simple());
         let now = chrono::Utc::now().to_rfc3339();
+
+        let store_id: Option<String> = match acting_user.store_id {
+            Some(sid) if !sid.is_empty() => Some(sid),
+            _ => {
+                let row: Option<(String,)> = sqlx::query_as("SELECT id FROM stores LIMIT 1")
+                    .fetch_optional(&*pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                row.map(|(sid,)| sid)
+            }
+        };
         
         sqlx::query(
-            r#"INSERT INTO users (id, name, role, pin_hash, phone, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)"#
+            r#"INSERT INTO users (id, store_id, name, role, pin_hash, phone, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)"#
         )
-        .bind(&id).bind(&name).bind(&role).bind(&pin_hash).bind(&phone).bind(&now).bind(&now)
+        .bind(&id).bind(&store_id).bind(&name).bind(&role).bind(&pin_hash).bind(&phone).bind(&now).bind(&now)
         .execute(&*pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -512,8 +753,30 @@
     #[tauri::command]
     pub async fn update_store(
         store: crate::models::Store,
+        token: Option<String>,
         pool: tauri::State<'_, SqlitePool>
     ) -> Result<(), String> {
+        let existing_owners: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1"
+        )
+        .fetch_one(&*pool)
+        .await
+        .unwrap_or(0);
+
+        if existing_owners > 0 {
+            let tok = token.ok_or_else(|| {
+                "Action non autorisée : Session Propriétaire requise pour modifier les paramètres du magasin."
+                    .to_string()
+            })?;
+            let acting_user = verify_session(tok).await?;
+            if acting_user.role != "owner" && acting_user.role != "admin" {
+                return Err(
+                    "Action non autorisée : Seul le Propriétaire peut modifier la configuration fiscale du magasin."
+                        .to_string(),
+                );
+            }
+        }
+
         sqlx::query(
             r#"UPDATE stores SET 
                 name_fr = ?, name_ar = ?, wilaya = ?, commune = ?, address = ?, phone = ?, 

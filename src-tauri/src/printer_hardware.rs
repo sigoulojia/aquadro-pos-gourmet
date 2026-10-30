@@ -449,59 +449,156 @@ pub fn scan_available_printers() -> Vec<HardwareDeviceInfo> {
     list
 }
 
-/// Imprime un contenu brut ESC/POS vers l'imprimante thermique
-pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> Result<String, String> {
-    let mut bytes = content.into_bytes();
-    // Saut de lignes et découpe papier : ESC d 3 + GS V 65 0
-    bytes.extend_from_slice(&[0x1B, 0x64, 0x03, 0x1D, 0x56, 0x41, 0x00]);
-
+// Envoie un tampon d'octets brut vers l'imprimante thermique (Linux direct /dev/usb/lpX, CUPS, ou Windows Spooler)
+pub fn send_bytes_to_hardware(bytes: &[u8], preferred_printer: Option<&str>) -> Result<String, String> {
     #[cfg(target_os = "linux")]
     {
-        let raw_ports = ["/dev/usb/lp0", "/dev/usb/lp1", "/dev/usb/lp2", "/dev/lp0"];
-        for port in &raw_ports {
-            if std::path::Path::new(port).exists() {
-                if let Ok(mut file) = OpenOptions::new().write(true).open(port) {
-                    if file.write_all(&bytes).is_ok() && file.flush().is_ok() {
-                        crate::logger::log_info("PRINTER", &format!("Ticket imprimé via {}", port));
-                        return Ok(format!("Ticket imprimé avec succès via {}", port));
+        // 1. Si une imprimante ou un port spécifique a été sélectionné par l'utilisateur
+        if let Some(target) = preferred_printer {
+            let trimmed = target.trim();
+            if !trimmed.is_empty() {
+                // Détecter si la chaîne contient un chemin de périphérique direct (/dev/usb/lpX ou /dev/lpX)
+                if let Some(dev_idx) = trimmed.find("/dev/") {
+                    let raw_part = &trimmed[dev_idx..];
+                    let dev_path = raw_part.split(|c: char| c == ')' || c.is_whitespace() || c == ',').next().unwrap_or(raw_part).trim();
+                    
+                    if !std::path::Path::new(dev_path).exists() {
+                        let err_msg = format!("Le port d'imprimante sélectionné \"{}\" n'est pas connecté ou introuvable.", dev_path);
+                        crate::logger::log_warn("PRINTER", &err_msg);
+                        return Err(err_msg);
+                    }
+
+                    match OpenOptions::new().write(true).open(dev_path) {
+                        Ok(mut file) => {
+                            // Écriture cadencée sécurisée pour éviter les débordements de tampon USB matériel
+                            const CHUNK_SIZE: usize = 2048;
+                            for chunk in bytes.chunks(CHUNK_SIZE) {
+                                if let Err(e) = file.write_all(chunk) {
+                                    let err_msg = format!("Échec d'écriture sur {} : {}", dev_path, e);
+                                    crate::logger::log_error("PRINTER", &err_msg);
+                                    return Err(err_msg);
+                                }
+                                let _ = file.flush();
+                                std::thread::sleep(std::time::Duration::from_millis(3));
+                            }
+                            crate::logger::log_info("PRINTER", &format!("Données transmises avec succès via {}", dev_path));
+                            return Ok(format!("Données transmises avec succès via {}", dev_path));
+                        }
+                        Err(e) => {
+                            let reason = match e.kind() {
+                                std::io::ErrorKind::PermissionDenied => {
+                                    format!("Permission refusée sur \"{}\". Ajoutez l'utilisateur au groupe lp via sudo usermod -aG lp.", dev_path)
+                                }
+                                std::io::ErrorKind::NotFound => {
+                                    format!("Port \"{}\" introuvable. L'imprimante est peut-être éteinte ou déconnectée.", dev_path)
+                                }
+                                _ => format!("Impossible d'ouvrir le port \"{}\" : {}", dev_path, e),
+                            };
+                            crate::logger::log_error("PRINTER", &reason);
+                            return Err(reason);
+                        }
                     }
                 }
-            }
-        }
 
-        if let Some(ref p) = preferred_printer {
-            if !p.trim().is_empty() {
-                if let Ok(mut child) = Command::new("lp")
+                // Si ce n'est pas un /dev/, tenter l'impression directe via CUPS pour cette imprimante nommée
+                match Command::new("lp")
                     .arg("-d")
-                    .arg(p)
+                    .arg(trimmed)
                     .arg("-o")
                     .arg("raw")
                     .stdin(std::process::Stdio::piped())
                     .spawn()
                 {
-                    if let Some(mut stdin) = child.stdin.take() {
-                        let _ = stdin.write_all(&bytes);
-                        let _ = stdin.flush();
-                    }
-                    if let Ok(status) = child.wait() {
-                        if status.success() {
-                            crate::logger::log_info("PRINTER", &format!("Ticket transmis à CUPS sur '{}'", p));
-                            return Ok(format!("Ticket envoyé à l'imprimante CUPS '{}'", p));
+                    Ok(mut child) => {
+                        if let Some(mut stdin) = child.stdin.take() {
+                            let _ = stdin.write_all(bytes);
+                            let _ = stdin.flush();
                         }
+                        if let Ok(status) = child.wait() {
+                            if status.success() {
+                                crate::logger::log_info("PRINTER", &format!("Données transmises à CUPS sur '{}'", trimmed));
+                                return Ok(format!("Données transmises à l'imprimante CUPS '{}'", trimmed));
+                            } else {
+                                let err_msg = format!("Échec de la tâche d'impression CUPS sur '{}' (code sortie non-zéro).", trimmed);
+                                crate::logger::log_warn("PRINTER", &err_msg);
+                                return Err(err_msg);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let err_msg = format!("Impossible d'exécuter la commande 'lp' pour '{}' : {}", trimmed, e);
+                        crate::logger::log_warn("PRINTER", &err_msg);
+                        return Err(err_msg);
                     }
                 }
             }
         }
 
-        crate::logger::log_warn("PRINTER", "Aucun port d'impression directe USB ou CUPS disponible");
-        return Err("لم يتم العثور على طابعة فواتير حرارية متصلة مباشرة عبر USB. سيتم استخدام نافذة طباعة النظام.".to_string());
+        // 2. Détection automatique : balayer les ports USB bruts connus
+        let raw_ports = ["/dev/usb/lp0", "/dev/usb/lp1", "/dev/usb/lp2", "/dev/usb/lp3", "/dev/lp0", "/dev/lp1"];
+        let mut last_error: Option<String> = None;
+        for port in &raw_ports {
+            if std::path::Path::new(port).exists() {
+                match OpenOptions::new().write(true).open(port) {
+                    Ok(mut file) => {
+                        let mut success = true;
+                        const CHUNK_SIZE: usize = 2048;
+                        for chunk in bytes.chunks(CHUNK_SIZE) {
+                            if let Err(e) = file.write_all(chunk) {
+                                success = false;
+                                last_error = Some(format!("Échec écriture {}: {}", port, e));
+                                break;
+                            }
+                            let _ = file.flush();
+                            std::thread::sleep(std::time::Duration::from_millis(3));
+                        }
+                        if success {
+                            crate::logger::log_info("PRINTER", &format!("Données envoyées avec succès via {}", port));
+                            return Ok(format!("Données envoyées avec succès via {}", port));
+                        }
+                    }
+                    Err(e) => {
+                        let err_str = match e.kind() {
+                            std::io::ErrorKind::PermissionDenied => {
+                                format!("Permission refusée sur \"{}\". Exécutez sudo usermod -aG lp $USER puis redémarrez la session.", port)
+                            }
+                            _ => format!("Erreur d'accès à {} : {}", port, e),
+                        };
+                        last_error = Some(err_str);
+                    }
+                }
+            }
+        }
+
+        // 3. Repli CUPS par défaut si aucun port brut n'a fonctionné
+        if let Ok(mut child) = Command::new("lp")
+            .arg("-o")
+            .arg("raw")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(bytes);
+                let _ = stdin.flush();
+            }
+            if let Ok(status) = child.wait() {
+                if status.success() {
+                    crate::logger::log_info("PRINTER", "Données transmises à l'imprimante CUPS par défaut");
+                    return Ok("Données transmises à l'imprimante CUPS par défaut".to_string());
+                }
+            }
+        }
+
+        let detail = last_error.unwrap_or_else(|| "Aucun port d'impression directe USB (/dev/usb/lp0) ou CUPS disponible.".to_string());
+        crate::logger::log_warn("PRINTER", &format!("Échec impression matérielle Linux: {}", detail));
+        return Err(format!("لم يتم العثور على طابعة فواتير حرارية متصلة مباشرة عبر USB أو تعذر الاتصال بها: {}", detail));
     }
 
     #[cfg(target_os = "windows")]
     {
-        match winspool::send_raw_bytes(preferred_printer.as_deref(), &bytes) {
+        match winspool::send_raw_bytes(preferred_printer, bytes) {
             Ok(printer_used) => {
-                crate::logger::log_info("PRINTER", &format!("Ticket imprimé via Windows Spooler sur '{}'", printer_used));
+                crate::logger::log_info("PRINTER", &format!("Données imprimées via Windows Spooler sur '{}'", printer_used));
                 return Ok(format!("Ticket imprimé avec succès via '{}'", printer_used));
             }
             Err(e) => {
@@ -513,7 +610,298 @@ pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> 
 
     #[allow(unreachable_code)]
     {
-        crate::logger::log_info("PRINTER", "Système d'impression générique");
+        crate::logger::log_info("PRINTER", "Système d'impression générique non supporté");
         Err("Plateforme sans pilote d'impression thermique directe".to_string())
+    }
+}
+
+// Construit la commande ESC/POS raster (GS v 0) par bandes verticales sécurisées
+pub fn build_escpos_raster(
+    data: &[u8],
+    width: u32,
+    height: u32,
+    feed_lines: Option<u8>,
+    cut: Option<bool>,
+) -> Result<Vec<u8>, String> {
+    if width == 0 || height == 0 {
+        return Err("Dimensions d'image invalides (largeur ou hauteur égale à 0)".to_string());
+    }
+    if width > 2048 || height > 50000 {
+        return Err(format!("Dimensions d'image hors limites supportées ({}x{})", width, height));
+    }
+    if data.is_empty() {
+        return Err("Données d'image thermiques vides (charge utile vide)".to_string());
+    }
+
+    let bytes_per_row = (width + 7) / 8;
+    let expected_1bit_len = (bytes_per_row * height) as usize;
+
+    let packed_data: std::borrow::Cow<[u8]> = if data.len() == expected_1bit_len {
+        // Déjà formaté en bitmap 1-bit monochrome compacté (MSB en premier)
+        std::borrow::Cow::Borrowed(data)
+    } else if data.len() == (width * height) as usize {
+        // Grayscale 8-bit (1 octet par pixel : < 128 = point noir)
+        let mut packed = vec![0u8; expected_1bit_len];
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = data[(y * width + x) as usize];
+                if pixel < 128 {
+                    let byte_idx = (y * bytes_per_row + (x / 8)) as usize;
+                    let bit = 7 - (x % 8);
+                    packed[byte_idx] |= 1 << bit;
+                }
+            }
+        }
+        std::borrow::Cow::Owned(packed)
+    } else if data.len() == (width * height * 4) as usize {
+        // RGBA 32-bit (4 octets par pixel)
+        let mut packed = vec![0u8; expected_1bit_len];
+        for y in 0..height {
+            for x in 0..width {
+                let idx = ((y * width + x) * 4) as usize;
+                let r = data[idx] as u32;
+                let g = data[idx + 1] as u32;
+                let b = data[idx + 2] as u32;
+                let a = data[idx + 3] as u32;
+                if a >= 128 {
+                    let lum = (299 * r + 587 * g + 114 * b) / 1000;
+                    if lum < 180 {
+                        let byte_idx = (y * bytes_per_row + (x / 8)) as usize;
+                        let bit = 7 - (x % 8);
+                        packed[byte_idx] |= 1 << bit;
+                    }
+                }
+            }
+        }
+        std::borrow::Cow::Owned(packed)
+    } else {
+        return Err(format!(
+            "Taille de charge utile invalide : {} octets reçus (attendu {} octets pour {}x{})",
+            data.len(),
+            expected_1bit_len,
+            width,
+            height
+        ));
+    };
+
+    // Construction du flux ESC/POS raster
+    // Initialisation imprimante : ESC @ (0x1B, 0x40)
+    let mut payload = Vec::with_capacity(packed_data.len() + 64);
+    payload.extend_from_slice(&[0x1B, 0x40]);
+
+    // Alignement au centre ou à gauche selon le mode
+    // Découpage en tranches verticales sécurisées (max 128 lignes par commande GS v 0)
+    // IMPORTANT : max 128 lignes garantit que yL <= 128 et yH == 0 TOUJOURS.
+    // Cela élimine le bogue de microcontrôleur POS-80 où yL == 0 (pour 256) était interprété comme fin de commande
+    // provoquant l'impression de milliers de caractères chinois et aléatoires corrompus !
+    const MAX_CHUNK_LINES: u32 = 128;
+    let mut y_offset = 0u32;
+
+    while y_offset < height {
+        let lines_in_chunk = std::cmp::min(MAX_CHUNK_LINES, height - y_offset);
+        let chunk_byte_start = (y_offset * bytes_per_row) as usize;
+        let chunk_byte_end = ((y_offset + lines_in_chunk) * bytes_per_row) as usize;
+        let chunk_slice = &packed_data[chunk_byte_start..chunk_byte_end];
+
+        let x_l = (bytes_per_row & 0xFF) as u8;
+        let x_h = ((bytes_per_row >> 8) & 0xFF) as u8;
+        let y_l = (lines_in_chunk & 0xFF) as u8;
+        let y_h = ((lines_in_chunk >> 8) & 0xFF) as u8;
+
+        // Commande ESC/POS : GS v 0 m xL xH yL yH [data...]
+        // m = 0 : Mode normal 203 DPI x 203 DPI
+        payload.extend_from_slice(&[0x1D, 0x76, 0x30, 0x00, x_l, x_h, y_l, y_h]);
+        payload.extend_from_slice(chunk_slice);
+
+        y_offset += lines_in_chunk;
+    }
+
+    // Avancement contrôlé du papier en fin d'impression (ESC d n)
+    // 5 lignes d'avance permettent au contenu de franchir la distance tête-massicot (~20mm)
+    let feed = feed_lines.unwrap_or(5);
+    if feed > 0 {
+        payload.extend_from_slice(&[0x1B, 0x64, feed]);
+    }
+
+    // Découpe papier automatique :
+    // GS V 0 (0x1D 0x56 0x00) : Coupe complète standard Format A reconnue universellement par les POS-80
+    if cut.unwrap_or(true) {
+        payload.extend_from_slice(&[0x1D, 0x56, 0x00]);
+    }
+
+    Ok(payload)
+}
+
+// Imprime une image monochrome raster vers l'imprimante thermique
+pub fn print_raster_image(
+    data: Vec<u8>,
+    width: u32,
+    height: u32,
+    preferred_printer: Option<String>,
+    feed_lines: Option<u8>,
+    cut: Option<bool>,
+) -> Result<String, String> {
+    let escpos_payload = build_escpos_raster(&data, width, height, feed_lines, cut)?;
+    send_bytes_to_hardware(&escpos_payload, preferred_printer.as_deref())
+}
+
+/// Imprime un contenu brut ESC/POS vers l'imprimante thermique
+pub fn print_raw_receipt(content: String, preferred_printer: Option<String>) -> Result<String, String> {
+    let mut bytes = content.into_bytes();
+    // Saut de lignes et découpe papier universelle : ESC d 5 + GS V 0
+    bytes.extend_from_slice(&[0x1B, 0x64, 0x05, 0x1D, 0x56, 0x00]);
+    send_bytes_to_hardware(&bytes, preferred_printer.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_escpos_raster_valid() {
+        let width = 576u32;
+        let height = 10u32;
+        let bytes_per_row = (width + 7) / 8; // 72
+        let data = vec![0xFFu8; (bytes_per_row * height) as usize];
+
+        let result = build_escpos_raster(&data, width, height, Some(3), Some(true));
+        assert!(result.is_ok());
+        let payload = result.unwrap();
+
+        // Vérifie en-tête ESC @
+        assert_eq!(&payload[0..2], &[0x1B, 0x40]);
+        // Vérifie GS v 0 0 xL xH yL yH
+        assert_eq!(&payload[2..6], &[0x1D, 0x76, 0x30, 0x00]);
+        assert_eq!(payload[6], 72); // xL
+        assert_eq!(payload[7], 0);  // xH
+        assert_eq!(payload[8], 10); // yL
+        assert_eq!(payload[9], 0);  // yH
+
+        // Vérifie la fin : ESC d 3 suivi de GS V 0 (Coupe complète)
+        let len = payload.len();
+        assert_eq!(&payload[len - 6..len - 3], &[0x1B, 0x64, 0x03]);
+        assert_eq!(&payload[len - 3..len], &[0x1D, 0x56, 0x00]);
+    }
+
+    #[test]
+    fn test_build_escpos_raster_no_cut() {
+        let width = 384u32;
+        let height = 5u32;
+        let bytes_per_row = (width + 7) / 8; // 48
+        let data = vec![0xAAu8; (bytes_per_row * height) as usize];
+
+        let result = build_escpos_raster(&data, width, height, Some(2), Some(false));
+        assert!(result.is_ok());
+        let payload = result.unwrap();
+
+        let len = payload.len();
+        // Vérifie ESC d 2 à la fin et AUCUNE commande de découpe GS V
+        assert_eq!(&payload[len - 3..len], &[0x1B, 0x64, 0x02]);
+    }
+
+    #[test]
+    fn test_build_escpos_raster_invalid_dimensions() {
+        let data = vec![0u8; 100];
+        assert!(build_escpos_raster(&data, 0, 10, None, None).is_err());
+        assert!(build_escpos_raster(&data, 576, 0, None, None).is_err());
+    }
+
+    #[test]
+    fn test_build_escpos_raster_empty_data() {
+        let data = Vec::new();
+        assert!(build_escpos_raster(&data, 576, 10, None, None).is_err());
+    }
+
+    #[test]
+    fn test_build_escpos_raster_payload_mismatch() {
+        let data = vec![0u8; 10]; // Mauvaise taille
+        assert!(build_escpos_raster(&data, 576, 10, None, None).is_err());
+    }
+
+    #[test]
+    fn test_build_escpos_raster_chunking() {
+        let width = 576u32;
+        let height = 300u32; // > 128 lignes pour tester le découpage en chunks
+        let bytes_per_row = 72;
+        let data = vec![0u8; (bytes_per_row * height) as usize];
+
+        let result = build_escpos_raster(&data, width, height, Some(0), None);
+        assert!(result.is_ok());
+        let payload = result.unwrap();
+
+        // Avec MAX_CHUNK_LINES = 128, 300 lignes = 128 + 128 + 44 = 3 chunks
+        let gs_v_count = payload.windows(4).filter(|w| *w == [0x1D, 0x76, 0x30, 0x00]).count();
+        assert_eq!(gs_v_count, 3);
+    }
+
+    #[test]
+    fn test_build_escpos_raster_grayscale_and_rgba() {
+        let width = 8u32;
+        let height = 2u32;
+
+        // Grayscale 8-bit (16 bytes) : premier pixel noir (0), reste blanc (255)
+        let mut gray = vec![255u8; 16];
+        gray[0] = 0; // pixel (0,0) noir
+        let res_gray = build_escpos_raster(&gray, width, height, Some(0), None);
+        assert!(res_gray.is_ok());
+        let payload_gray = res_gray.unwrap();
+        // Le premier octet de données après l'en-tête (2 init + 8 raster cmd = 10) doit avoir le MSB à 1 (0x80)
+        assert_eq!(payload_gray[10], 0x80);
+
+        // RGBA 32-bit (64 bytes) : premier pixel noir (0,0,0,255), reste blanc (255,255,255,255)
+        let mut rgba = vec![255u8; 64];
+        rgba[0] = 0;
+        rgba[1] = 0;
+        rgba[2] = 0;
+        rgba[3] = 255;
+        let res_rgba = build_escpos_raster(&rgba, width, height, Some(0), None);
+        assert!(res_rgba.is_ok());
+        let payload_rgba = res_rgba.unwrap();
+        assert_eq!(payload_rgba[10], 0x80);
+    }
+
+    #[test]
+    fn test_scan_available_printers_structure() {
+        let list = scan_available_printers();
+        // Vérifie que les objets retournés ont des identifiants valides
+        for p in &list {
+            assert!(!p.name.is_empty());
+            assert!(!p.device_type.is_empty());
+            assert!(!p.path_or_id.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_send_bytes_explicit_missing_device() {
+        // Lorsqu'un port direct inexistant est explicitement demandé, une erreur claire doit être retournée
+        let dummy_data = vec![0x1B, 0x40];
+        let res = send_bytes_to_hardware(&dummy_data, Some("Port USB Direct (/dev/usb/lp999)"));
+        #[cfg(target_os = "linux")]
+        {
+            assert!(res.is_err());
+            let err = res.unwrap_err();
+            assert!(err.contains("lp999") || err.contains("introuvable") || err.contains("connecté"));
+        }
+    }
+
+    #[test]
+    fn test_hardware_direct_raster_if_device_present() {
+        // Si /dev/usb/lp0 est présent sur la machine de test, tester la transmission raster réelle
+        if std::path::Path::new("/dev/usb/lp0").exists() {
+            let width = 576u32;
+            let height = 40u32;
+            let bytes_per_row = 72usize;
+            let mut bitmap = vec![0u8; bytes_per_row * height as usize];
+            // Dessiner deux bordures horizontales et quelques motifs
+            for x in 0..bytes_per_row {
+                bitmap[x] = 0xFF; // Première ligne noire
+                bitmap[x + bytes_per_row] = 0xFF; // Deuxième ligne noire
+                bitmap[(height as usize - 1) * bytes_per_row + x] = 0xFF; // Dernière ligne
+            }
+            // Envoyer avec 3 lignes d'avance et AUCUNE découpe
+            let res = print_raster_image(bitmap, width, height, Some("/dev/usb/lp0".to_string()), Some(3), Some(false));
+            println!("Résultat test matériel /dev/usb/lp0 : {:?}", res);
+            assert!(res.is_ok());
+        }
     }
 }

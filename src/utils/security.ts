@@ -21,27 +21,63 @@ export class SecurityUtil {
   }
 
   /**
-   * Validates a new PIN ensuring it is secure and not a banned demo PIN
+   * Validates a new PIN ensuring it is secure (4 to 8 digits) and not a banned demo/trivial PIN
    */
   public static validateNewPin(pin: string): { valid: boolean; error?: string } {
-    if (!pin || pin.length < 4 || pin.length > 6) {
-      return { valid: false, error: 'Le code PIN doit comporter entre 4 et 6 chiffres.' };
+    if (!pin || typeof pin !== 'string') {
+      return { valid: false, error: 'Le code PIN est obligatoire.' };
     }
-    if (!/^\d+$/.test(pin)) {
+    const trimmed = pin.trim();
+    if (trimmed.length < 4 || trimmed.length > 8) {
+      return { valid: false, error: 'Le code PIN doit comporter entre 4 et 8 chiffres.' };
+    }
+    if (!/^\d+$/.test(trimmed)) {
       return { valid: false, error: 'Le code PIN doit contenir uniquement des chiffres.' };
     }
-    const forbidden = ['1234', '5678', '1111', '0000', '9999', '12345', '123456'];
-    if (forbidden.includes(pin)) {
+    const forbidden = new Set([
+      '0000', '1111', '2222', '3333', '4444',
+      '5555', '6666', '7777', '8888', '9999',
+      '1234', '4321', '2345', '5432', '3456',
+      '6543', '4567', '7654', '5678', '8765',
+      '6789', '9876', '0123', '3210',
+      '12345', '123456', '1234567', '12345678',
+      '00000', '000000', '11111', '111111'
+    ]);
+    if (forbidden.has(trimmed)) {
       return { valid: false, error: 'Code PIN trop simple ou de démonstration interdit.' };
     }
     return { valid: true };
   }
 
   /**
-   * Hashes a PIN or Password with a salt using SHA-256
-   * Returns formatted string: "salt:hash"
+   * Checks whether a stored hash string has a valid salted SHA-256 format ("salt:64HexChars")
+   */
+  public static isValidSaltedSha256Hash(storedHash: string | undefined | null): boolean {
+    if (!storedHash || typeof storedHash !== 'string') return false;
+    const parts = storedHash.split(':');
+    if (parts.length !== 2) return false;
+    const [salt, hashHex] = parts;
+    if (!salt || salt.length < 8 || salt.length > 64) return false;
+    if (!/^[a-zA-Z0-9_-]+$/.test(salt)) return false;
+    return /^[0-9a-fA-F]{64}$/.test(hashHex);
+  }
+
+  /**
+   * Checks whether a stored hash string is a valid PHC Argon2 string ("$argon2id$...")
+   */
+  public static isValidArgon2Hash(storedHash: string | undefined | null): boolean {
+    if (!storedHash || typeof storedHash !== 'string') return false;
+    return /^\$argon2(id|i|d)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/=_-]+\$[A-Za-z0-9+/=_-]+$/.test(storedHash);
+  }
+
+  /**
+   * Hashes a PIN or Password with a random salt using SHA-256
+   * Returns formatted string: "salt:hashHex" (64 hex chars)
    */
   public static async hashCredential(credential: string, existingSalt?: string): Promise<string> {
+    if (!credential || typeof credential !== 'string') {
+      throw new Error('Credential to hash cannot be empty.');
+    }
     const salt = existingSalt || this.generateSalt(16);
     const textToHash = `${salt}:${credential}`;
 
@@ -54,22 +90,18 @@ export class SecurityUtil {
       return `${salt}:${hashHex}`;
     }
 
-    // Fallback simple fast deterministic digest if crypto.subtle unavailable (e.g. testing)
-    let hash = 0;
-    for (let i = 0; i < textToHash.length; i++) {
-      const char = textToHash.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash |= 0;
-    }
-    return `${salt}:${Math.abs(hash).toString(16).padStart(32, '0')}`;
+    throw new Error('WebCrypto SHA-256 (crypto.subtle) is required for secure credential hashing.');
   }
 
   /**
-   * Verifies an input PIN or password against a stored "salt:hash"
+   * Verifies an input PIN against a stored "salt:hashHex" SHA-256 credential using constant-time comparison.
+   * Rejects plaintext PINs, mock hashes, and malformed hash strings.
    */
   public static async verifyCredential(inputCredential: string, storedHash: string): Promise<boolean> {
-    if (!storedHash || !storedHash.includes(':')) {
-      // If legacy or invalid format
+    if (!inputCredential || typeof inputCredential !== 'string') {
+      return false;
+    }
+    if (!this.isValidSaltedSha256Hash(storedHash)) {
       return false;
     }
 
@@ -77,6 +109,16 @@ export class SecurityUtil {
     const computed = await this.hashCredential(inputCredential, salt);
     const [, computedHash] = computed.split(':');
 
-    return computedHash === expectedHash;
+    if (!computedHash || computedHash.length !== expectedHash.length) {
+      return false;
+    }
+
+    const a = computedHash.toLowerCase();
+    const b = expectedHash.toLowerCase();
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+      diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return diff === 0;
   }
 }

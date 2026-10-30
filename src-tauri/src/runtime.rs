@@ -1,6 +1,7 @@
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqliteConnectOptions, Row, SqliteConnection, Connection, SqlitePool};
+use sqlx::{sqlite::SqliteConnectOptions, Acquire, Connection, Row, SqliteConnection, SqlitePool};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -706,5 +707,328 @@ pub fn delete_archived_session(folder_path: String, app_handle: tauri::AppHandle
     Ok(true)
 }
 
+const BACKUP_TABLES_TOPOLOGICAL_ORDER: &[&str] = &[
+    "stores",
+    "roles",
+    "permissions",
+    "categories",
+    "brands",
+    "suppliers",
+    "customers",
+    "ingredients",
+    "pizza_supplements",
+    "store_needs",
+    "document_sequences",
+    "users",
+    "products",
+    "recipe_items",
+    "product_batches",
+    "cash_sessions",
+    "purchases",
+    "purchase_items",
+    "inventory_movements",
+    "expenses",
+    "customer_payments",
+    "supplier_payments",
+    "sales",
+    "sale_items",
+    "payments",
+    "refunds",
+    "refund_items",
+    "commercial_documents",
+    "audit_logs",
+    "sync_operations",
+];
 
+fn is_safe_sql_identifier(ident: &str) -> bool {
+    !ident.is_empty()
+        && ident.len() <= 64
+        && ident
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
 
+/// Tauri Command: Restore normalized JSON backup atomically on a single SQLite connection + transaction
+#[tauri::command]
+pub async fn restore_json_backup_atomic(
+    tables_payload: HashMap<String, Vec<serde_json::Map<String, serde_json::Value>>>,
+    owner_pin: Option<String>,
+    from_setup: bool,
+    new_owner_pin: Option<String>,
+    pool: tauri::State<'_, SqlitePool>,
+) -> Result<bool, String> {
+    // 1. Acquire a single dedicated database connection from the pool
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| format!("Impossible d'acquérir une connexion SQLite dédiée: {}", e))?;
+
+    // 2. Verify authorization on this connection before beginning destructive modifications
+    let existing_store_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stores")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(0);
+    let existing_user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(0);
+    let existing_sales_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sales")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(0);
+    let existing_products_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM products")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(0);
+    let is_unconfigured_and_empty = existing_store_count == 0
+        && existing_user_count == 0
+        && existing_sales_count == 0
+        && existing_products_count == 0;
+
+    let mut authorized_user_id = "system".to_string();
+    let mut authorized_user_name = "Système (Setup)".to_string();
+
+    if !from_setup || !is_unconfigured_and_empty {
+        let pin = owner_pin
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                "Action non autorisée : La restauration nécessite impérativement le code PIN du Propriétaire (Owner)."
+                    .to_string()
+            })?;
+
+        let owner_rows = sqlx::query(
+            "SELECT id, name, pin_hash FROM users WHERE role = 'owner' AND is_active = 1",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(|e| format!("Erreur lecture propriétaires: {}", e))?;
+
+        let mut verified = false;
+        for row in owner_rows {
+            let uid: String = row.try_get("id").unwrap_or_default();
+            let uname: String = row.try_get("name").unwrap_or_default();
+            let phash: String = row.try_get("pin_hash").unwrap_or_default();
+            if crate::auth::verify_pin(pin, &phash).await.unwrap_or(false) {
+                verified = true;
+                authorized_user_id = uid;
+                authorized_user_name = uname;
+                break;
+            }
+        }
+
+        if !verified {
+            return Err(
+                "Action non autorisée : Code PIN Propriétaire invalide pour la restauration."
+                    .to_string(),
+            );
+        }
+    }
+
+    // Pré-valider et pré-hacher le nouveau code PIN Propriétaire AVANT toute modification
+    let mut hashed_new_pin: Option<String> = None;
+    if from_setup && is_unconfigured_and_empty {
+        if let Some(ref np) = new_owner_pin {
+            let trimmed = np.trim();
+            if !trimmed.is_empty() {
+                crate::auth::validate_new_pin_backend(trimmed)?;
+                hashed_new_pin = Some(crate::auth::hash_pin(trimmed).await?);
+            }
+        }
+    }
+
+    // 3. Enforce foreign keys on this exact connection and open an atomic transaction
+    sqlx::query("PRAGMA foreign_keys = ON;")
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| format!("Impossible d'activer PRAGMA foreign_keys: {}", e))?;
+
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|e| format!("Impossible de démarrer la transaction atomique: {}", e))?;
+
+    // 4. Delete existing rows in strict reverse topological order (child -> parent)
+    for &table in BACKUP_TABLES_TOPOLOGICAL_ORDER.iter().rev() {
+        let is_optional = table == "roles" || table == "permissions";
+        let delete_sql = format!("DELETE FROM {}", table);
+        if let Err(e) = sqlx::query(&delete_sql).execute(&mut *tx).await {
+            let msg = e.to_string();
+            if !(is_optional && msg.to_lowercase().contains("no such table")) {
+                let _ = tx.rollback().await;
+                return Err(format!(
+                    "Échec de nettoyage de la table '{}' : {}",
+                    table, msg
+                ));
+            }
+        }
+    }
+
+    // 5. Insert restored rows in strict forward topological order (parent -> child)
+    for &table in BACKUP_TABLES_TOPOLOGICAL_ORDER.iter() {
+        let Some(rows) = tables_payload.get(table) else {
+            continue;
+        };
+        if rows.is_empty() {
+            continue;
+        }
+
+        let is_optional = table == "roles" || table == "permissions";
+
+        for (idx, row) in rows.iter().enumerate() {
+            if row.is_empty() {
+                continue;
+            }
+
+            let mut cols: Vec<&str> = Vec::with_capacity(row.len());
+            for key in row.keys() {
+                if !is_safe_sql_identifier(key) {
+                    let _ = tx.rollback().await;
+                    return Err(format!(
+                        "Nom de colonne invalide '{}' dans la table '{}'.",
+                        key, table
+                    ));
+                }
+                cols.push(key.as_str());
+            }
+
+            let placeholders = vec!["?"; cols.len()].join(", ");
+            let insert_sql = format!(
+                "INSERT INTO {} ({}) VALUES ({})",
+                table,
+                cols.join(", "),
+                placeholders
+            );
+
+            let mut query = sqlx::query(&insert_sql);
+            for &col in &cols {
+                match row.get(col) {
+                    None | Some(serde_json::Value::Null) => {
+                        query = query.bind(Option::<String>::None);
+                    }
+                    Some(serde_json::Value::Bool(b)) => {
+                        query = query.bind(if *b { 1_i64 } else { 0_i64 });
+                    }
+                    Some(serde_json::Value::Number(n)) => {
+                        if let Some(i) = n.as_i64() {
+                            query = query.bind(i);
+                        } else if let Some(f) = n.as_f64() {
+                            query = query.bind(f);
+                        } else {
+                            query = query.bind(n.to_string());
+                        }
+                    }
+                    Some(serde_json::Value::String(s)) => {
+                        query = query.bind(s.as_str());
+                    }
+                    Some(other) => {
+                        query = query.bind(other.to_string());
+                    }
+                }
+            }
+
+            if let Err(e) = query.execute(&mut *tx).await {
+                let msg = e.to_string();
+                if !(is_optional && msg.to_lowercase().contains("no such table")) {
+                    let _ = tx.rollback().await;
+                    return Err(format!(
+                        "Erreur d'insertion dans '{}' (ligne #{}) : {}",
+                        table,
+                        idx + 1,
+                        msg
+                    ));
+                }
+            }
+        }
+    }
+
+    // 5b. Si un nouveau PIN Propriétaire a été défini lors de la restauration initiale,
+    // remplacer atomiquement le hachage d'identifiant du compte Propriétaire restauré
+    if let Some(ref new_hash) = hashed_new_pin {
+        let restored_owner: Option<(String,)> = sqlx::query_as(
+            "SELECT id FROM users WHERE role = 'owner' ORDER BY created_at ASC LIMIT 1"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| format!("Erreur recherche propriétaire restauré: {}", e))?;
+
+        let (owner_id,) = restored_owner.ok_or_else(|| {
+            "La sauvegarde restaurée ne contient aucun compte Propriétaire (Owner).".to_string()
+        })?;
+
+        let now_update = chrono::Utc::now().to_rfc3339();
+        let updated_rows = sqlx::query(
+            "UPDATE users SET pin_hash = ?, is_active = 1, updated_at = ? WHERE id = ?"
+        )
+        .bind(new_hash)
+        .bind(&now_update)
+        .bind(&owner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("Erreur mise à jour code PIN propriétaire: {}", e))?
+        .rows_affected();
+
+        if updated_rows != 1 {
+            let _ = tx.rollback().await;
+            return Err("Échec de mise à jour exacte du compte propriétaire restauré.".to_string());
+        }
+
+        // Vérifier que le compte propriétaire résultant est actif et valide
+        let active_owner_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1"
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(0);
+
+        if active_owner_count == 0 {
+            let _ = tx.rollback().await;
+            return Err("La base de données restaurée ne contient aucun compte Propriétaire actif valide.".to_string());
+        }
+    }
+
+    // 6. Verify PRAGMA foreign_key_check within the same transaction before committing
+    let fk_rows = sqlx::query("PRAGMA foreign_key_check;")
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| format!("Échec PRAGMA foreign_key_check: {}", e))?;
+
+    if !fk_rows.is_empty() {
+        let first_table: String = fk_rows[0].try_get(0).unwrap_or_default();
+        let first_parent: String = fk_rows[0].try_get(2).unwrap_or_default();
+        let _ = tx.rollback().await;
+        return Err(format!(
+            "Violation de clé étrangère détectée après restauration sur la table '{}' (parent: '{}').",
+            first_table, first_parent
+        ));
+    }
+
+    // 7. Record restoration audit log inside the same atomic transaction
+    let now_iso = chrono::Utc::now().to_rfc3339();
+    let audit_id = format!("audit-restore-{}", uuid::Uuid::new_v4());
+    let audit_desc = if hashed_new_pin.is_some() {
+        format!("Restauration atomique initiale et définition du nouveau code PIN Propriétaire exécutée par {}", authorized_user_name)
+    } else {
+        format!("Restauration atomique exécutée par {}", authorized_user_name)
+    };
+
+    let _ = sqlx::query(
+        "INSERT INTO audit_logs (id, user_id, user_name, action, entity_type, entity_id, details, created_at)
+         VALUES (?, ?, ?, 'DATABASE_RESTORED', 'SYSTEM', 'pizzeria_pos.db', ?, ?)"
+    )
+    .bind(&audit_id)
+    .bind(&authorized_user_id)
+    .bind(&authorized_user_name)
+    .bind(&audit_desc)
+    .bind(&now_iso)
+    .execute(&mut *tx)
+    .await;
+
+    // 8. Commit atomic transaction
+    tx.commit()
+        .await
+        .map_err(|e| format!("Échec du COMMIT de restauration: {}", e))?;
+
+    Ok(true)
+}
