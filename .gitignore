@@ -39,3 +39,5 @@ secrets/
 *سجلات_النشاط*
 .website_repo/
 .aistudio/
+releases/
+*.exe
