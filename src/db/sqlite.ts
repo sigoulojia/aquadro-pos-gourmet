@@ -523,6 +523,8 @@ export class DatabaseService {
             min_stock_alert REAL NOT NULL DEFAULT 5.0,
             category TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            ingredient_id TEXT,
+            portion_quantity REAL DEFAULT 1.0,
             created_at TEXT NOT NULL
         )
       `);
@@ -531,7 +533,9 @@ export class DatabaseService {
       for (const colDef of [
         'ALTER TABLE pizza_supplements ADD COLUMN purchase_cost INTEGER NOT NULL DEFAULT 0',
         'ALTER TABLE pizza_supplements ADD COLUMN current_stock REAL NOT NULL DEFAULT 50.0',
-        'ALTER TABLE pizza_supplements ADD COLUMN min_stock_alert REAL NOT NULL DEFAULT 5.0'
+        'ALTER TABLE pizza_supplements ADD COLUMN min_stock_alert REAL NOT NULL DEFAULT 5.0',
+        'ALTER TABLE pizza_supplements ADD COLUMN ingredient_id TEXT',
+        'ALTER TABLE pizza_supplements ADD COLUMN portion_quantity REAL DEFAULT 1.0'
       ]) {
         try {
           await adapter.execute(colDef);

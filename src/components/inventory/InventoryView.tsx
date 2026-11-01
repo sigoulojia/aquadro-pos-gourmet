@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { productService } from '../../services/product.service';
 import { recipeService, RecipeEntryInput } from '../../services/recipe.service';
+import { supplementService } from '../../services/supplement.service';
 import { Product, Ingredient, ProductYield, RecipeItemDetail } from '../../types/database';
 import { CurrencyUtil } from '../../core/currency/currency';
 import { useToast } from '../common/Toast';
@@ -25,7 +26,8 @@ import {
   PieChart,
   UtensilsCrossed,
   SlidersHorizontal,
-  Info
+  Info,
+  Link2
 } from 'lucide-react';
 
 export const InventoryView: React.FC = () => {
@@ -68,6 +70,17 @@ export const InventoryView: React.FC = () => {
   // Modal de sélection manuelle d'ingrédient pour la recette
   const [showIngredientPicker, setShowIngredientPicker] = useState<boolean>(false);
   const [pickerSearch, setPickerSearch] = useState<string>('');
+
+  // Modal Conversion Ingrédient -> Supplément Pizza
+  const [showConvertModal, setShowConvertModal] = useState<boolean>(false);
+  const [convertTarget, setConvertTarget] = useState<Ingredient | null>(null);
+  const [convertForm, setConvertForm] = useState({
+    name_fr: '',
+    name_ar: '',
+    portion_quantity: 0.05,
+    purchase_cost: 0,
+    price: 80
+  });
 
   useEffect(() => {
     loadAllData();
@@ -240,6 +253,76 @@ export const InventoryView: React.FC = () => {
     } catch (err) {
       console.error(err);
       showToast('Erreur lors de l\'ajustement.', 'error');
+    }
+  };
+
+  // --- Conversion d'un Ingrédient en Supplément Pizza ---
+
+  const handleOpenConvertModal = (ing: Ingredient) => {
+    setConvertTarget(ing);
+    let defaultPortion = 0.05;
+    if (ing.unit === 'kg') defaultPortion = 0.05;
+    else if (ing.unit === 'g') defaultPortion = 50;
+    else if (ing.unit === 'L') defaultPortion = 0.05;
+    else if (ing.unit === 'ml') defaultPortion = 50;
+    else if (ing.unit === 'pièce') defaultPortion = 1;
+
+    const unitCost = Number(ing.cost_per_unit) || 0;
+    const calcCost = Math.round(unitCost * defaultPortion);
+    const suggestedPrice = Math.max(50, Math.round((calcCost * 2) / 10) * 10);
+
+    setConvertForm({
+      name_fr: `Supplément ${ing.name_fr}`,
+      name_ar: ing.name_ar ? `${ing.name_ar} إضافية` : '',
+      portion_quantity: defaultPortion,
+      purchase_cost: calcCost,
+      price: suggestedPrice
+    });
+    setShowConvertModal(true);
+  };
+
+  const handleConvertPortionChange = (newPortion: number) => {
+    if (!convertTarget) return;
+    const unitCost = Number(convertTarget.cost_per_unit) || 0;
+    const calcCost = Math.round(unitCost * newPortion);
+    setConvertForm(prev => ({
+      ...prev,
+      portion_quantity: newPortion,
+      purchase_cost: calcCost
+    }));
+  };
+
+  const handleConfirmConvert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!convertTarget) return;
+    if (!convertForm.name_fr.trim()) {
+      showToast("Veuillez saisir le nom du supplément", "warning");
+      return;
+    }
+
+    try {
+      const lower = convertTarget.name_fr.toLowerCase();
+      let cat: any = 'extra';
+      if (lower.includes('fromage') || lower.includes('mozzarella') || lower.includes('cheddar')) cat = 'cheese';
+      else if (lower.includes('viande') || lower.includes('poulet') || lower.includes('thon')) cat = 'meat';
+      else if (lower.includes('sauce')) cat = 'sauce';
+      else if (lower.includes('olive') || lower.includes('champignon')) cat = 'veg';
+
+      await supplementService.addSupplement({
+        name_fr: convertForm.name_fr.trim(),
+        name_ar: convertForm.name_ar.trim() || undefined,
+        purchase_cost: convertForm.purchase_cost,
+        price: convertForm.price,
+        ingredient_id: convertTarget.id,
+        portion_quantity: convertForm.portion_quantity,
+        category: cat
+      });
+
+      showToast(`"${convertForm.name_fr}" créé comme supplément pizza !`, "success");
+      setShowConvertModal(false);
+      setConvertTarget(null);
+    } catch (err: any) {
+      showToast(`Erreur : ${err?.message || err}`, "error");
     }
   };
 
@@ -1108,9 +1191,17 @@ export const InventoryView: React.FC = () => {
                             </div>
                           </td>
 
-                          {/* Actions Modifier / Supprimer */}
+                          {/* Actions Modifier / Supprimer / Convertir en Supplément */}
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenConvertModal(ing)}
+                                className="px-2 py-1 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center gap-1 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Créer un supplément Pizza à partir de cet ingrédient (تحويل إلى إضافة)"
+                              >
+                                <Sparkles className="w-3 h-3 text-amber-600" />
+                                <span>+ Supplément</span>
+                              </button>
                               <button
                                 onClick={() => handleOpenEditIngredient(ing)}
                                 className="p-1.5 text-stone-500 hover:text-[#E87524] hover:bg-stone-100 rounded transition"
@@ -1731,6 +1822,248 @@ export const InventoryView: React.FC = () => {
                 إغلاق (Fermer)
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL : CONVERTIR UN INGRÉDIENT EN SUPPLÉMENT PIZZA */}
+      {showConvertModal && convertTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white border border-[#E9DCCB] rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+            {/* En-tête */}
+            <div className="px-5 py-4 border-b border-[#E9DCCB] bg-[#FFF8EF] flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-sm text-[#292522] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#E87524]" />
+                  Convertir en Supplément Pizza (تحويل إلى إضافة)
+                </h3>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Rend cet ingrédient sélectionnable comme extra lors de la commande avec déduction directe.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConvertModal(false)}
+                className="w-7 h-7 rounded-lg bg-white border border-[#E9DCCB] hover:bg-stone-100 flex items-center justify-center text-stone-500 hover:text-[#292522] transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Formulaire de conversion */}
+            <form onSubmit={handleConfirmConvert} className="p-5 space-y-4">
+              {/* Carte récapitulative de l'ingrédient source */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">Matière Première</span>
+                  <strong className="text-stone-900 text-sm block">{convertTarget.name_fr}</strong>
+                  {convertTarget.name_ar && (
+                    <span className="text-xs text-stone-600 font-arabic block" dir="rtl">
+                      {convertTarget.name_ar}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] text-stone-600 block">Stock brut actuel :</span>
+                  <span className="font-black font-mono text-sm text-[#E87524]">
+                    {convertTarget.current_stock} {convertTarget.unit}
+                  </span>
+                  <span className="text-[10px] text-stone-500 block font-mono">
+                    ({CurrencyUtil.formatDZD(convertTarget.cost_per_unit)} / {convertTarget.unit})
+                  </span>
+                </div>
+              </div>
+
+              {/* Noms du supplément */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Nom Français sur le Ticket *
+                  </label>
+                  <input
+                    type="text"
+                    value={convertForm.name_fr}
+                    onChange={e => setConvertForm({ ...convertForm, name_fr: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs focus:ring-1 focus:ring-[#E87524]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    الاسم بالعربية
+                  </label>
+                  <input
+                    type="text"
+                    value={convertForm.name_ar}
+                    onChange={e => setConvertForm({ ...convertForm, name_ar: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs text-right font-arabic focus:ring-1 focus:ring-[#E87524]"
+                    dir="rtl"
+                  />
+                </div>
+              </div>
+
+              {/* Quantité par portion & Raccourcis */}
+              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200/70 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-stone-700">
+                    Quantité consommée par portion ({convertTarget.unit}) :
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0.001}
+                      step={convertTarget.unit === 'kg' || convertTarget.unit === 'L' ? 0.005 : 1}
+                      value={convertForm.portion_quantity}
+                      onChange={e => handleConvertPortionChange(parseFloat(e.target.value) || 0)}
+                      className="w-20 px-2 py-1 bg-white border border-[#E9DCCB] rounded-lg text-center text-xs font-mono font-bold text-[#E87524]"
+                      required
+                    />
+                    <span className="text-xs font-mono text-stone-600">{convertTarget.unit}</span>
+                  </div>
+                </div>
+
+                {/* Presets rapides de portion */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-stone-500">Presets :</span>
+                  {convertTarget.unit === 'kg' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(0.03)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        30g
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(0.05)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        50g
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(0.07)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        70g
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(0.10)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        100g
+                      </button>
+                    </>
+                  )}
+                  {convertTarget.unit === 'g' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(30)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        30g
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(50)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        50g
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(100)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        100g
+                      </button>
+                    </>
+                  )}
+                  {convertTarget.unit === 'pièce' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(1)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        1 pce
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleConvertPortionChange(2)}
+                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                      >
+                        2 pces
+                      </button>
+                    </>
+                  )}
+                  <span className="ml-auto text-[11px] font-bold text-emerald-700">
+                    {convertForm.portion_quantity > 0
+                      ? `${Math.floor(convertTarget.current_stock / convertForm.portion_quantity)} portions dispo`
+                      : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Coût calculé & Prix de vente au client */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Coût Portion Calculé (DA)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={convertForm.purchase_cost}
+                    onChange={e => setConvertForm({ ...convertForm, purchase_cost: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-[#E9DCCB] rounded-xl text-xs font-mono font-bold text-stone-700"
+                    required
+                  />
+                  <span className="text-[10px] text-stone-500 mt-0.5 block">
+                    Calculé auto: {convertTarget.cost_per_unit} × {convertForm.portion_quantity}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 mb-1">
+                    Prix de Vente Client (DA) *
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={10}
+                    value={convertForm.price}
+                    onFocus={e => e.target.select()}
+                    onChange={e => setConvertForm({ ...convertForm, price: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs font-mono font-bold text-[#E87524] focus:ring-1 focus:ring-[#E87524]"
+                    required
+                  />
+                  <span className="text-[10px] text-emerald-700 font-bold mt-0.5 block">
+                    Marge: +{Math.max(0, convertForm.price - convertForm.purchase_cost)} DA
+                  </span>
+                </div>
+              </div>
+
+              {/* Pied du formulaire */}
+              <div className="pt-3 border-t border-[#E9DCCB] flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowConvertModal(false)}
+                  className="px-4 py-2 border border-[#E9DCCB] text-stone-600 hover:bg-stone-50 rounded-xl transition text-xs font-medium cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#E87524] hover:bg-[#D46317] text-white rounded-xl transition text-xs font-bold flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Créer le Supplément Pizza</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

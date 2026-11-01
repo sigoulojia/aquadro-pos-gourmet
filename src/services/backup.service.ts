@@ -291,7 +291,7 @@ const TABLE_ALLOWED_COLUMNS: Record<string, Set<string>> = {
   ]),
   pizza_supplements: new Set([
     'id', 'name_fr', 'name_ar', 'purchase_cost', 'price', 'current_stock',
-    'min_stock_alert', 'category', 'is_active', 'created_at'
+    'min_stock_alert', 'category', 'is_active', 'ingredient_id', 'portion_quantity', 'created_at'
   ]),
   store_needs: new Set([
     'id', 'item_name', 'quantity_needed', 'urgency', 'notes',

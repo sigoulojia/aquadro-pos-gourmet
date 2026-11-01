@@ -2,6 +2,7 @@
 // Intégré au stock & coût d'achat : Prix d'achat initial (Coût), prix de vente, quantité en stock et alertes.
 
 import { db } from '../db/sqlite';
+import { recipeService } from './recipe.service';
 
 export interface PizzaSupplement {
   id: string;
@@ -16,6 +17,9 @@ export interface PizzaSupplement {
   is_active: number; // 1 or 0
   created_at?: string;
   quantity?: number; // عدد الحصص المطلوبة (مثلاً 2x أو 3x لنفس الإضافة)
+  ingredient_id?: string | null; // معرف المكوّن في جدول ingredients (ربط مباشر بالمخزون)
+  portion_quantity?: number; // كمية المكوّن المستهلكة في الحصة الواحدة (مثال 0.050 كغ = 50غ)
+  ingredient_unit?: string; // وحدة قياس المكوّن للعرض (كغ، غ، لتر، إلخ)
 }
 
 // Identifiants des anciens suppléments démo par défaut à nettoyer
@@ -64,6 +68,8 @@ export class SupplementService {
           min_stock_alert REAL NOT NULL DEFAULT 5.0,
           category TEXT,
           is_active INTEGER NOT NULL DEFAULT 1,
+          ingredient_id TEXT,
+          portion_quantity REAL DEFAULT 1.0,
           created_at TEXT NOT NULL
         )
       `);
@@ -71,7 +77,9 @@ export class SupplementService {
       for (const colDef of [
         'ALTER TABLE pizza_supplements ADD COLUMN purchase_cost INTEGER NOT NULL DEFAULT 0',
         'ALTER TABLE pizza_supplements ADD COLUMN current_stock REAL NOT NULL DEFAULT 50.0',
-        'ALTER TABLE pizza_supplements ADD COLUMN min_stock_alert REAL NOT NULL DEFAULT 5.0'
+        'ALTER TABLE pizza_supplements ADD COLUMN min_stock_alert REAL NOT NULL DEFAULT 5.0',
+        'ALTER TABLE pizza_supplements ADD COLUMN ingredient_id TEXT',
+        'ALTER TABLE pizza_supplements ADD COLUMN portion_quantity REAL DEFAULT 1.0'
       ]) {
         try {
           await db.execute(colDef);
@@ -112,13 +120,49 @@ export class SupplementService {
       if (rows) {
         // Filtrer les éventuels résidus d'anciens suppléments par défaut
         const cleanedRows = rows.filter(r => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(r.id));
-        const normalized = cleanedRows.map(r => ({
-          ...r,
-          purchase_cost: Number(r.purchase_cost) || 0,
-          price: Number(r.price) || 0,
-          current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
-          min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
-        }));
+
+        // Si certains suppléments sont liés à des ingrédients, charger les ingrédients pour synchronisation live
+        const hasLinked = cleanedRows.some(r => !!r.ingredient_id);
+        let ingredientMap = new Map<string, any>();
+        if (hasLinked) {
+          try {
+            const ings = await recipeService.getIngredients();
+            ingredientMap = new Map(ings.map(i => [i.id, i]));
+          } catch {}
+        }
+
+        const normalized = cleanedRows.map(r => {
+          const portionQty = r.portion_quantity !== undefined && r.portion_quantity !== null
+            ? Number(r.portion_quantity)
+            : 1.0;
+
+          let currentStock = r.current_stock !== undefined ? Number(r.current_stock) : 50;
+          let purchaseCost = Number(r.purchase_cost) || 0;
+          let ingredientUnit: string | undefined = undefined;
+
+          if (r.ingredient_id && ingredientMap.has(r.ingredient_id)) {
+            const ing = ingredientMap.get(r.ingredient_id);
+            ingredientUnit = ing.unit;
+            if (ing.current_stock !== undefined && ing.current_stock !== null) {
+              const ingStock = Number(ing.current_stock);
+              currentStock = portionQty > 0 ? Math.max(0, Math.floor(ingStock / portionQty)) : currentStock;
+            }
+            if (purchaseCost === 0 && ing.cost_per_unit) {
+              purchaseCost = Math.round(Number(ing.cost_per_unit) * portionQty);
+            }
+          }
+
+          return {
+            ...r,
+            purchase_cost: purchaseCost,
+            price: Number(r.price) || 0,
+            current_stock: currentStock,
+            min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5,
+            ingredient_id: r.ingredient_id || null,
+            portion_quantity: portionQty,
+            ingredient_unit: ingredientUnit
+          };
+        });
         this.supplementsCache = normalized;
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem('pizzeria_pizza_supplements', JSON.stringify(normalized));
@@ -136,13 +180,48 @@ export class SupplementService {
         if (saved) {
           const parsed: PizzaSupplement[] = JSON.parse(saved);
           const cleaned = parsed.filter(s => !LEGACY_DEFAULT_SUPPLEMENT_IDS.includes(s.id));
-          const normalized = cleaned.map(r => ({
-            ...r,
-            purchase_cost: Number(r.purchase_cost) || 0,
-            price: Number(r.price) || 0,
-            current_stock: r.current_stock !== undefined ? Number(r.current_stock) : 50,
-            min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5
-          }));
+
+          const hasLinked = cleaned.some(r => !!r.ingredient_id);
+          let ingredientMap = new Map<string, any>();
+          if (hasLinked) {
+            try {
+              const ings = await recipeService.getIngredients();
+              ingredientMap = new Map(ings.map(i => [i.id, i]));
+            } catch {}
+          }
+
+          const normalized = cleaned.map(r => {
+            const portionQty = r.portion_quantity !== undefined && r.portion_quantity !== null
+              ? Number(r.portion_quantity)
+              : 1.0;
+
+            let currentStock = r.current_stock !== undefined ? Number(r.current_stock) : 50;
+            let purchaseCost = Number(r.purchase_cost) || 0;
+            let ingredientUnit: string | undefined = undefined;
+
+            if (r.ingredient_id && ingredientMap.has(r.ingredient_id)) {
+              const ing = ingredientMap.get(r.ingredient_id);
+              ingredientUnit = ing.unit;
+              if (ing.current_stock !== undefined && ing.current_stock !== null) {
+                const ingStock = Number(ing.current_stock);
+                currentStock = portionQty > 0 ? Math.max(0, Math.floor(ingStock / portionQty)) : currentStock;
+              }
+              if (purchaseCost === 0 && ing.cost_per_unit) {
+                purchaseCost = Math.round(Number(ing.cost_per_unit) * portionQty);
+              }
+            }
+
+            return {
+              ...r,
+              purchase_cost: purchaseCost,
+              price: Number(r.price) || 0,
+              current_stock: currentStock,
+              min_stock_alert: r.min_stock_alert !== undefined ? Number(r.min_stock_alert) : 5,
+              ingredient_id: r.ingredient_id || null,
+              portion_quantity: portionQty,
+              ingredient_unit: ingredientUnit
+            };
+          });
           this.supplementsCache = normalized;
           return includeInactive ? normalized : normalized.filter(s => s.is_active === 1);
         }
@@ -174,8 +253,8 @@ export class SupplementService {
       for (const s of list) {
         await db.execute(
           `INSERT OR REPLACE INTO pizza_supplements 
-            (id, name_fr, name_ar, purchase_cost, price, current_stock, min_stock_alert, category, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, name_fr, name_ar, purchase_cost, price, current_stock, min_stock_alert, category, is_active, ingredient_id, portion_quantity, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             s.id,
             s.name_fr,
@@ -186,6 +265,8 @@ export class SupplementService {
             s.min_stock_alert !== undefined ? Number(s.min_stock_alert) : 5,
             s.category || 'extra',
             s.is_active !== undefined ? s.is_active : 1,
+            s.ingredient_id || null,
+            s.portion_quantity !== undefined ? Number(s.portion_quantity) : 1.0,
             s.created_at || new Date().toISOString()
           ]
         );
@@ -207,6 +288,8 @@ export class SupplementService {
     current_stock?: number;
     min_stock_alert?: number;
     category?: any;
+    ingredient_id?: string | null;
+    portion_quantity?: number;
   }): Promise<PizzaSupplement> {
     if (!input.name_fr || !input.name_fr.trim()) {
       throw new Error("Le nom du supplément est obligatoire");
@@ -217,25 +300,54 @@ export class SupplementService {
     }
 
     await this.ensureTable();
+
+    let portionQty = input.portion_quantity !== undefined && input.portion_quantity !== null
+      ? Number(input.portion_quantity)
+      : 1.0;
+    if (isNaN(portionQty) || portionQty <= 0) portionQty = 1.0;
+
+    let initialCost = Math.max(0, Math.round(Number(input.purchase_cost) || 0));
+    let initialStock = Math.max(0, Number(input.current_stock ?? 50));
+    let ingredientUnit: string | undefined = undefined;
+
+    // Si lié à un ingrédient existant, dériver le coût et le stock initial
+    if (input.ingredient_id) {
+      try {
+        const ing = await recipeService.getIngredientById(input.ingredient_id);
+        if (ing) {
+          ingredientUnit = ing.unit;
+          if (initialCost === 0 && ing.cost_per_unit) {
+            initialCost = Math.round(Number(ing.cost_per_unit) * portionQty);
+          }
+          if (input.current_stock === undefined) {
+            initialStock = portionQty > 0 ? Math.max(0, Math.floor(Number(ing.current_stock) / portionQty)) : 50;
+          }
+        }
+      } catch {}
+    }
+
     const newId = `sup-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const newSupplement: PizzaSupplement = {
       id: newId,
       name_fr: input.name_fr.trim(),
       name_ar: input.name_ar ? input.name_ar.trim() : undefined,
-      purchase_cost: Math.max(0, Math.round(Number(input.purchase_cost) || 0)),
+      purchase_cost: initialCost,
       price: Math.max(0, Math.round(parsedPrice)),
-      current_stock: Math.max(0, Number(input.current_stock ?? 50)),
+      current_stock: initialStock,
       min_stock_alert: Math.max(0, Number(input.min_stock_alert ?? 5)),
       category: input.category || 'extra',
       is_active: 1,
+      ingredient_id: input.ingredient_id || null,
+      portion_quantity: portionQty,
+      ingredient_unit: ingredientUnit,
       created_at: new Date().toISOString()
     };
 
     // Insérer directement dans SQLite
     await db.execute(
       `INSERT OR REPLACE INTO pizza_supplements 
-        (id, name_fr, name_ar, purchase_cost, price, current_stock, min_stock_alert, category, is_active, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, name_fr, name_ar, purchase_cost, price, current_stock, min_stock_alert, category, is_active, ingredient_id, portion_quantity, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newSupplement.id,
         newSupplement.name_fr,
@@ -246,6 +358,8 @@ export class SupplementService {
         newSupplement.min_stock_alert,
         newSupplement.category,
         newSupplement.is_active,
+        newSupplement.ingredient_id,
+        newSupplement.portion_quantity,
         newSupplement.created_at
       ]
     );
@@ -276,6 +390,8 @@ export class SupplementService {
     if (updates.min_stock_alert !== undefined) { sets.push('min_stock_alert = ?'); vals.push(Number(updates.min_stock_alert)); }
     if (updates.category !== undefined) { sets.push('category = ?'); vals.push(updates.category); }
     if (updates.is_active !== undefined) { sets.push('is_active = ?'); vals.push(updates.is_active); }
+    if (updates.ingredient_id !== undefined) { sets.push('ingredient_id = ?'); vals.push(updates.ingredient_id || null); }
+    if (updates.portion_quantity !== undefined) { sets.push('portion_quantity = ?'); vals.push(Number(updates.portion_quantity)); }
 
     if (sets.length > 0) {
       vals.push(id);
@@ -292,6 +408,23 @@ export class SupplementService {
 
   public async adjustStock(id: string, delta: number): Promise<void> {
     await this.ensureTable();
+    // Si lié à un ingrédient du stock, ajuster également l'ingrédient source
+    try {
+      const allSupps = await this.getSupplements(true);
+      const supp = allSupps.find(s => s.id === id);
+      if (supp && supp.ingredient_id) {
+        const portionQty = Number(supp.portion_quantity) || 1.0;
+        const ingDelta = Number((portionQty * delta).toFixed(6));
+        await recipeService.adjustStock(
+          supp.ingredient_id,
+          ingDelta,
+          `Ajustement supplément: ${supp.name_fr} (${delta > 0 ? '+' : ''}${delta} portion(s))`
+        );
+      }
+    } catch (ingErr) {
+      console.warn('[SupplementService] Erreur ajustement ingrédient lié:', ingErr);
+    }
+
     await db.execute(
       'UPDATE pizza_supplements SET current_stock = MAX(0, current_stock + ?) WHERE id = ?',
       [delta, id]
@@ -308,8 +441,28 @@ export class SupplementService {
   public async deductSupplementStock(supplementsWithQty: Array<{ supplementId: string; quantity: number }>): Promise<void> {
     if (!supplementsWithQty || supplementsWithQty.length === 0) return;
     await this.ensureTable();
+
+    // Charger la liste actuelle des suppléments pour déduire également le stock des ingrédients liés
+    const allSupps = await this.getSupplements(true);
+    const suppMap = new Map(allSupps.map(s => [s.id, s]));
+
     for (const item of supplementsWithQty) {
       try {
+        const supp = suppMap.get(item.supplementId);
+        if (supp && supp.ingredient_id) {
+          const portionQty = Number(supp.portion_quantity) || 1.0;
+          const totalIngredientAmount = Number((portionQty * item.quantity).toFixed(6));
+          try {
+            await recipeService.adjustStock(
+              supp.ingredient_id,
+              -totalIngredientAmount,
+              `Supplément Pizza: ${supp.name_fr} (${item.quantity} portion(s))`
+            );
+          } catch (ingErr) {
+            console.warn('[SupplementService] Erreur déduction ingrédient lié:', ingErr);
+          }
+        }
+
         await db.execute(
           'UPDATE pizza_supplements SET current_stock = MAX(0, current_stock - ?) WHERE id = ?',
           [item.quantity, item.supplementId]
@@ -330,8 +483,27 @@ export class SupplementService {
   public async restoreSupplementStock(supplementsWithQty: Array<{ supplementId: string; quantity: number }>): Promise<void> {
     if (!supplementsWithQty || supplementsWithQty.length === 0) return;
     await this.ensureTable();
+
+    const allSupps = await this.getSupplements(true);
+    const suppMap = new Map(allSupps.map(s => [s.id, s]));
+
     for (const item of supplementsWithQty) {
       try {
+        const supp = suppMap.get(item.supplementId);
+        if (supp && supp.ingredient_id) {
+          const portionQty = Number(supp.portion_quantity) || 1.0;
+          const totalIngredientAmount = Number((portionQty * item.quantity).toFixed(6));
+          try {
+            await recipeService.adjustStock(
+              supp.ingredient_id,
+              totalIngredientAmount,
+              `Restitution Supplément: ${supp.name_fr} (${item.quantity} portion(s))`
+            );
+          } catch (ingErr) {
+            console.warn('[SupplementService] Erreur restitution ingrédient lié:', ingErr);
+          }
+        }
+
         await db.execute(
           'UPDATE pizza_supplements SET current_stock = current_stock + ? WHERE id = ?',
           [item.quantity, item.supplementId]

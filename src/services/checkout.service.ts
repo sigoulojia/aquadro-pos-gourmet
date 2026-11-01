@@ -188,6 +188,14 @@ export class CheckoutService {
             const catalogList = allSuppsCatalog || [];
             const found = catalogList.find((x: any) => x.id === sId);
             sCost = Number(found?.purchase_cost) || 0;
+            if ((!sCost || sCost <= 0) && found?.ingredient_id) {
+              try {
+                const ing = await recipeService.getIngredientById(found.ingredient_id);
+                if (ing) {
+                  sCost = Math.round((Number(ing.cost_per_unit) || 0) * (Number(found.portion_quantity) || 1.0));
+                }
+              } catch {}
+            }
           } else {
             sCost = 0;
           }

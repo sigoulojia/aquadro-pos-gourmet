@@ -183,3 +183,4 @@ describe('Multi-Part Pizza (Moitié-Moitié) Ingredient Stock Deduction', () => 
     expect(uFromage?.current_stock).toBeCloseTo(4.800, 3);
   });
 });
+

@@ -207,9 +207,20 @@ export const PizzaCustomizerModal: React.FC<PizzaCustomizerModalProps> = ({
                             {supp.name_ar}
                           </p>
                         )}
-                        <span className="text-[10px] text-stone-400 font-mono">
-                          +{CurrencyUtil.formatDZD(supp.price)} / portion
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] text-stone-400 font-mono">
+                            +{CurrencyUtil.formatDZD(supp.price)} / portion
+                          </span>
+                          {supp.current_stock <= 0 ? (
+                            <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1 py-0.2 rounded border border-rose-200">
+                              Rupture
+                            </span>
+                          ) : supp.current_stock <= (supp.min_stock_alert || 5) ? (
+                            <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+                              Reste {supp.current_stock}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 

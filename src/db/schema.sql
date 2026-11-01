@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS pizza_supplements (
     min_stock_alert REAL NOT NULL DEFAULT 5.0,
     category TEXT,
     is_active INTEGER NOT NULL DEFAULT 1,
+    ingredient_id TEXT,
+    portion_quantity REAL DEFAULT 1.0,
     created_at TEXT NOT NULL
 );
 
