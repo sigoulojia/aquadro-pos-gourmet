@@ -69,10 +69,26 @@ export class CheckoutService {
     return [];
   }
 
+  private extractPartsList(multiParts: any): Array<{ id?: string; productId?: string; product_id?: string; name?: string; price?: number }> {
+    if (!multiParts) return [];
+    if (Array.isArray(multiParts)) return multiParts;
+    if (typeof multiParts === 'object' && Array.isArray(multiParts.parts)) {
+      return multiParts.parts;
+    }
+    if (typeof multiParts === 'string') {
+      try {
+        const parsed = JSON.parse(multiParts);
+        return this.extractPartsList(parsed);
+      } catch {}
+    }
+    return [];
+  }
+
   // Assure qu'une pizza multi-parties possède ses lignes de recette proportionnelles enregistrées
   // afin que le calcul du coût matière (COGS), la déduction des ingrédients et le remboursement fonctionnent de manière uniforme.
   private async ensureMultiPartRecipeLinked(item: CheckoutItemInput): Promise<void> {
-    if (!item.multiParts || item.multiParts.length === 0 || !item.productId) return;
+    const parts = this.extractPartsList(item.multiParts);
+    if (parts.length === 0 || !item.productId) return;
     try {
       const now = new Date().toISOString();
       await db.execute(
@@ -85,11 +101,12 @@ export class CheckoutService {
 
       const existingRecipe = await recipeService.getRecipeForProduct(item.productId);
       if (existingRecipe.length === 0) {
-        const fraction = 1 / item.multiParts.length;
+        const fraction = 1 / parts.length;
         const aggMap = new Map<string, { qty: number; unit?: string }>();
-        for (const part of item.multiParts) {
-          if (!part.id) continue;
-          const partRecipe = await recipeService.getRecipeForProduct(part.id);
+        for (const part of parts) {
+          const partId = part.id || part.productId || part.product_id;
+          if (!partId) continue;
+          const partRecipe = await recipeService.getRecipeForProduct(partId);
           for (const ri of partRecipe) {
             const prev = aggMap.get(ri.ingredient_id) || { qty: 0, unit: ri.unit_display };
             aggMap.set(ri.ingredient_id, {
@@ -125,7 +142,24 @@ export class CheckoutService {
 
     let unitCost = 0;
 
-    if (item.productId) {
+    const parts = this.extractPartsList(item.multiParts);
+    const validParts = parts.filter(p => !!(p.id || p.productId || p.product_id));
+
+    if (validParts.length > 0) {
+      const fraction = 1 / validParts.length;
+      let multiCost = 0;
+      for (const part of validParts) {
+        const partId = (part.id || part.productId || part.product_id)!;
+        try {
+          const recipeDetails = await recipeService.getRecipeForProduct(partId);
+          const partCost = recipeDetails.reduce((sum, r) => sum + (Number(r.cost_for_portion) || 0), 0);
+          multiCost += partCost * fraction;
+        } catch {}
+      }
+      if (multiCost > 0) {
+        unitCost += Math.round(multiCost);
+      }
+    } else if (item.productId) {
       try {
         const recipeDetails = await recipeService.getRecipeForProduct(item.productId);
         if (recipeDetails.length > 0) {
@@ -189,9 +223,21 @@ export class CheckoutService {
 
     for (const item of items) {
       try {
-        await this.ensureMultiPartRecipeLinked(item);
-        if (item.productId) {
-          await recipeService.deductRecipeIngredientsForSale(item.productId, item.quantity);
+        const parts = this.extractPartsList(item.multiParts);
+        const validParts = parts.filter(p => !!(p.id || p.productId || p.product_id));
+
+        if (validParts.length > 0) {
+          const fraction = 1 / validParts.length;
+          for (const part of validParts) {
+            const partId = (part.id || part.productId || part.product_id)!;
+            const partQty = Number((item.quantity * fraction).toFixed(6));
+            await recipeService.deductRecipeIngredientsForSale(partId, partQty);
+          }
+        } else {
+          await this.ensureMultiPartRecipeLinked(item);
+          if (item.productId) {
+            await recipeService.deductRecipeIngredientsForSale(item.productId, item.quantity);
+          }
         }
       } catch (recipeErr) {
         console.warn('[CheckoutService] Erreur déduction ingrédients recette:', recipeErr);
