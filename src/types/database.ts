@@ -236,6 +236,7 @@ export interface Refund {
 export type ExpenseCategory =
   | 'RENT'
   | 'ELECTRICITY'
+  | 'GAS'
   | 'WATER'
   | 'INTERNET'
   | 'PACKAGING'
@@ -250,6 +251,15 @@ export type ExpenseCategory =
   | 'SALARY'
   | 'CHEF_SALARY'
   | 'OTHER';
+
+export type ExpensePeriodicity =
+  | 'DAILY'          // يومياً
+  | 'WEEKLY'         // أسبوعياً
+  | 'MONTHLY'        // شهرياً
+  | 'BIMONTHLY'      // كل شهرين
+  | 'QUARTERLY'      // كل 3 أشهر (trimestriel)
+  | 'SEMI_ANNUAL'    // كل 6 أشهر
+  | 'ANNUAL';        // سنوياً
 
 export interface Expense {
   id: string;

@@ -188,6 +188,24 @@ export class CaisseService {
     );
   }
 
+  // Ajuster ou annuler une dépense dans la session de caisse active
+  public async adjustExpenseInSession(difference: number): Promise<void> {
+    if (!difference || difference === 0) return;
+    const session = await this.getActiveSession();
+    if (!session || session.status !== 'OPEN') return;
+
+    const newExpenses = Math.max(0, CurrencyUtil.add(session.total_cash_expenses, difference));
+    const expectedDrawer = CurrencyUtil.subtract(
+      CurrencyUtil.add(session.opening_float, session.total_cash_sales),
+      CurrencyUtil.add(session.total_cash_refunds, newExpenses)
+    );
+
+    await db.execute(
+      `UPDATE cash_sessions SET total_cash_expenses = ?, expected_cash_drawer = ? WHERE id = ?`,
+      [newExpenses, expectedDrawer, session.id]
+    );
+  }
+
   // Enregistrer un remboursement en espèces
   public async recordRefundToSession(sessionId: string, refundAmount: number): Promise<void> {
     const session = await this.getSessionById(sessionId);

@@ -12,6 +12,7 @@ import {
   CookingPot,
   Scale,
   Plus,
+  Minus,
   Search,
   AlertTriangle,
   CheckCircle2,
@@ -290,6 +291,26 @@ export const InventoryView: React.FC = () => {
       portion_quantity: newPortion,
       purchase_cost: calcCost
     }));
+  };
+
+  const handleAdjustPortion = (delta: number) => {
+    if (!convertTarget) return;
+    const current = Number(convertForm.portion_quantity) || 0;
+    let next = current + delta;
+    if (convertTarget.unit === 'kg' || convertTarget.unit === 'L') {
+      next = Math.round(next * 1000) / 1000;
+    } else {
+      next = Math.round(next * 10) / 10;
+    }
+    if (next < 0.001) next = 0.001;
+    handleConvertPortionChange(next);
+  };
+
+  const handleAdjustPrice = (delta: number) => {
+    setConvertForm(prev => {
+      const next = Math.max(0, (Number(prev.price) || 0) + delta);
+      return { ...prev, price: next };
+    });
   };
 
   const handleConfirmConvert = async (e: React.FormEvent) => {
@@ -1902,105 +1923,187 @@ export const InventoryView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Quantité par portion & Raccourcis */}
-              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200/70 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-stone-700">
-                    Quantité consommée par portion ({convertTarget.unit}) :
-                  </label>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={0.001}
-                      step={convertTarget.unit === 'kg' || convertTarget.unit === 'L' ? 0.005 : 1}
-                      value={convertForm.portion_quantity}
-                      onChange={e => handleConvertPortionChange(parseFloat(e.target.value) || 0)}
-                      className="w-20 px-2 py-1 bg-white border border-[#E9DCCB] rounded-lg text-center text-xs font-mono font-bold text-[#E87524]"
-                      required
-                    />
-                    <span className="text-xs font-mono text-stone-600">{convertTarget.unit}</span>
+              {/* Quantité par portion & Contrôles Tactiles (+ / -) */}
+              <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200/70 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-bold text-stone-800 block">
+                      Quantité consommée par portion ({convertTarget.unit}) :
+                    </label>
+                    <span className="text-[10px] text-stone-500 font-arabic" dir="rtl">
+                      التحكم باللمس بالزيادة (+) أو الإنقاص (-) بدون لوحة مفاتيح
+                    </span>
+                  </div>
+
+                  {/* Contrôles tactiles + / - */}
+                  <div className="flex items-center gap-1.5 self-center sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const step = (convertTarget.unit === 'kg' || convertTarget.unit === 'L') ? -0.005 : -1;
+                        handleAdjustPortion(step);
+                      }}
+                      className="w-10 h-10 rounded-xl bg-white border-2 border-stone-300 hover:border-[#E87524] hover:bg-orange-50 active:scale-95 text-stone-700 hover:text-[#E87524] flex items-center justify-center font-black transition-all shadow-xs cursor-pointer"
+                      title="Diminuer la portion (-)"
+                    >
+                      <Minus className="w-5 h-5 stroke-[2.5]" />
+                    </button>
+
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min={0.001}
+                        step={convertTarget.unit === 'kg' || convertTarget.unit === 'L' ? 0.005 : 1}
+                        value={convertForm.portion_quantity}
+                        onChange={e => handleConvertPortionChange(parseFloat(e.target.value) || 0)}
+                        className="w-24 h-10 px-2 bg-white border-2 border-[#E9DCCB] rounded-xl text-center text-sm font-mono font-black text-[#E87524] focus:border-[#E87524] focus:outline-none shadow-inner"
+                        required
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-stone-400 pointer-events-none">
+                        {convertTarget.unit}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const step = (convertTarget.unit === 'kg' || convertTarget.unit === 'L') ? 0.005 : 1;
+                        handleAdjustPortion(step);
+                      }}
+                      className="w-10 h-10 rounded-xl bg-[#E87524] hover:bg-[#D46317] active:scale-95 text-white flex items-center justify-center font-black transition-all shadow-xs cursor-pointer"
+                      title="Augmenter la portion (+)"
+                    >
+                      <Plus className="w-5 h-5 stroke-[2.5]" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Presets rapides de portion */}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-stone-500">Presets :</span>
-                  {convertTarget.unit === 'kg' && (
+                {/* Pas d'ajustement rapide tactile */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-stone-200/60">
+                  <span className="text-[10px] text-stone-500 font-medium">Ajustement rapide :</span>
+                  {(convertTarget.unit === 'kg' || convertTarget.unit === 'L') ? (
                     <>
                       <button
                         type="button"
-                        onClick={() => handleConvertPortionChange(0.03)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                        onClick={() => handleAdjustPortion(-0.05)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-stone-700 cursor-pointer active:scale-95"
                       >
-                        30g
+                        -50g
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleConvertPortionChange(0.05)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                        onClick={() => handleAdjustPortion(-0.01)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-stone-700 cursor-pointer active:scale-95"
                       >
-                        50g
+                        -10g
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleConvertPortionChange(0.07)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                        onClick={() => handleAdjustPortion(0.01)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-emerald-700 cursor-pointer active:scale-95"
                       >
-                        70g
+                        +10g
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleConvertPortionChange(0.10)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
+                        onClick={() => handleAdjustPortion(0.05)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-emerald-700 cursor-pointer active:scale-95"
                       >
-                        100g
+                        +50g
                       </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPortion(-5)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-stone-700 cursor-pointer active:scale-95"
+                      >
+                        -5
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPortion(-1)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-stone-700 cursor-pointer active:scale-95"
+                      >
+                        -1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPortion(1)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-emerald-700 cursor-pointer active:scale-95"
+                      >
+                        +1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAdjustPortion(5)}
+                        className="px-2 py-1 text-[11px] bg-white hover:bg-stone-100 border border-stone-200 rounded-lg font-mono font-bold text-emerald-700 cursor-pointer active:scale-95"
+                      >
+                        +5
+                      </button>
+                    </>
+                  )}
+
+                  {/* Presets rapides */}
+                  <span className="text-[10px] text-stone-400 mx-1">|</span>
+                  <span className="text-[10px] text-stone-500 font-medium">Fixe :</span>
+                  {convertTarget.unit === 'kg' && (
+                    <>
+                      {[0.03, 0.05, 0.07, 0.10].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleConvertPortionChange(val)}
+                          className={`px-2 py-1 text-[11px] rounded-lg font-mono font-bold cursor-pointer active:scale-95 transition-colors ${
+                            Math.abs(convertForm.portion_quantity - val) < 0.001
+                              ? 'bg-[#E87524] text-white border border-[#E87524]'
+                              : 'bg-white hover:bg-stone-100 border border-stone-200 text-stone-700'
+                          }`}
+                        >
+                          {Math.round(val * 1000)}g
+                        </button>
+                      ))}
                     </>
                   )}
                   {convertTarget.unit === 'g' && (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => handleConvertPortionChange(30)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
-                      >
-                        30g
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConvertPortionChange(50)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
-                      >
-                        50g
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConvertPortionChange(100)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
-                      >
-                        100g
-                      </button>
+                      {[30, 50, 70, 100].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleConvertPortionChange(val)}
+                          className={`px-2 py-1 text-[11px] rounded-lg font-mono font-bold cursor-pointer active:scale-95 transition-colors ${
+                            convertForm.portion_quantity === val
+                              ? 'bg-[#E87524] text-white border border-[#E87524]'
+                              : 'bg-white hover:bg-stone-100 border border-stone-200 text-stone-700'
+                          }`}
+                        >
+                          {val}g
+                        </button>
+                      ))}
                     </>
                   )}
                   {convertTarget.unit === 'pièce' && (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => handleConvertPortionChange(1)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
-                      >
-                        1 pce
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleConvertPortionChange(2)}
-                        className="px-2 py-0.5 text-[10px] bg-white hover:bg-stone-200 border rounded font-mono cursor-pointer"
-                      >
-                        2 pces
-                      </button>
+                      {[1, 2, 3, 5].map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => handleConvertPortionChange(val)}
+                          className={`px-2 py-1 text-[11px] rounded-lg font-mono font-bold cursor-pointer active:scale-95 transition-colors ${
+                            convertForm.portion_quantity === val
+                              ? 'bg-[#E87524] text-white border border-[#E87524]'
+                              : 'bg-white hover:bg-stone-100 border border-stone-200 text-stone-700'
+                          }`}
+                        >
+                          {val} pce{val > 1 ? 's' : ''}
+                        </button>
+                      ))}
                     </>
                   )}
-                  <span className="ml-auto text-[11px] font-bold text-emerald-700">
+
+                  <span className="ml-auto text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                     {convertForm.portion_quantity > 0
                       ? `${Math.floor(convertTarget.current_stock / convertForm.portion_quantity)} portions dispo`
                       : ''}
@@ -2030,16 +2133,42 @@ export const InventoryView: React.FC = () => {
                   <label className="block text-xs font-bold text-stone-700 mb-1">
                     Prix de Vente Client (DA) *
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={10}
-                    value={convertForm.price}
-                    onFocus={e => e.target.select()}
-                    onChange={e => setConvertForm({ ...convertForm, price: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 bg-white border border-[#E9DCCB] rounded-xl text-xs font-mono font-bold text-[#E87524] focus:ring-1 focus:ring-[#E87524]"
-                    required
-                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustPrice(-10)}
+                      className="w-8 h-8 rounded-lg bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-700 flex items-center justify-center font-bold text-xs active:scale-95 cursor-pointer"
+                      title="-10 DA"
+                    >
+                      -10
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={convertForm.price}
+                      onFocus={e => e.target.select()}
+                      onChange={e => setConvertForm({ ...convertForm, price: parseFloat(e.target.value) || 0 })}
+                      className="flex-1 px-2 py-1.5 bg-white border border-[#E9DCCB] rounded-lg text-center text-xs font-mono font-bold text-[#E87524] focus:ring-1 focus:ring-[#E87524]"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustPrice(10)}
+                      className="w-8 h-8 rounded-lg bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-700 flex items-center justify-center font-bold text-xs active:scale-95 cursor-pointer"
+                      title="+10 DA"
+                    >
+                      +10
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustPrice(50)}
+                      className="px-1.5 h-8 rounded-lg bg-orange-50 hover:bg-orange-100 border border-orange-200 text-[#E87524] flex items-center justify-center font-bold text-[11px] active:scale-95 cursor-pointer"
+                      title="+50 DA"
+                    >
+                      +50
+                    </button>
+                  </div>
                   <span className="text-[10px] text-emerald-700 font-bold mt-0.5 block">
                     Marge: +{Math.max(0, convertForm.price - convertForm.purchase_cost)} DA
                   </span>

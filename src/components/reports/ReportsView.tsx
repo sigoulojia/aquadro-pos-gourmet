@@ -515,7 +515,8 @@ export const ReportsView: React.FC = () => {
                     case 'INGREDIENTS_PURCHASE': return { label: 'شراء مكونات (مخزون)', sub: 'Achat Ingrédients Stock' };
                     case 'SUPPLEMENTS_PURCHASE': return { label: 'شراء إضافات (مخزون)', sub: 'Achat Suppléments Stock' };
                     case 'RENT': return { label: 'إيجار المحل', sub: 'Loyer Magasin' };
-                    case 'ELECTRICITY': return { label: 'كهرباء وغاز', sub: 'Sonelgaz' };
+                    case 'ELECTRICITY': return { label: 'كهرباء (Sonelgaz)', sub: 'Électricité Sonelgaz' };
+                    case 'GAS': return { label: 'غاز (Sonelgaz)', sub: 'Gaz Sonelgaz' };
                     case 'WATER': return { label: 'ماء', sub: 'Seaal' };
                     case 'INTERNET': return { label: 'إنترنت وهاتف', sub: 'Algérie Télécom' };
                     case 'SALARY': return { label: 'رواتب العمال', sub: 'Salaires Personnel' };
@@ -563,7 +564,12 @@ export const ReportsView: React.FC = () => {
                   Classement des Ventes (Pizzas, Boissons & Suppléments)
                 </span>
               </div>
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center space-x-1.5">
+                {metrics?.topProducts && metrics.topProducts.length > 0 && (
+                  <span className="px-2 py-0.5 rounded border border-orange-200 bg-orange-50 text-[10px] font-mono font-bold text-[#E87524]">
+                    Total Vendu : {metrics.topProducts.reduce((acc, p) => acc + (p.quantity || 0), 0).toLocaleString()} portions
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setProductSortBy(productSortBy === 'qty' ? 'revenue' : 'qty')}
@@ -632,6 +638,9 @@ export const ReportsView: React.FC = () => {
                 return p.name.toLowerCase().includes(q);
               }).sort((a, b) => productSortBy === 'qty' ? b.quantity - a.quantity : b.revenue - a.revenue);
 
+              const totalQty = filtered.reduce((acc, p) => acc + (Number(p.quantity) || 0), 0);
+              const totalRevenue = filtered.reduce((acc, p) => acc + (Number(p.revenue) || 0), 0);
+
               return (
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -681,6 +690,28 @@ export const ReportsView: React.FC = () => {
                       </tr>
                     )}
                   </tbody>
+                  {filtered.length > 0 && (
+                    <tfoot className="sticky bottom-0 z-10">
+                      <tr className="bg-amber-50/95 backdrop-blur-xs font-bold border-t-2 border-amber-300 text-stone-900 shadow-sm">
+                        <td className="p-2.5 font-black uppercase text-xs text-stone-900" colSpan={2}>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[#E87524] font-black">Total Général</span>
+                            <span className="text-[10px] font-arabic font-normal text-stone-600" dir="rtl">
+                              (المجموع العام : {filtered.length} صنف)
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <span className="px-2.5 py-1 bg-[#E87524] text-white rounded-lg font-mono font-black text-xs shadow-xs inline-block">
+                            {totalQty.toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-right font-mono font-black text-sm text-[#292522]">
+                          {CurrencyUtil.formatDZD(totalRevenue)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               );
             })()}

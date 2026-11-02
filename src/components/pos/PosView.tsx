@@ -144,14 +144,14 @@ export const PosView: React.FC = () => {
   useEffect(() => {
     loadProducts();
     loadCustomers();
-    caisseService.getActiveSession().then(setActiveSession).catch(() => {});
+    caisseService.getActiveSession().then(setActiveSession).catch(() => { });
     const last = printerService.getLastReceipt();
     if (last) setLastReceipt(last);
     db.select<any>("SELECT * FROM stores LIMIT 1")
       .then(rows => {
         if (rows && rows.length > 0) setCurrentStore(rows[0]);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const onCustomersUpdated = () => {
       loadCustomers();
@@ -231,27 +231,25 @@ export const PosView: React.FC = () => {
     return !product.category_id || product.category_id === "cat-pizza" || product.name_fr.toLowerCase().includes("pizza");
   };
 
-  const isViewingPizzas = selectedCategory === "ALL" || selectedCategory === "cat-pizza";
-  const searchLower = search.toLowerCase().trim();
-  const showMultiPartCards = isViewingPizzas && (
-    !searchLower ||
-    searchLower.includes("moitié") ||
-    searchLower.includes("moitie") ||
-    searchLower.includes("نصف") ||
-    searchLower.includes("saison") ||
-    searchLower.includes("فصول") ||
-    searchLower.includes("pizza") ||
-    searchLower.includes("بيتزا")
-  );
+  const isMultiPartProduct = (product: Product) => {
+    const lowerName = (product.name_fr || "").toLowerCase();
+    const arName = product.name_ar || "";
+    return (
+      lowerName.includes("moitié") ||
+      lowerName.includes("moitie") ||
+      arName.includes("نصفين") ||
+      arName.includes("نصف") ||
+      lowerName.includes("saison") ||
+      arName.includes("فصلين")
+    );
+  };
 
   // Clic sur une carte :
   // Si Moitié-Moitié ou 4 Saisons -> ouvre directement le modal multi-saveurs
   // Si pizza standard -> ouvre la personnalisation (suppléments / notes / quantité)
   // Si boisson -> ajout direct au panier
   const handleProductCardClick = (product: Product) => {
-    const lowerName = (product.name_fr || "").toLowerCase();
-    const arName = product.name_ar || "";
-    if (lowerName.includes("moitié") || lowerName.includes("moitie") || arName.includes("نصفين") || lowerName.includes("saison") || arName.includes("فصلين")) {
+    if (isMultiPartProduct(product)) {
       setMultiPartInitialMode("2_PARTS");
       setShowMultiPartModal(true);
       return;
@@ -438,8 +436,8 @@ export const PosView: React.FC = () => {
         orderType === "SUR_PLACE"
           ? `Sur Place - ${tableNumber}`
           : orderType === "A_EMPORTER"
-          ? "À Emporter"
-          : `Livraison - ${selectedCustomer?.name || deliveryCustomerName || "Client"} (${selectedCustomer?.phone || deliveryPhone || "Sans tél"}) - ${deliveryAddress || "Sans adresse"}`;
+            ? "À Emporter"
+            : `Livraison - ${selectedCustomer?.name || deliveryCustomerName || "Client"} (${selectedCustomer?.phone || deliveryPhone || "Sans tél"}) - ${deliveryAddress || "Sans adresse"}`;
 
       const sale: Sale = await checkoutService.processCheckout({
         cashierId,
@@ -525,7 +523,7 @@ export const PosView: React.FC = () => {
             try {
               const details = await recipeService.getRecipeForProduct(i.productId);
               baseIngredients = details.map(d => d.ingredient_name_fr).filter(Boolean);
-            } catch (e) {}
+            } catch (e) { }
           }
 
           let partsWithIngredients: Array<{ name: string; price: number; ingredients?: string[] }> | undefined = undefined;
@@ -540,7 +538,7 @@ export const PosView: React.FC = () => {
                 try {
                   const details = await recipeService.getRecipeForProduct(p.id);
                   partIngredients = details.map(d => d.ingredient_name_fr).filter(Boolean);
-                } catch (e) {}
+                } catch (e) { }
               }
               return {
                 name: p.name,
@@ -579,7 +577,7 @@ export const PosView: React.FC = () => {
       setSelectedCustomer(null);
       setCart([]);
       setShowReceiptModal(true);
-      
+
       // Recharger immédiatement l'état des portions restantes pour mettre à jour les cartes
       try {
         const updatedStatus = await recipeService.getAllProductsIngredientStatus();
@@ -622,11 +620,10 @@ export const PosView: React.FC = () => {
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-                    isSelected
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${isSelected
                       ? "bg-[#E87524] text-white shadow-xs"
                       : "bg-stone-50 text-stone-700 hover:bg-orange-50 hover:text-[#E87524] border border-stone-200"
-                  }`}
+                    }`}
                 >
                   <IconComp className="w-3.5 h-3.5 shrink-0" />
                   <span>{cat.label}</span>
@@ -686,7 +683,7 @@ export const PosView: React.FC = () => {
 
         {/* Grille des Cartes Produits Pizzeria — Pure, simple et spacieuse */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {filteredProducts.length === 0 && !showMultiPartCards ? (
+          {filteredProducts.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 text-stone-400">
               <UtensilsCrossed className="w-10 h-10 text-[#E87524]/40 mb-2.5" />
               <p className="font-bold text-[#292522] text-xs">
@@ -695,49 +692,11 @@ export const PosView: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {/* Cartes Spéciales Pizzas dans la catégorie PIZZA : Moitié-Moitié et 4 Saisons */}
-              {showMultiPartCards && (
-                <>
-                  {/* Carte Pizza Moitié - Moitié */}
-                  <div
-                    onClick={() => {
-                      setMultiPartInitialMode("2_PARTS");
-                      setShowMultiPartModal(true);
-                    }}
-                    className="bg-linear-to-br from-white to-[#FFF9F2] rounded-xl border-2 border-dashed border-[#E87524]/60 p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm hover:border-[#E87524] active:scale-[0.99]"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="w-9 h-9 rounded-lg bg-[#FFF3EB] border border-[#E87524]/30 text-[#E87524] flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
-                          <Layers className="w-5 h-5 text-[#E87524]" />
-                        </div>
-                        <span className="bg-[#FFF3EB] text-[#E87524] font-black text-[11px] px-2 py-0.5 rounded border border-[#E87524]/20 font-mono">
-                          حسب الذوق
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-[#292522] text-xs leading-tight group-hover:text-[#E87524] transition-colors">
-                        بيتزا نصفين (Moitié - Moitié)
-                      </h3>
-                      <p className="text-[10px] text-stone-600 font-arabic line-clamp-1 mt-0.5" dir="rtl">
-                        اختر نصفين بأذواق مختلفة في بيتزا واحدة
-                      </p>
-                      <span className="inline-block mt-1 text-[10px] font-bold text-[#E87524] bg-orange-100/70 px-1.5 py-0.5 rounded">
-                        2 أذواق • 2 Saveurs
-                      </span>
-                    </div>
-                    <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-[#E87524] font-bold">
-                      <span>تركيب البيتزا</span>
-                      <div className="w-5 h-5 rounded-md bg-[#E87524] text-white flex items-center justify-center">
-                        <Plus className="w-3 h-3" />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
               {filteredProducts.map(product => {
+                const isMultiPart = isMultiPartProduct(product);
                 const isPizza = isPizzaProduct(product);
                 const ingStatus = ingredientStatusMap[product.id];
-                const isOutOfIngredients = isPizza && ingStatus?.hasRecipe && !ingStatus.isAvailable;
+                const isOutOfIngredients = !isMultiPart && isPizza && ingStatus?.hasRecipe && !ingStatus.isAvailable;
                 const cartQty = cart
                   .filter(item => item.productId === product.id)
                   .reduce((sum, item) => sum + item.quantity, 0);
@@ -746,13 +705,14 @@ export const PosView: React.FC = () => {
                   <div
                     key={product.id}
                     onClick={() => handleProductCardClick(product)}
-                    className={`bg-white rounded-xl border p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm active:scale-[0.99] ${
-                      isOutOfIngredients
-                        ? "border-amber-300 bg-amber-50/30 hover:border-amber-400"
-                        : cartQty > 0
-                        ? "border-[#E87524] ring-1 ring-[#E87524]/30 bg-[#FFFDFB]"
-                        : "border-[#E9DCCB] hover:border-[#E87524]/60 hover:bg-[#FFFCF7]"
-                    }`}
+                    className={`bg-white rounded-xl border p-3 flex flex-col justify-between transition-all duration-150 cursor-pointer relative group select-none shadow-2xs hover:shadow-sm active:scale-[0.99] ${isMultiPart
+                        ? "border-[#E87524]/50 bg-linear-to-br from-white to-[#FFFDF9] hover:border-[#E87524]"
+                        : isOutOfIngredients
+                          ? "border-amber-300 bg-amber-50/30 hover:border-amber-400"
+                          : cartQty > 0
+                            ? "border-[#E87524] ring-1 ring-[#E87524]/30 bg-[#FFFDFB]"
+                            : "border-[#E9DCCB] hover:border-[#E87524]/60 hover:bg-[#FFFCF7]"
+                      }`}
                   >
                     {/* Badge Quantité */}
                     {cartQty > 0 && (
@@ -762,14 +722,13 @@ export const PosView: React.FC = () => {
                     )}
 
                     {/* Badge Disponibilité & Nombre de Pizzas Réalisables selon Ingrédients */}
-                    {isPizza && ingStatus?.hasRecipe && (
-                      <span className={`absolute -top-2 left-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs border ${
-                        ingStatus.maxPortions > 10
+                    {!isMultiPart && isPizza && ingStatus?.hasRecipe && (
+                      <span className={`absolute -top-2 left-2 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs border ${ingStatus.maxPortions > 10
                           ? "bg-emerald-50 text-emerald-700 border-emerald-300"
                           : ingStatus.maxPortions > 0
-                          ? "bg-amber-50 text-amber-800 border-amber-300"
-                          : "bg-rose-50 text-rose-700 border-rose-300"
-                      }`}>
+                            ? "bg-amber-50 text-amber-800 border-amber-300"
+                            : "bg-rose-50 text-rose-700 border-rose-300"
+                        }`}>
                         {ingStatus.maxPortions > 0 ? (
                           <>
                             <Pizza className="w-3 h-3 text-emerald-600 shrink-0 inline" />
@@ -797,22 +756,22 @@ export const PosView: React.FC = () => {
                           <img
                             src={product.image_url}
                             alt={product.name_fr}
-                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 ${
-                              isOutOfIngredients ? "filter grayscale-30" : ""
-                            }`}
+                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 ${isOutOfIngredients ? "filter grayscale-30" : ""
+                              }`}
                           />
                           <span className="absolute top-1.5 right-1.5 bg-black/75 backdrop-blur-xs text-white font-black text-[11px] px-1.5 py-0.5 rounded shadow-xs font-mono">
-                            {CurrencyUtil.formatDZD(product.selling_price_ttc)}
+                            {product.selling_price_ttc > 0 ? CurrencyUtil.formatDZD(product.selling_price_ttc) : "حسب الذوق"}
                           </span>
                         </div>
                       ) : (
                         <div className="flex items-center justify-between mb-2">
-                          <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shadow-2xs ${
-                            isOutOfIngredients
+                          <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shadow-2xs ${isOutOfIngredients
                               ? "bg-amber-100 border-amber-300 text-amber-700"
                               : "bg-[#FFF8EF] border-[#E9DCCB] text-[#E87524]"
-                          }`}>
-                            {product.category_id === "cat-drink" ? (
+                            }`}>
+                            {isMultiPart ? (
+                              <Layers className="w-5 h-5 text-[#E87524]" />
+                            ) : product.category_id === "cat-drink" ? (
                               <Coffee className="w-4 h-4" />
                             ) : product.category_id === "cat-dessert" ? (
                               <Cake className="w-4 h-4" />
@@ -821,7 +780,7 @@ export const PosView: React.FC = () => {
                             )}
                           </div>
                           <span className="bg-[#FFF3EB] text-[#E87524] font-black text-xs px-2 py-0.5 rounded border border-[#E87524]/20 font-mono">
-                            {CurrencyUtil.formatDZD(product.selling_price_ttc)}
+                            {product.selling_price_ttc > 0 ? CurrencyUtil.formatDZD(product.selling_price_ttc) : "حسب الذوق"}
                           </span>
                         </div>
                       )}
@@ -835,7 +794,12 @@ export const PosView: React.FC = () => {
                           {product.name_ar}
                         </p>
                       )}
-                      {product.variant && (
+                      {isMultiPart && (
+                        <span className="inline-block mt-1 text-[10px] font-bold text-[#E87524] bg-orange-100/70 px-1.5 py-0.5 rounded">
+                          2 أذواق • 2 Saveurs
+                        </span>
+                      )}
+                      {product.variant && !isMultiPart && (
                         <p className="text-[10px] text-stone-500 line-clamp-1 mt-1 leading-snug">
                           {product.variant}
                         </p>
@@ -845,15 +809,16 @@ export const PosView: React.FC = () => {
                     {/* Ligne inférieure simple */}
                     <div className="mt-2.5 pt-1.5 border-t border-[#E9DCCB]/60 flex items-center justify-between text-[11px] text-stone-600 font-semibold">
                       <span className="truncate max-w-[120px]">
-                        {isPizza && ingStatus?.hasRecipe
-                          ? (ingStatus.maxPortions > 0 ? `${ingStatus.maxPortions} متوفرة` : "نفاد المقادير")
-                          : (isPizza ? "Choisir" : "Ajouter")}
+                        {isMultiPart
+                          ? "تركيب نصفين"
+                          : isPizza && ingStatus?.hasRecipe
+                            ? (ingStatus.maxPortions > 0 ? `${ingStatus.maxPortions} متوفرة` : "نفاد المقادير")
+                            : (isPizza ? "Choisir" : "Ajouter")}
                       </span>
-                      <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${
-                        isOutOfIngredients
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-colors ${isOutOfIngredients
                           ? "bg-amber-200 text-amber-900 group-hover:bg-amber-300"
                           : "bg-[#FFF3EB] text-[#E87524] group-hover:bg-[#E87524] group-hover:text-white"
-                      }`}>
+                        }`}>
                         {isOutOfIngredients ? <AlertTriangle className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                       </div>
                     </div>
@@ -904,11 +869,10 @@ export const PosView: React.FC = () => {
           <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-lg border border-stone-200">
             <button
               onClick={() => setOrderType("SUR_PLACE")}
-              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                orderType === "SUR_PLACE"
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === "SUR_PLACE"
                   ? "bg-[#E87524] text-white shadow-2xs"
                   : "text-stone-600 hover:text-[#292522]"
-              }`}
+                }`}
             >
               <Utensils className="w-3 h-3" />
               <span>Sur Place</span>
@@ -916,11 +880,10 @@ export const PosView: React.FC = () => {
 
             <button
               onClick={() => setOrderType("A_EMPORTER")}
-              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                orderType === "A_EMPORTER"
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === "A_EMPORTER"
                   ? "bg-[#E87524] text-white shadow-2xs"
                   : "text-stone-600 hover:text-[#292522]"
-              }`}
+                }`}
             >
               <ShoppingBag className="w-3 h-3" />
               <span>À Emporter</span>
@@ -928,11 +891,10 @@ export const PosView: React.FC = () => {
 
             <button
               onClick={() => setOrderType("LIVRAISON")}
-              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                orderType === "LIVRAISON"
+              className={`py-1.5 text-[11px] font-bold rounded transition-all flex items-center justify-center gap-1 cursor-pointer ${orderType === "LIVRAISON"
                   ? "bg-[#E87524] text-white shadow-2xs"
                   : "text-stone-600 hover:text-[#292522]"
-              }`}
+                }`}
             >
               <Bike className="w-3 h-3" />
               <span>Livraison</span>
@@ -1233,11 +1195,10 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("CASH");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod === "CASH"
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${paymentMethod === "CASH"
                         ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
-                    }`}
+                      }`}
                   >
                     <Banknote className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Espèces</span>
@@ -1249,11 +1210,10 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("EDAHABIA");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod === "EDAHABIA" || paymentMethod === "CIB"
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${paymentMethod === "EDAHABIA" || paymentMethod === "CIB"
                         ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
                         : "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
-                    }`}
+                      }`}
                   >
                     <CreditCard className="w-3.5 h-3.5 text-blue-600" />
                     <span>Carte CIB/Dahabia</span>
@@ -1269,13 +1229,12 @@ export const PosView: React.FC = () => {
                       setPaymentMethod("CREDIT");
                       setTenderedInput(totalAmount.toString());
                     }}
-                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${
-                      paymentMethod === "CREDIT"
+                    className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 font-bold text-xs transition-all cursor-pointer ${paymentMethod === "CREDIT"
                         ? "bg-[#FFF3EB] border-[#E87524] text-[#E87524] shadow-xs"
                         : selectedCustomer
-                        ? "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
-                        : "bg-stone-100 border-stone-200 text-stone-400 opacity-60 cursor-not-allowed"
-                    }`}
+                          ? "bg-white border-[#E9DCCB] text-[#292522] hover:bg-stone-50"
+                          : "bg-stone-100 border-stone-200 text-stone-400 opacity-60 cursor-not-allowed"
+                      }`}
                   >
                     <Receipt className="w-3.5 h-3.5 text-purple-600" />
                     <span>Crédit (دين)</span>
@@ -1588,11 +1547,10 @@ export const PosView: React.FC = () => {
                     showToast('تم إرسال طلب المقادير لمالك المحل في احتياجات المتجر بنجاح', 'success');
                   }}
                   disabled={outOfStockRequested}
-                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
-                    outOfStockRequested
+                  className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${outOfStockRequested
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
                       : 'bg-[#E87524] hover:bg-[#D46317] text-white'
-                  }`}
+                    }`}
                 >
                   {outOfStockRequested ? (
                     <>

@@ -144,7 +144,8 @@ export interface MonthlyReportData {
 
 const EXPENSE_CATEGORIES_TRANSLATION: Record<string, { fr: string; ar: string }> = {
   RENT: { fr: 'Loyer Magasin', ar: 'إيجار المحل' },
-  ELECTRICITY: { fr: 'Électricité & Gaz', ar: 'الكهرباء والغاز' },
+  ELECTRICITY: { fr: 'Électricité (Sonelgaz)', ar: 'الكهرباء' },
+  GAS: { fr: 'Gaz (Sonelgaz)', ar: 'الغاز' },
   WATER: { fr: 'Eau', ar: 'الماء' },
   INTERNET: { fr: 'Télécom & Internet', ar: 'الهاتف والإنترنت' },
   PACKAGING: { fr: 'Emballages Divers', ar: 'أكياس وتغليف' },
